@@ -3,7 +3,6 @@ import type { CoordinateSystem, LengthUnit, Quality, ViewMode } from "@viewer/co
 import type { UpdateStatus } from "@viewer/shared";
 import { readPref, writePref } from "./prefs";
 
-export type Direction = "earth" | "instrument" | "hud";
 export type Route = "home" | "viewer";
 export type Tool = "none" | "distance" | "path" | "fly" | "sight" | "viewshed";
 
@@ -17,7 +16,8 @@ export interface Filters {
 }
 
 interface AppState {
-  direction: Direction;
+  /** Tools fade while the view is idle or being navigated (UI direction A + C). */
+  fadeTools: boolean;
   route: Route;
   modelId: string | null;
   theme: "dark" | "light";
@@ -42,12 +42,12 @@ interface AppState {
   onboardingDone: boolean;
   filters: Filters;
   set: (patch: Partial<AppState>) => void;
-  setPref: <K extends "theme" | "lang" | "coordSystem" | "unit" | "quality" | "direction">(k: K, v: AppState[K]) => void;
+  setPref: <K extends "theme" | "lang" | "coordSystem" | "unit" | "quality" | "fadeTools">(k: K, v: AppState[K]) => void;
   setFilters: (patch: Partial<Filters>) => void;
 }
 
 export const useApp = create<AppState>((set) => ({
-  direction: readPref<Direction>("direction", "earth"),
+  fadeTools: readPref<string>("fadeTools", "true") === "true",
   route: "home",
   modelId: null,
   theme: readPref<"dark" | "light">("theme", "dark"),

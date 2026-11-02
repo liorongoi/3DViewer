@@ -80,6 +80,13 @@ Reference screen: 1920 × 1080 (smallest supported, Q-09). All sizes in CSS pixe
 
 ## 2A. Three layout directions (prototype, for the product owner to choose)
 
+> **Decision, 2 Nov 2026: A + C.** The product owner chose the Earth workspace (A) with the fading tools of the Minimal HUD (C). Directions B and C and the prototype switcher are removed. How the fading works:
+>
+> - After 2.5 s without pointer movement or a key, the dock, view cube, scale bar, coordinates and small buttons fade out. Open panels stay.
+> - While the user drags or scrolls the 3D view, open panels also fade to 15 % and ignore the pointer, so the view is fully visible. They return 400 ms after the camera stops.
+> - Any pointer move or key brings everything back at once. Nothing fades while a map tool (measure, line of sight, viewshed placement) is waiting for clicks.
+> - Settings → "Fade tools while navigating" turns it off. `prefers-reduced-motion` makes the change instant.
+
 The product owner asked to keep the visualization space at the maximum, to consider a Google Earth style, and to see all the options before deciding. The prototype therefore runs **three layout directions on the same engine, tools and design tokens**. A switcher at the top of the prototype changes direction live; the chosen direction becomes the Release 1 layout and the other two are removed. Every SRS function is reachable in all three.
 
 | | A. Earth workspace | B. Night Instrument | C. Minimal HUD |

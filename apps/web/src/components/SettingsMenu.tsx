@@ -55,6 +55,7 @@ export function SettingsMenu({ onClose: _onClose }: { onClose: () => void }) {
         />
       </div>
       <div className="my-2 h-px bg-line" />
+      <Toggle label="Fade tools while navigating" value={s.fadeTools} onChange={(v) => s.setPref("fadeTools", v)} />
       <Toggle label={t("viewer.shadows")} value={s.shadows} onChange={(v) => { s.set({ shadows: v }); engine?.setShadows(v); }} />
       <Toggle label={t("viewer.imagery")} value={s.imagery} onChange={(v) => { s.set({ imagery: v }); engine?.setBaseImagery(v); }} />
       <Toggle label={`${t("viewer.baseMap")} (globe)`} value={s.globe} onChange={(v) => { s.set({ globe: v }); engine?.setGlobe(v); }} />
