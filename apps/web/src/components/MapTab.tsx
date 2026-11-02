@@ -133,7 +133,7 @@ function UserData() {
     try {
       const files = await Promise.all(
         s.files.map(async (f) => {
-          const res = await fetch(new URL(`samples/user-data/${f}`, document.baseURI));
+          const res = await fetch(new URL(`samples/user-data/${f}${import.meta.env.VITE_SAMPLE_SUFFIX ?? ""}`, document.baseURI));
           if (!res.ok) throw new Error(`${f}: ${res.status}`);
           return new File([await res.blob()], f);
         }),

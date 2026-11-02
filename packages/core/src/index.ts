@@ -12,3 +12,4 @@ export { SightlineTool, type SightPair, type ProfileSample } from "./engine/sigh
 export { Viewshed, type ViewshedState } from "./engine/viewshed";
 export { UserLayers, type UserLayer, type UserLayerSource } from "./engine/user-layers";
 export type { WmtsLayerInfo, WmsLayerInfo } from "./engine/ogc";
+export { LodInspector, type LodStats, type LodSettings } from "./engine/lod-inspector";

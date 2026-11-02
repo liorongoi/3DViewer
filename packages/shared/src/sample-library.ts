@@ -50,7 +50,7 @@ export const SAMPLE_LIBRARY: ModelSummary[] = [
     source: {
       kind: "3dtiles",
       url: `${SAMPLES}/3dtiles/tarn-lidar/tileset.json`,
-      groundFit: "none",
+      groundFit: "surface",
       attribution: "IGN Lidar HD (Licence Ouverte 2.0); tiles by Ciril Group with py3dtiles / iTowns sample data",
     },
     centre: { lat: 44.3336, lon: 3.3825 },

@@ -56,6 +56,8 @@ export class GeoTiffImageryProvider {
     private readonly bandsUsed: number[],
     private readonly stretch: Stretch | null,
     private readonly noData: number | null,
+    /** One floating-point band: treated as elevation and drawn as a shaded relief. */
+    private readonly elevation: boolean,
     info: GeoTiffInfo,
     name: string,
   ) {
@@ -145,7 +147,9 @@ export class GeoTiffImageryProvider {
     }
 
     const info: GeoTiffInfo = { width, height, bands, bits, crs: crs.label, resolution: Math.abs(res[0]), bounds: [w, s, e, n] };
-    return new GeoTiffImageryProvider(levels, crs, origin, res, bandsUsed, stretch, nd, info, name);
+    const sf = (main.getSampleFormat?.() ?? 1) as number;
+    const elevation = bands === 1 && (sf === 3 || bits >= 16);
+    return new GeoTiffImageryProvider(levels, crs, origin, res, bandsUsed, stretch, nd, elevation, info, name);
   }
 
   getTileCredits(): Credit[] {
@@ -216,6 +220,9 @@ export class GeoTiffImageryProvider {
     const cell = (TILE - 1) / (GRID - 1);
     const nd = this.noData;
     const st = this.stretch;
+    // Ground size of one window pixel in metres, for the hillshade slope.
+    const lat0 = CMath.toDegrees((rect.north + rect.south) / 2);
+    const pxSize = Math.abs(this.res[0]) * s * (this.crs.label === "EPSG:4326" ? 111320 * Math.cos(CMath.toRadians(lat0)) : 1);
     const v = (b: number, i: number) => {
       const raw = bands[b]![i]!;
       if (!st) return raw;
@@ -251,6 +258,20 @@ export class GeoTiffImageryProvider {
           px[o] = r;
           px[o + 1] = g;
           px[o + 2] = b;
+        } else if (this.elevation) {
+          // Elevation: colour by height, shaded by the slope towards a light in the north-west.
+          const b0 = bands[0]!;
+          const ix0 = bx > 0 ? i - 1 : i,
+            ix1 = bx < bw - 1 ? i + 1 : i,
+            iy0 = by > 0 ? i - bw : i,
+            iy1 = by < bh - 1 ? i + bw : i;
+          const dzdx = (b0[ix1]! - b0[ix0]!) / (pxSize * (ix1 - ix0 || 1));
+          const dzdy = (b0[iy1]! - b0[iy0]!) / (pxSize * ((iy1 - iy0) / bw || 1));
+          const shade = hillshade(dzdx, dzdy);
+          const [cr, cg, cb] = hypso(Math.max(0, Math.min(1, v(0, i) / 255)));
+          px[o] = cr * shade;
+          px[o + 1] = cg * shade;
+          px[o + 2] = cb * shade;
         } else {
           px[o] = px[o + 1] = px[o + 2] = v(0, i);
         }
@@ -265,4 +286,33 @@ export class GeoTiffImageryProvider {
   asProvider(): ImageryProvider {
     return this as unknown as ImageryProvider;
   }
+}
+
+function hillshade(dzdx: number, dzdy: number): number {
+  // Light from azimuth 315°, altitude 45°. Rows grow southwards, so north is -dzdy.
+  const slope = Math.atan(Math.hypot(dzdx, dzdy));
+  const aspect = Math.atan2(dzdy, -dzdx);
+  const zen = Math.PI / 4;
+  const az = (5 * Math.PI) / 4;
+  const h = Math.cos(zen) * Math.cos(slope) + Math.sin(zen) * Math.sin(slope) * Math.cos(az - aspect);
+  return 0.35 + 0.75 * Math.max(0, h);
+}
+
+const HYPSO: [number, number, number, number][] = [
+  [0, 70, 120, 80],
+  [0.3, 150, 170, 100],
+  [0.55, 210, 190, 130],
+  [0.8, 170, 130, 100],
+  [1, 245, 240, 235],
+];
+function hypso(t: number): [number, number, number] {
+  for (let k = 1; k < HYPSO.length; k++) {
+    const a = HYPSO[k - 1]!,
+      b = HYPSO[k]!;
+    if (t <= b[0]) {
+      const u = (t - a[0]) / (b[0] - a[0]);
+      return [a[1] + (b[1] - a[1]) * u, a[2] + (b[2] - a[2]) * u, a[3] + (b[3] - a[3]) * u];
+    }
+  }
+  return [245, 240, 235];
 }

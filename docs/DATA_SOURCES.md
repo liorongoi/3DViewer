@@ -89,6 +89,27 @@ The real deployment uses the organisation's own DEM and orthophotos (SRS 5.2). T
 | Corrupt / hostile files | Made by us | AC-02, NFR-14 |
 | Base map package (test) | Copernicus DEM + Sentinel-2 cloudless 2016 over the test cities | RND-08 to RND-11 |
 
+## 6. Data now in the prototype (added 2 Nov 2026)
+
+Everything below is downloaded by `scripts/fetch-samples.sh`, `scripts/build-demo-basemaps.py` and `scripts/build-user-data-samples.py`, and works with no network once built. Each item shows one format the viewer must handle, georeferenced, with a real LOD structure where the format has one.
+
+| Item | Format and LOD | Where it is | Source and licence | Shows |
+|---|---|---|---|---|
+| Lyon 1st district, textured buildings | 3D Tiles 1.0, b3dm, 3-level LOD tree, ECEF (EPSG:4978) | `samples/3dtiles/lyon1` | Data Grand Lyon via iTowns sample data; **Licence Ouverte 2.0** | City on terrain, height-datum fit (+80 m), line of sight and viewshed against buildings |
+| Tarn gorges lidar | 3D Tiles 1.0, pnts, 11-level octree, 4,318 tiles, ECEF | `samples/3dtiles/tarn-lidar` | IGN Lidar HD via iTowns sample data; **Licence Ouverte 2.0** | LOD inspector, point clouds on terrain |
+| Discrete LOD and request volume tilesets | 3D Tiles 1.0 | `samples/3dtiles/TilesetWith*` | CesiumGS 3d-tiles-samples; Apache 2.0 | Format conformance, LOD switching |
+| Sentinel-2 L2A true colour, summer 2025 | XYZ JPEG tiles z10–15 for Jerusalem, Lyon, Tarn | `samples/imagery/s2` | Copernicus Sentinel-2 via AWS Open Data (`sentinel-cogs`); **Copernicus open licence**, "Contains modified Copernicus Sentinel data 2025" | Offline base map |
+| Terrain Tiles | Terrarium PNG z0–3 world, z6–14 for the three areas | `samples/terrain` | AWS Open Data Terrain Tiles (SRTM, GMTED, ETOPO1 and others); attribution per the dataset's notice | Offline terrain; the same code reads the full online set |
+| Rivers near Lyon | **Shapefile** (.shp .dbf .prj .cpg) in **Lambert-93, EPSG:2154** | `samples/user-data/lyon-rivers-l93.*` | Natural Earth 1:10 m; **public domain** | User shapefile reprojected on the fly, draped on terrain |
+| Towns of France and Israel | **Shapefile**, WGS 84 | `samples/user-data/places-fr-il.*` | Natural Earth 1:10 m; public domain | Point layer with labels |
+| Lyon Sentinel-2 | **GeoTIFF**, tiled with overviews (COG layout), **UTM 31N, EPSG:32631**, 10 m | `samples/user-data/lyon-s2-utm31.tif` | Copernicus Sentinel-2; Copernicus open licence | User GeoTIFF as overlay or as base map, read window by window |
+| Tarn elevation | **GeoTIFF**, one float band, WGS 84, 30 m | `samples/user-data/tarn-dem.tif` | **Copernicus DEM GLO-30** via AWS Open Data; free licence with attribution | Elevation drawn as shaded relief |
+| Offline WMTS | **WMTS 1.0 GetCapabilities** (RESTful, GoogleMapsCompatible) over the Sentinel-2 tiles | `samples/user-data/wmts/WMTSCapabilities.xml` | Made by us | User WMTS, used as the base map |
+
+Online sources the viewer can use when a network is present (development and demonstrations only; the internal network uses internal mirrors, WP 3.9): AWS Terrain Tiles (world, z15), Esri World Imagery, EOX Sentinel-2 cloudless 2016 (CC BY 4.0), OpenStreetMap tiles, and any COG over HTTP range requests (for example the Sentinel-2 and Copernicus DEM buckets on AWS).
+
+Formats still to add to the kit: FBX and OBJ (derived from the Lyon tiles, WP 0.8), KML/KMZ and GeoJSON examples (the loaders are in place), and a quantized-mesh terrain from our own tiler (WP 3.9).
+
 ---
 
 ## Sources
@@ -108,3 +129,8 @@ The real deployment uses the organisation's own DEM and orthophotos (SRS 5.2). T
 - Copernicus DEM licence: https://documentation.dataspace.copernicus.eu/APIs/SentinelHub/Data/DEM/resources/license/License-COPDEM-30.pdf
 - Sentinel-2 cloudless 2016: https://eox.at/2017/03/sentinel-2-cloudless-original-tiles-available/
 - mago 3DTiler: https://github.com/Gaia3D/mago-3d-tiler
+- iTowns sample data (Lyon, Tarn): https://github.com/iTowns/iTowns2-sample-data
+- Sentinel-2 COGs on AWS: https://registry.opendata.aws/sentinel-2-l2a-cogs/
+- Terrain Tiles on AWS: https://registry.opendata.aws/terrain-tiles/
+- Copernicus DEM on AWS: https://registry.opendata.aws/copernicus-dem/
+- Natural Earth: https://www.naturalearthdata.com/about/terms-of-use/

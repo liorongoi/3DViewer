@@ -23,7 +23,7 @@ export interface ModelSource {
    * "street" lifts or lowers it so its lowest surface (streets, ground) meets the terrain;
    * "none" trusts its own heights.
    */
-  groundFit?: "street" | "none";
+  groundFit?: "street" | "surface" | "none";
   /** Cut the terrain away under the model's footprint, for meshes that carry their own ground. */
   clipTerrain?: boolean;
   /** Licence and origin, shown in Properties. */

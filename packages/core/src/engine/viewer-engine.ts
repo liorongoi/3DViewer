@@ -45,6 +45,7 @@ import { BASE_MAPS, TERRAINS, makeBaseLayers } from "./basemaps";
 import { SightlineTool } from "./sightline";
 import { Viewshed } from "./viewshed";
 import { UserLayers } from "./user-layers";
+import { LodInspector } from "./lod-inspector";
 
 export type ViewMode = "shaded" | "edges" | "wireframe" | "unlit";
 export type Quality = "low" | "balanced" | "high" | "ultra";
@@ -90,6 +91,7 @@ export class ViewerEngine {
   readonly sight: SightlineTool;
   readonly viewshed: Viewshed;
   readonly userLayers: UserLayers;
+  readonly lod: LodInspector;
 
   readonly cursor = signal<CursorInfo | null>(null);
   readonly cameraInfo = signal<CameraInfo>({ heading: 0, pitch: -0.5, metresPerPixel: 1, height: 0 });
@@ -124,7 +126,12 @@ export class ViewerEngine {
     // No Cesium ion, no Bing, no external requests: everything is bundled (NFR-12).
     Ion.defaultAccessToken = "";
     const [base] = await makeBaseLayers("bundled");
-    return new ViewerEngine(container, base!);
+    const engine = new ViewerEngine(container, base!);
+    // Prototype defaults: the offline demo imagery and terrain, so models sit on real ground
+    // with no network. The deployment config picks internal sources instead (WP 3.9).
+    await engine.setBaseMap("local-s2");
+    await engine.setTerrain("local");
+    return engine;
   }
 
   private constructor(container: HTMLElement, baseLayer: ImageryLayer) {
@@ -175,6 +182,7 @@ export class ViewerEngine {
     this.tour = new FlyByTour(scene);
     this.sight = new SightlineTool(scene, this.widget.entities, (pts) => this.sampleGround(pts));
     this.viewshed = new Viewshed(scene, this.widget.entities);
+    this.lod = new LodInspector(scene);
     this.userLayers = new UserLayers(this.widget, (shown) => this.setBaseImagery(shown));
 
     this.bindPointer();
@@ -208,6 +216,7 @@ export class ViewerEngine {
         if (this.current.get()?.id !== summary.id) return tileset.destroy();
         scene.primitives.add(tileset);
         this.tileset = tileset;
+        this.lod.attach(tileset);
         this.layers.set([{ id: "tileset", name: summary.name, children: [], visible: true }]);
         void this.fitTilesetToGround(tileset, summary);
       } else {
@@ -263,6 +272,7 @@ export class ViewerEngine {
     this.sight.cancel();
     this.sight.clear();
     this.viewshed.clear();
+    this.lod.attach(null);
     if (this.model) this.widget.scene.primitives.remove(this.model);
     if (this.tileset) this.widget.scene.primitives.remove(this.tileset);
     this.model = null;
@@ -457,7 +467,9 @@ export class ViewerEngine {
    */
   private async fitTilesetToGround(tileset: Cesium3DTileset, summary: ModelSummary): Promise<void> {
     this.setGroundOffset(0);
-    if (summary.source.groundFit !== "street" || this.terrainId.get() === "none") return;
+    if (this.terrainId.get() === "none") return;
+    if (summary.source.groundFit === "surface") return this.fitSurfaceToGround(tileset);
+    if (summary.source.groundFit !== "street") return;
     // Each child tile's bounding box bottom is the base of the buildings in it.
     const bases: { at: Cartographic; base: number }[] = [];
     const corners = new Array(8).fill(0).map(() => new Cartesian3());
@@ -484,6 +496,41 @@ export class ViewerEngine {
     if (good.length < 5) return;
     const offset = median(good.map((p) => p.g - p.base));
     if (this.tileset === tileset && Math.abs(offset) > 0.5) this.setGroundOffset(offset);
+  }
+
+  /**
+   * Fit for lidar and photogrammetry, which have ground points everywhere: sample the
+   * dataset's own surface (globe hidden) and the terrain on a grid, and move the dataset so
+   * its lower surfaces (bare ground, not tree tops or roofs) meet the terrain.
+   */
+  private async fitSurfaceToGround(tileset: Cesium3DTileset): Promise<void> {
+    const scene = this.widget.scene;
+    const bs = tileset.boundingSphere;
+    const c = Cartographic.fromCartesian(bs.center);
+    const r = bs.radius * 0.5;
+    const dLat = r / 6371000;
+    const dLon = dLat / Math.cos(c.latitude);
+    const pts: Cartographic[] = [];
+    for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) pts.push(new Cartographic(c.longitude + (dLon * i) / 2, c.latitude + (dLat * j) / 2));
+    const globeShown = scene.globe.show;
+    scene.globe.show = false;
+    let surf: (Cartographic | undefined)[] = [];
+    try {
+      surf = await scene.sampleHeightMostDetailed(pts.map((p) => Cartographic.clone(p)), this.widget.entities.values);
+    } finally {
+      scene.globe.show = globeShown;
+    }
+    const ground = await this.sampleGround(pts.map((p) => Cartographic.clone(p)));
+    const diffs = surf
+      .map((s, k) => (s && Number.isFinite(s.height) ? s.height - (ground[k]?.height ?? NaN) : NaN))
+      .filter((d) => Number.isFinite(d))
+      .sort((a, b) => a - b);
+    if (diffs.length < 5 || this.tileset !== tileset) return;
+    // Lidar heights are usually better than a 30 m terrain model, which smooths valleys and
+    // ridges by metres. So only a clear, consistent gap is corrected: that is a height-datum
+    // mismatch (ellipsoid vs geoid is 20–50 m in Europe and the Middle East).
+    const offset = -diffs[Math.floor(diffs.length / 2)]!;
+    if (Math.abs(offset) > 8) this.setGroundOffset(offset);
   }
 
   /** Shift the open 3D Tiles dataset up or down along the local vertical. */

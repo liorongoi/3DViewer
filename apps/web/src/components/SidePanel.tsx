@@ -216,6 +216,7 @@ function PropertiesTab() {
         ))}
       </dl>
       <GroundOffset />
+      <LodSection />
       <div className="flex items-start gap-2 rounded-[8px] bg-s2 p-2 text-[12px] text-fg3">
         <Info size={14} className="mt-0.5 shrink-0" />
         Editing metadata is part of the upload portal (Phase 4). This prototype shows it read-only.
@@ -323,6 +324,82 @@ function GroundOffset() {
           Reset
         </button>
       </div>
+    </section>
+  );
+}
+
+const LOD_RAMP = ["#FFE8A3", "#FFC66B", "#FF9F4A", "#F2703F", "#D9463E", "#B02A4D", "#7E1F5C", "#52205F", "#2E1F57", "#1B2A57"];
+
+/** Level-of-detail inspector for 3D Tiles (VWR-LOD-01). */
+function LodSection() {
+  const engine = useEngine();
+  const stats = useSignal(engine?.lod.stats, null);
+  const s = useSignal(engine?.lod.settings, { sse: 8, colorByDepth: false, bounds: false, freeze: false });
+  if (!stats) return null;
+  const set = (p: Partial<typeof s>) => engine?.lod.set(p);
+  const total = stats.perDepth.reduce((a, b) => a + b, 0) || 1;
+  const toggle = (k: "colorByDepth" | "bounds" | "freeze", label: string) => (
+    <label className="flex items-center gap-2 text-[12px] text-fg2">
+      <input type="checkbox" checked={s[k]} onChange={(e) => set({ [k]: e.target.checked })} />
+      {label}
+    </label>
+  );
+  const mb = (b: number) => `${(b / 1048576).toFixed(b > 104857600 ? 0 : 1)} MB`;
+  return (
+    <section className="rounded-[8px] border border-line bg-s2 p-2">
+      <div className="mb-1 text-[12px] font-medium">Level of detail</div>
+      <label className="flex flex-col gap-0.5">
+        <span className="flex justify-between text-[11px] text-fg3">
+          Detail (screen-space error)
+          <span className="num text-fg2">{s.sse < 4 ? "very high" : s.sse < 12 ? "high" : s.sse < 32 ? "medium" : "low"} · {Math.round(s.sse * 10) / 10} px</span>
+        </span>
+        <input
+          type="range"
+          min={0}
+          max={1000}
+          value={Math.round((Math.log(s.sse) / Math.log(64)) * 1000)}
+          onChange={(e) => set({ sse: Math.max(1, 64 ** (Number(e.target.value) / 1000)) })}
+          className="w-full accent-[var(--accent)]"
+          style={{ direction: "rtl" }}
+          aria-label="Detail"
+        />
+      </label>
+      <div className="mt-1 flex flex-col gap-1">
+        {toggle("colorByDepth", "Colour tiles by depth")}
+        {toggle("bounds", "Show tile bounding boxes")}
+        {toggle("freeze", "Freeze the selection (fly around it)")}
+      </div>
+      <div className="mt-2 flex h-3 overflow-hidden rounded-[4px] bg-s3" aria-label="Tiles drawn per depth">
+        {stats.perDepth.map((n, d) =>
+          n ? <span key={d} title={`Depth ${d}: ${n} tiles`} style={{ width: `${(n / total) * 100}%`, background: LOD_RAMP[Math.min(d, LOD_RAMP.length - 1)] }} className="border-e border-s2 last:border-0" /> : null,
+        )}
+      </div>
+      <div className="mt-0.5 flex justify-between text-[10px] text-fg3">
+        <span>coarse (root)</span>
+        <span>fine (depth {stats.maxDepth})</span>
+      </div>
+      <dl className="num mt-2 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[12px]">
+        <dt className="text-fg3">Tiles drawn</dt>
+        <dd className="text-fg2">{stats.drawn}</dd>
+        <dt className="text-fg3">Deepest level</dt>
+        <dd className="text-fg2">{stats.maxDepth}</dd>
+        {stats.points > 0 && (
+          <>
+            <dt className="text-fg3">Points</dt>
+            <dd className="text-fg2">{stats.points.toLocaleString()}</dd>
+          </>
+        )}
+        {stats.triangles > 0 && (
+          <>
+            <dt className="text-fg3">Triangles</dt>
+            <dd className="text-fg2">{stats.triangles.toLocaleString()}</dd>
+          </>
+        )}
+        <dt className="text-fg3">GPU memory</dt>
+        <dd className="text-fg2">{mb(stats.memory)}</dd>
+        <dt className="text-fg3">Loading</dt>
+        <dd className="text-fg2">{stats.loading ? `${stats.loading} tiles` : "done"}</dd>
+      </dl>
     </section>
   );
 }
