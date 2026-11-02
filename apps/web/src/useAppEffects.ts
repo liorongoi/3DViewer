@@ -1,5 +1,7 @@
 import { useEffect } from "react";
 import { findModel } from "./state/library";
+import { readShare } from "./share";
+import { setVisible } from "@viewer/core";
 import { useEngine } from "./engine";
 import { useApp } from "./state/store";
 import { useFilteredModels } from "./components/Library";
@@ -27,6 +29,7 @@ export function useAppEffects(): void {
   const engine = useEngine();
   const tool = useApp((s) => s.tool);
   const quality = useApp((s) => s.quality);
+  const adaptive = useApp((s) => s.adaptiveResolution);
   const unit = useApp((s) => s.unit);
   const theme = useApp((s) => s.theme);
   const models = useFilteredModels();
@@ -39,8 +42,29 @@ export function useAppEffects(): void {
   useEffect(() => {
     if (!engine) return;
     engine.setQuality(quality);
+    engine.adaptiveResolution = adaptive;
     engine.measure.setUnit(unit);
-  }, [engine, quality, unit]);
+  }, [engine, quality, unit, adaptive]);
+
+  // A share link opens its model at the shared camera, view mode and layer visibility (WP 4.6).
+  useEffect(() => {
+    if (!engine) return;
+    const apply = async () => {
+      const st = readShare();
+      if (!st) return;
+      const m = findModel(st.m);
+      if (!m) return;
+      useApp.getState().set({ modelId: m.id, route: "viewer", tool: "none" });
+      await engine.open(m, { fly: false });
+      engine.setView(st.c);
+      engine.setViewMode(st.mode);
+      if (st.hidden.length) engine.setLayers(st.hidden.reduce((ls, id) => setVisible(ls, id, false), engine.layers.get()));
+      history.replaceState(null, "", location.pathname + location.search);
+    };
+    void apply();
+    window.addEventListener("hashchange", apply);
+    return () => window.removeEventListener("hashchange", apply);
+  }, [engine]);
 
   useEffect(() => {
     if (!engine) return;
@@ -84,7 +108,7 @@ export function useAppEffects(): void {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
+      const target = e.target instanceof Element ? e.target : null;
       const typing = !!target?.closest("input, textarea, select, [contenteditable]");
       const s = useApp.getState();
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
@@ -113,6 +137,7 @@ export function useAppEffects(): void {
       const k = e.key;
       const lower = k.toLowerCase();
       if (k === "?") s.set({ helpOpen: !s.helpOpen });
+      else if (k === "P" && e.shiftKey) s.set({ perfOpen: !s.perfOpen });
       else if (lower === "h") void engine?.home();
       else if (lower === "z") void engine?.home(0.8);
       else if (k === "M") s.set({ tool: s.tool === "path" ? "none" : "path" });

@@ -98,6 +98,13 @@ export class ViewerEngine {
   readonly cursor = signal<CursorInfo | null>(null);
   readonly cameraInfo = signal<CameraInfo>({ heading: 0, pitch: -0.5, metresPerPixel: 1, height: 0 });
   readonly fps = signal(0);
+  /** Numbers for the performance overlay (Shift+P), refreshed twice a second (WP 1.5). */
+  readonly perf = signal<PerfStats | null>(null);
+  /** Lower the render resolution while frames are slow, and restore it when they are fast (NFR-03). */
+  adaptiveResolution = true;
+  private frameTimes: number[] = [];
+  private lastFrameAt = 0;
+  private baseScale = 1;
   readonly layers = signal<Layer[]>([]);
   readonly loading = signal(false);
   readonly error = signal<OpenError | null>(null);
@@ -567,7 +574,8 @@ export class ViewerEngine {
   setQuality(q: Quality): void {
     this.quality = q;
     const scene = this.widget.scene;
-    this.widget.resolutionScale = { low: 0.75, balanced: 1, high: 1, ultra: Math.min(2, window.devicePixelRatio || 1) }[q];
+    this.baseScale = { low: 0.75, balanced: 1, high: 1, ultra: Math.min(2, window.devicePixelRatio || 1) }[q];
+    this.widget.resolutionScale = this.baseScale;
     scene.msaaSamples = { low: 1, balanced: 2, high: 4, ultra: 8 }[q];
     scene.shadowMap.size = { low: 1024, balanced: 2048, high: 4096, ultra: 4096 }[q];
     this.viewshed.mapSize = { low: 1024, balanced: 2048, high: 2048, ultra: 4096 }[q];
@@ -798,10 +806,13 @@ export class ViewerEngine {
   private afterFrame(): void {
     this.frames++;
     const now = performance.now();
+    if (this.lastFrameAt) this.frameTimes.push(now - this.lastFrameAt);
+    this.lastFrameAt = now;
     if (now - this.lastFpsTime >= 500) {
       this.fps.set(Math.round((this.frames * 1000) / (now - this.lastFpsTime)));
       this.frames = 0;
       this.lastFpsTime = now;
+      this.updatePerf();
     }
     const cam = this.widget.camera;
     const carto = Cartographic.fromCartesian(cam.positionWC);
@@ -821,11 +832,90 @@ export class ViewerEngine {
     }
   }
 
+  private updatePerf(): void {
+    // Pauses over 5 s (a hidden tab) are not frames. Slow frames accumulate until there are three.
+    const times = this.frameTimes.filter((t) => t < 5000);
+    if (times.length < 3) return;
+    this.frameTimes = [];
+    const avg = times.reduce((a, b) => a + b, 0) / times.length;
+    const worst = [...times].sort((a, b) => a - b)[Math.floor(times.length * 0.95)] ?? avg;
+    // Adaptive resolution: step down to 60% of the preset while frames take over 20 ms, back up under 12 ms.
+    if (this.adaptiveResolution) {
+      const s = this.widget.resolutionScale;
+      if (avg > 20 && s > this.baseScale * 0.6 + 1e-3) this.widget.resolutionScale = Math.max(this.baseScale * 0.6, s - 0.1);
+      else if (avg < 12 && s < this.baseScale - 1e-3) this.widget.resolutionScale = Math.min(this.baseScale, s + 0.05);
+    } else if (!this.adaptiveResolution && this.widget.resolutionScale !== this.baseScale) this.widget.resolutionScale = this.baseScale;
+    const t = this.tileset;
+    const ts = t ? (t as unknown as { statistics: Record<string, number> }).statistics : null;
+    const ms = this.model ? (this.model as unknown as { statistics?: Record<string, number> }).statistics : null;
+    const scene = this.widget.scene;
+    this.perf.set({
+      fps: Math.round(1000 / avg),
+      frameMs: avg,
+      worstFrameMs: worst,
+      resolution: this.widget.resolutionScale,
+      adaptive: this.adaptiveResolution,
+      tilesVisible: ts?.selected ?? 0,
+      tilesLoaded: ts?.numberOfLoadedTilesTotal ?? 0,
+      tilesPending: ts ? (ts.numberOfPendingRequests ?? 0) + (ts.numberOfTilesProcessing ?? 0) : 0,
+      tileMemoryMB: t ? t.totalMemoryUsageInBytes / 1048576 : 0,
+      modelMemoryMB: ms ? ((ms.geometryByteLength ?? 0) + (ms.texturesByteLength ?? 0)) / 1048576 : 0,
+      globeTilesLoading: scene.globe.tilesLoaded ? 0 : 1,
+      canvas: `${scene.drawingBufferWidth}×${scene.drawingBufferHeight}`,
+      msaa: scene.msaaSamples,
+    });
+  }
+
+  /** The current camera, as plain numbers for a share link (WP 4.6). */
+  getView(): SharedView {
+    const c = this.widget.camera;
+    const g = Cartographic.fromCartesian(c.positionWC);
+    return { lon: CMath.toDegrees(g.longitude), lat: CMath.toDegrees(g.latitude), h: g.height, heading: c.heading, pitch: c.pitch, roll: c.roll };
+  }
+
+  setView(v: SharedView, duration = 0): void {
+    const destination = Cartesian3.fromDegrees(v.lon, v.lat, v.h);
+    const orientation = { heading: v.heading, pitch: v.pitch, roll: v.roll };
+    if (duration > 0) this.widget.camera.flyTo({ destination, orientation, duration });
+    else this.widget.camera.setView({ destination, orientation });
+  }
+
   /** PNG of the current view; the UI burns the classification banner on top (UPL-10). */
   snapshot(): string {
+    // Full resolution, even while adaptive resolution has lowered it.
+    const scale = this.widget.resolutionScale;
+    this.widget.resolutionScale = this.baseScale;
     this.widget.render();
-    return this.widget.canvas.toDataURL("image/png");
+    const png = this.widget.canvas.toDataURL("image/png");
+    this.widget.resolutionScale = scale;
+    return png;
   }
+}
+
+export interface PerfStats {
+  fps: number;
+  frameMs: number;
+  /** 95th percentile frame time over the last half second. */
+  worstFrameMs: number;
+  resolution: number;
+  adaptive: boolean;
+  tilesVisible: number;
+  tilesLoaded: number;
+  tilesPending: number;
+  tileMemoryMB: number;
+  modelMemoryMB: number;
+  globeTilesLoading: number;
+  canvas: string;
+  msaa: number;
+}
+
+export interface SharedView {
+  lon: number;
+  lat: number;
+  h: number;
+  heading: number;
+  pitch: number;
+  roll: number;
 }
 
 function placeMatrix(p: NonNullable<ModelSummary["placement"]>, height: number): Matrix4 {
