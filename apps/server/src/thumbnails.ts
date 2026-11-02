@@ -1,10 +1,10 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ClassificationLevel, ModelSummary } from "@viewer/shared/model";
 import type { Db } from "./db.ts";
 import { PermanentError, type Handler } from "./jobs.ts";
 import { getModel } from "./library.ts";
-import type { Storage } from "./storage.ts";
+import { Storage } from "./storage.ts";
 import type { Browser } from "playwright-core";
 
 /**
@@ -72,10 +72,14 @@ export function thumbnailHandler(db: Db, storage: Storage, renderer: Renderer): 
     const level = c ? { id: c.id, label: c.label, color: c.color, textColor: c.text_color, order: c.ord } : null;
     const bytes = await renderer.render({ ...m, version, source: v.source, ...(v.placement ? { placement: v.placement } : {}) }, level);
     if (!bytes) throw new PermanentError("The model rendered empty, so there is no thumbnail.");
-    const rel = `${modelId}/thumbs/v${version}.webp`;
+    // Files are cached as immutable, so a re-render (a new classification band) gets a new name.
+    const rel = `${modelId}/thumbs/v${version}-${Date.now().toString(36)}.webp`;
     const out = path.join(storage.files, rel);
     await mkdir(path.dirname(out), { recursive: true });
     await writeFile(out, bytes);
+    const [old] = await db.query<{ thumbnail: string | null }>("SELECT thumbnail FROM versions WHERE model_id = $1 AND version = $2", [modelId, version]);
     await db.query("UPDATE versions SET thumbnail = $3 WHERE model_id = $1 AND version = $2", [modelId, version, `files/${rel}`]);
+    const prev = old?.thumbnail?.startsWith("files/") ? Storage.inside(storage.files, old.thumbnail.slice(6)) : null;
+    if (prev && prev !== out) await rm(prev, { force: true });
   };
 }
