@@ -110,8 +110,10 @@ export function createTerrariumTerrain(opts: TerrariumOptions): CustomHeightmapT
         for (let c = 0; c < n; c++) {
           const lon = CMath.toDegrees(rect.west + ((rect.east - rect.west) * c) / (n - 1));
           const [mx, my] = toMerc(lon, lat);
-          const tx = Math.min(world - 1, Math.floor(mx));
-          const ty = Math.min(world - 1, Math.floor(my));
+          // Clamp to the tiles gathered above: on the east and south edges mx/my can land
+          // exactly on the next tile's boundary, which left a 0 m trench (a thin white seam).
+          const tx = Math.max(tx0, Math.min(tx1, Math.floor(mx)));
+          const ty = Math.max(ty0, Math.min(ty1, Math.floor(my)));
           const t = tiles.get(`${tx}/${ty}`);
           if (!t) continue;
           const scale = 2 ** (t.z - z); // < 1 when we fell back to a parent

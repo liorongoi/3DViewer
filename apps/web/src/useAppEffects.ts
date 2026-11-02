@@ -50,7 +50,16 @@ export function useAppEffects(): void {
 
   useEffect(() => {
     if (!engine) return;
-    if (tool === "distance" || tool === "path") {
+    if (tool !== "sight") engine.sight.cancel();
+    if (tool !== "viewshed") engine.viewshed.placing.set(false);
+    if (tool === "sight" || tool === "viewshed") {
+      engine.fly.disable();
+      engine.tour.stop();
+      engine.measure.cancel();
+      if (tool === "sight") engine.sight.start();
+      else engine.viewshed.start();
+      useApp.getState().set({ rightOpen: true, rightTab: "analysis" });
+    } else if (tool === "distance" || tool === "path") {
       engine.fly.disable();
       engine.tour.stop();
       engine.measure.start(tool);
@@ -64,6 +73,14 @@ export function useAppEffects(): void {
       engine.fly.disable();
     }
   }, [engine, tool]);
+
+  // The viewshed tool ends by itself once the observer is placed.
+  useEffect(() => {
+    if (!engine) return;
+    return engine.viewshed.placing.subscribe(() => {
+      if (!engine.viewshed.placing.get() && useApp.getState().tool === "viewshed") useApp.getState().set({ tool: "none" });
+    });
+  }, [engine]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -101,6 +118,8 @@ export function useAppEffects(): void {
       else if (k === "M") s.set({ tool: s.tool === "path" ? "none" : "path" });
       else if (k === "m") s.set({ tool: s.tool === "distance" ? "none" : "distance" });
       else if (lower === "g") s.set({ tool: "fly" });
+      else if (lower === "i") s.set({ tool: s.tool === "sight" ? "none" : "sight" });
+      else if (lower === "v") s.set({ tool: s.tool === "viewshed" ? "none" : "viewshed" });
       else if (lower === "w" && engine) { engine.camera.leftDrag = "orbit"; s.set({ tool: "none" }); }
       else if (lower === "e" && engine) { engine.camera.leftDrag = "pan"; s.set({ tool: "none" }); }
       else if (lower === "l") s.set({ leftOpen: !s.leftOpen });

@@ -8,3 +8,7 @@ export * from "./engine/viewer-engine";
 export type { Measurement, MeasureKind } from "./engine/measure-tool";
 export type { Viewpoint } from "./engine/fly";
 export { BASE_MAPS, TERRAINS, type BaseMapDef, type TerrainDef } from "./engine/basemaps";
+export { SightlineTool, type SightPair, type ProfileSample } from "./engine/sightline";
+export { Viewshed, type ViewshedState } from "./engine/viewshed";
+export { UserLayers, type UserLayer, type UserLayerSource } from "./engine/user-layers";
+export type { WmtsLayerInfo, WmsLayerInfo } from "./engine/ogc";

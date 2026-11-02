@@ -6,6 +6,7 @@ import { useEngine, useSignal } from "../engine";
 import { useApp } from "../state/store";
 import { Bookmark, Copy, Eye, EyeOff, Info, Orbit, Play, Route, Ruler, StopCircle, Trash2, Video, X } from "./icons";
 import { IconButton, Panel, Segmented, StatusBadge, cx } from "./primitives";
+import { AnalysisTab } from "./AnalysisTab";
 
 /** Right panel: Measurements (MSR-04/05), Properties (UPL-04) and Fly-by tours. */
 export function SidePanel({ onClose, className }: { onClose?: () => void; className?: string }) {
@@ -13,12 +14,13 @@ export function SidePanel({ onClose, className }: { onClose?: () => void; classN
   const tab = useApp((s) => s.rightTab);
   const set = useApp((s) => s.set);
   return (
-    <Panel className={cx("w-[320px] max-h-full", className)}>
+    <Panel className={cx("w-[340px] max-h-full", className)}>
       <header className="flex h-11 shrink-0 items-center gap-1 ps-1.5 pe-1.5 border-b border-line">
         <div role="tablist" className="flex flex-1 gap-0.5">
           {(
             [
               ["measure", t("viewer.measurements")],
+              ["analysis", "Analysis"],
               ["props", t("viewer.properties")],
               ["tours", "Fly-by"],
             ] as const
@@ -30,7 +32,7 @@ export function SidePanel({ onClose, className }: { onClose?: () => void; classN
               type="button"
               onClick={() => set({ rightTab: id })}
               className={cx(
-                "h-8 rounded-[6px] px-2.5 text-[13px] font-medium",
+                "h-8 whitespace-nowrap rounded-[6px] px-2 text-[13px] font-medium",
                 tab === id ? "bg-s3 text-fg" : "text-fg3 hover:text-fg",
               )}
             >
@@ -46,6 +48,7 @@ export function SidePanel({ onClose, className }: { onClose?: () => void; classN
       </header>
       <div className="min-h-0 flex-1 overflow-auto scrollbar-thin">
         {tab === "measure" && <MeasurementsTab />}
+        {tab === "analysis" && <AnalysisTab />}
         {tab === "props" && <PropertiesTab />}
         {tab === "tours" && <ToursTab />}
       </div>
@@ -212,6 +215,7 @@ function PropertiesTab() {
           </div>
         ))}
       </dl>
+      <GroundOffset />
       <div className="flex items-start gap-2 rounded-[8px] bg-s2 p-2 text-[12px] text-fg3">
         <Info size={14} className="mt-0.5 shrink-0" />
         Editing metadata is part of the upload portal (Phase 4). This prototype shows it read-only.
@@ -286,5 +290,39 @@ function ToursTab() {
         </button>
       </section>
     </div>
+  );
+}
+
+/** Fine height adjustment of the open model against the terrain (VWR-GEO-02). */
+function GroundOffset() {
+  const engine = useEngine();
+  const offset = useSignal(engine?.groundOffset, 0);
+  const terrain = useSignal(engine?.terrainId, "none");
+  return (
+    <section className="rounded-[8px] border border-line bg-s2 p-2">
+      <div className="mb-1 flex items-center justify-between text-[12px]">
+        <span className="font-medium">Height on the terrain</span>
+        <span className="num text-fg2" dir="ltr">
+          {offset >= 0 ? "+" : ""}
+          {offset.toFixed(1)} m
+        </span>
+      </div>
+      <input
+        type="range"
+        min={-200}
+        max={200}
+        step={0.1}
+        value={Math.max(-200, Math.min(200, offset))}
+        onChange={(e) => engine?.setGroundOffset(Number(e.target.value))}
+        className="w-full accent-[var(--accent)]"
+        aria-label="Height on the terrain"
+      />
+      <div className="mt-1 flex items-center justify-between text-[11px] text-fg3">
+        <span>{terrain === "none" ? "No terrain: the model keeps its own heights." : "Set automatically so the model sits on the ground."}</span>
+        <button type="button" className="text-accent hover:underline" onClick={() => void engine?.placeOnGround()}>
+          Reset
+        </button>
+      </div>
+    </section>
   );
 }

@@ -44,6 +44,7 @@ import { effectiveVisibility, layersFromGltf, type Layer } from "../layers/layer
 import { BASE_MAPS, TERRAINS, makeBaseLayers } from "./basemaps";
 import { SightlineTool } from "./sightline";
 import { Viewshed } from "./viewshed";
+import { UserLayers } from "./user-layers";
 
 export type ViewMode = "shaded" | "edges" | "wireframe" | "unlit";
 export type Quality = "low" | "balanced" | "high" | "ultra";
@@ -88,6 +89,7 @@ export class ViewerEngine {
   readonly tour: FlyByTour;
   readonly sight: SightlineTool;
   readonly viewshed: Viewshed;
+  readonly userLayers: UserLayers;
 
   readonly cursor = signal<CursorInfo | null>(null);
   readonly cameraInfo = signal<CameraInfo>({ heading: 0, pitch: -0.5, metresPerPixel: 1, height: 0 });
@@ -111,6 +113,8 @@ export class ViewerEngine {
   private onPinClick: ((id: string) => void) | null = null;
   private baseLayers: ImageryLayer[] = [];
   private baseShown = true;
+  /** Ground height under a glTF model before the user's offset. */
+  private modelBaseHeight = 0;
   private frames = 0;
   private lastFpsTime = performance.now();
   private quality: Quality = "high";
@@ -171,6 +175,7 @@ export class ViewerEngine {
     this.tour = new FlyByTour(scene);
     this.sight = new SightlineTool(scene, this.widget.entities, (pts) => this.sampleGround(pts));
     this.viewshed = new Viewshed(scene, this.widget.entities);
+    this.userLayers = new UserLayers(this.widget, (shown) => this.setBaseImagery(shown));
 
     this.bindPointer();
     scene.postRender.addEventListener(() => this.afterFrame());
@@ -208,6 +213,8 @@ export class ViewerEngine {
       } else {
         const place = summary.placement ?? { ...summary.centre, height: 0 };
         const height = await this.placementHeight(place);
+        this.modelBaseHeight = height;
+        this.groundOffset.set(0);
         let gltfJson: unknown = null;
         const model = await Model.fromGltfAsync({
           url: summary.source.url,
@@ -253,6 +260,9 @@ export class ViewerEngine {
     this.tour.stop();
     this.measure.cancel();
     this.measure.clear();
+    this.sight.cancel();
+    this.sight.clear();
+    this.viewshed.clear();
     if (this.model) this.widget.scene.primitives.remove(this.model);
     if (this.tileset) this.widget.scene.primitives.remove(this.tileset);
     this.model = null;
@@ -427,12 +437,15 @@ export class ViewerEngine {
     }
   }
 
-  private async placeOnGround(): Promise<void> {
+  /** Put the open model back on the ground: automatic fit, offset reset to zero. */
+  async placeOnGround(): Promise<void> {
     const m = this.current.get();
-    if (this.tileset && m) return this.fitTilesetToGround(this.tileset, m);
-    if (!this.model || !m?.placement) return;
-    const h = await this.placementHeight(m.placement);
-    this.model.modelMatrix = Transforms.eastNorthUpToFixedFrame(Cartesian3.fromDegrees(m.placement.lon, m.placement.lat, h));
+    if (this.tileset && m) await this.fitTilesetToGround(this.tileset, m);
+    else if (this.model && m?.placement) {
+      this.modelBaseHeight = await this.placementHeight(m.placement);
+      this.setGroundOffset(0);
+    }
+    this.sight.recomputeAll();
   }
 
   /**
@@ -476,6 +489,12 @@ export class ViewerEngine {
   /** Shift the open 3D Tiles dataset up or down along the local vertical. */
   setGroundOffset(metres: number): void {
     this.groundOffset.set(metres);
+    const m = this.current.get();
+    if (this.model && m?.placement) {
+      this.model.modelMatrix = Transforms.eastNorthUpToFixedFrame(Cartesian3.fromDegrees(m.placement.lon, m.placement.lat, this.modelBaseHeight + metres));
+      this.widget.scene.requestRender();
+      return;
+    }
     const t = this.tileset;
     if (!t) return;
     const c = t.boundingSphere.center;
@@ -495,6 +514,7 @@ export class ViewerEngine {
     this.widget.resolutionScale = { low: 0.75, balanced: 1, high: 1, ultra: Math.min(2, window.devicePixelRatio || 1) }[q];
     scene.msaaSamples = { low: 1, balanced: 2, high: 4, ultra: 8 }[q];
     scene.shadowMap.size = { low: 1024, balanced: 2048, high: 4096, ultra: 4096 }[q];
+    this.viewshed.mapSize = { low: 1024, balanced: 2048, high: 2048, ultra: 4096 }[q];
     scene.postProcessStages.ambientOcclusion.enabled = q === "ultra";
   }
 

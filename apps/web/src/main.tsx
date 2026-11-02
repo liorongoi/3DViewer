@@ -8,7 +8,8 @@ import { App } from "./App";
 
 // "?render-only" shows just the 3D canvas; used by the thumbnail renderer (plan WP 3.5).
 const renderOnly = new URLSearchParams(location.search).has("render-only");
-if (renderOnly) {
+// "?test" also exposes Cesium and the samples to the browser tests, with the full UI.
+if (renderOnly || new URLSearchParams(location.search).has("test")) {
   void Promise.all([import("cesium"), import("@viewer/shared")]).then(([Cesium, shared]) => {
     Object.assign(window, { Cesium, __samples: shared.SAMPLE_LIBRARY });
   });

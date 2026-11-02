@@ -171,37 +171,44 @@ export class SightlineTool {
     const B = Cartographic.fromDegrees(pair.b.lon, pair.b.lat);
     const geo = new EllipsoidGeodesic(A, B);
     const D = geo.surfaceDistance;
-    // About one sample per metre up to 600 samples; denser than the terrain, close to building scale.
-    const n = Math.max(32, Math.min(600, Math.round(D)));
+    // About one sample per metre up to 300 samples. Surface sampling renders the scene once
+    // per sample, so the terrain profile is shown first and the buildings fill in after.
+    const n = Math.max(32, Math.min(300, Math.round(D)));
     const pts: Cartographic[] = [];
     for (let i = 0; i <= n; i++) pts.push(geo.interpolateUsingFraction(i / n, new Cartographic()));
-    const [surf, ground] = await Promise.all([
-      this.scene.sampleHeightMostDetailed(pts.map((p) => Cartographic.clone(p)), this.entities.values).catch(() => pts.map(() => undefined)),
-      this.sampleGround(pts.map((p) => Cartographic.clone(p))).catch(() => pts.map((p) => ((p.height = 0), p))),
-    ]);
+    const ground = await this.sampleGround(pts.map((p) => Cartographic.clone(p))).catch(() => pts.map((p) => ((p.height = 0), p)));
     const hA = pair.a.h + pair.aHeight;
     const hB = pair.b.h + pair.bHeight;
     const k = this.defaults.get().refraction ? 0.13 : 0;
-    const profile: ProfileSample[] = pts.map((p, i) => {
-      const d = (D * i) / n;
-      const g = ground[i]?.height ?? 0;
-      const s = surf[i]?.height;
-      const surface = s !== undefined && Number.isFinite(s) ? Math.max(s, g) : g;
-      // Straight 3D chord expressed as ellipsoidal height: linear minus the earth bulge, plus refraction.
-      const sight = hA + ((hB - hA) * d) / (D || 1) - ((1 - k) * d * (D - d)) / (2 * R_EARTH);
-      return { d, lon: (p.longitude * 180) / Math.PI, lat: (p.latitude * 180) / Math.PI, ground: g, surface, sight };
-    });
-    // Ignore the first and last metre: that is the ground the observer and target stand on.
-    let block: ProfileSample | null = null;
-    let worst = -Infinity;
-    for (const s of profile) {
-      if (s.d < 1 || s.d > D - 1) continue;
-      const deficit = s.surface - s.sight;
-      worst = Math.max(worst, deficit);
-      if (!block && deficit > 0.05) block = s;
-    }
-    this.patch(id, { profile, block, visible: !block, distance: D, worstDeficit: Number.isFinite(worst) ? worst : 0, computing: false });
-    this.draw(this.pairs.get().find((p) => p.id === id)!);
+    const build = (surf: (Cartographic | undefined)[] | null): ProfileSample[] =>
+      pts.map((p, i) => {
+        const d = (D * i) / n;
+        const g = ground[i]?.height ?? 0;
+        const s = surf?.[i]?.height;
+        const surface = s !== undefined && Number.isFinite(s) ? Math.max(s, g) : g;
+        // Straight 3D chord expressed as ellipsoidal height: linear minus the earth bulge, plus refraction.
+        const sight = hA + ((hB - hA) * d) / (D || 1) - ((1 - k) * d * (D - d)) / (2 * R_EARTH);
+        return { d, lon: (p.longitude * 180) / Math.PI, lat: (p.latitude * 180) / Math.PI, ground: g, surface, sight };
+      });
+    const finish = (profile: ProfileSample[], computing: boolean) => {
+      // Ignore the first and last metre: that is the ground the observer and target stand on.
+      let block: ProfileSample | null = null;
+      let worst = -Infinity;
+      for (const s of profile) {
+        if (s.d < 1 || s.d > D - 1) continue;
+        const deficit = s.surface - s.sight;
+        worst = Math.max(worst, deficit);
+        if (!block && deficit > 0.05) block = s;
+      }
+      if (!this.pairs.get().some((p) => p.id === id)) return;
+      this.patch(id, { profile, block, visible: computing ? null : !block, distance: D, worstDeficit: Number.isFinite(worst) ? worst : 0, computing });
+      if (!computing) this.draw(this.pairs.get().find((p) => p.id === id)!);
+    };
+    finish(build(null), true);
+    const surf = await this.scene
+      .sampleHeightMostDetailed(pts.map((p) => Cartographic.clone(p)), this.entities.values)
+      .catch(() => null);
+    finish(build(surf), false);
   }
 
   private patch(id: string, p: Partial<SightPair>): void {

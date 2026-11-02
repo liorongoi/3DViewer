@@ -28,6 +28,11 @@
   --status-production: #f2b33d;
   --status-current: #3dd68c;
   --status-superseded: #8f98a8;
+  /* analysis: line of sight, profile, viewshed */
+  --ok: #3dd68c;
+  --bad: #ff5a5f;
+  --profile-ground: #5b5a4c;
+  --profile-surface: #8e7f9e;
   --danger: #ff6b6b;
   --highlight: rgb(255 255 255 / 0.06);
   --shadow: 0 8px 32px rgb(0 0 0 / 0.35);
@@ -52,6 +57,10 @@
   --status-production: #8a5a00;
   --status-current: #0f7a47;
   --status-superseded: #56606e;
+  --ok: #0f7a47;
+  --bad: #c62a2f;
+  --profile-ground: #b9b49c;
+  --profile-surface: #9d8bb3;
   --danger: #c0262d;
   --highlight: rgb(255 255 255 / 0.6);
   --shadow: 0 8px 28px rgb(20 22 26 / 0.14);

@@ -60,6 +60,8 @@ export {
   Video,
   Wand2,
   ScissorsLineDashed,
+  Radar,
+  ScanEye,
 } from "lucide-react";
 export { CircleDashed as CircleDraft } from "lucide-react";
 export { CircleHalf } from "./circle-half";

@@ -47,6 +47,7 @@ uniform vec4 visibleColor;
 uniform vec4 hiddenColor;
 uniform float strength;
 uniform float debugMode;
+uniform float mapSize;
 in vec2 v_textureCoordinates;
 
 void main() {
@@ -62,8 +63,13 @@ void main() {
   if (dist > radius) { out_FragColor = color; return; }
   vec3 dirWC = czm_inverseViewRotation * normalize(toFrag);
   float stored = czm_unpackDepth(czm_textureCube(shadowCube, dirWC));
-  // Bias grows with distance: cube texels get larger farther away.
-  float bias = (0.6 + dist * 0.006) / radius;
+  // Slope-scaled bias. One cube texel spans about 2/size radians, so at a grazing angle the
+  // stored distance of neighbouring texels differs by dist * texel / cos(angle). Without
+  // this, flat ground far from a low observer shows false "hidden" stripes.
+  vec3 n = normalize(cross(dFdx(positionEC.xyz), dFdy(positionEC.xyz)));
+  float cosA = abs(dot(n, normalize(toFrag)));
+  float texel = 2.0 / mapSize;
+  float bias = (0.3 + dist * texel * 1.5 / max(cosA, 0.06)) / radius;
   float visible = step(dist / radius - bias, stored);
   if (debugMode > 2.5) { float df = stored * radius - dist; out_FragColor = vec4(clamp(-df/20.0,0.0,1.0), clamp(df/20.0,0.0,1.0), abs(df) < 1.0 ? 1.0 : 0.0, 1.0); return; }
   if (debugMode > 0.5) { float v = debugMode > 1.5 ? dist / radius : stored; out_FragColor = vec4(fract(v*10.0), v, visible, 1.0); return; }
@@ -85,6 +91,8 @@ export class Viewshed {
   readonly dragging = signal(false);
   /** Development aid: 1 shows the cube depth, 2 the fragment distance. */
   debugMode = 0;
+  /** Cube face size in pixels; set from the quality preset. */
+  mapSize = 2048;
 
   private shadowMap: ShadowMap | null = null;
   private stage: PostProcessStage | null = null;
@@ -175,7 +183,7 @@ export class Viewshed {
         isPointLight: true,
         pointLightRadius: s.radius,
         cascadesEnabled: false,
-        size: 2048,
+        size: this.mapSize,
         softShadows: false,
         normalOffset: false,
         fromLightSource: false,
@@ -204,6 +212,7 @@ export class Viewshed {
           hiddenColor: Color.fromCssColorString("#FF4D57").withAlpha(1),
           strength: 0.5,
           debugMode: () => this.debugMode,
+          mapSize: () => this.mapSize,
         },
       });
       scene.postProcessStages.add(this.stage);

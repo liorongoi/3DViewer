@@ -5,7 +5,7 @@ import { SAMPLE_LIBRARY } from "@viewer/shared";
 import { useState } from "react";
 import { useEngine, useSignal } from "../engine";
 import { useApp } from "../state/store";
-import { Box, Crosshair, Eye, House, Layers, Moon, Orbit, Plane, Route, Ruler, Search, Upload } from "./icons";
+import { Box, Crosshair, Eye, House, Layers, Moon, Orbit, Plane, Route, Ruler, Search, Upload, ScanEye, Radar, Map } from "./icons";
 
 /** Ctrl+K: every command, layer and model, plus "fly to coordinates" (UI spec 1.1 #6). */
 export function CommandPalette({ onOpenModel }: { onOpenModel: (id: string) => void }) {
@@ -51,6 +51,9 @@ export function CommandPalette({ onOpenModel }: { onOpenModel: (id: string) => v
             <Command.Item className={item} onSelect={run(() => void engine?.home())}><House size={16} />{t("viewer.home")}<Shortcut k="H" /></Command.Item>
             <Command.Item className={item} onSelect={run(() => set({ tool: "distance" }))}><Ruler size={16} />{t("viewer.measureDistance")}<Shortcut k="M" /></Command.Item>
             <Command.Item className={item} onSelect={run(() => set({ tool: "path" }))}><Route size={16} />{t("viewer.measurePath")}<Shortcut k="⇧M" /></Command.Item>
+            <Command.Item className={item} onSelect={run(() => set({ tool: "sight" }))}><ScanEye size={16} />Line of sight between points<Shortcut k="I" /></Command.Item>
+            <Command.Item className={item} onSelect={run(() => set({ tool: "viewshed" }))}><Radar size={16} />360° visibility from a point<Shortcut k="V" /></Command.Item>
+            <Command.Item className={item} onSelect={run(() => set({ leftOpen: true, leftTab: "map" }))}><Map size={16} />Base map, terrain and your data</Command.Item>
             <Command.Item className={item} onSelect={run(() => set({ tool: "fly" }))}><Plane size={16} />Fly mode<Shortcut k="G" /></Command.Item>
             <Command.Item className={item} onSelect={run(() => engine?.startOrbitTour())}><Orbit size={16} />Fly-by: cinematic orbit</Command.Item>
             {(["shaded", "edges", "wireframe", "unlit"] as const).map((m, i) => (

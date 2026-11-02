@@ -5,7 +5,7 @@ import { readPref, writePref } from "./prefs";
 
 export type Direction = "earth" | "instrument" | "hud";
 export type Route = "home" | "viewer";
-export type Tool = "none" | "distance" | "path" | "fly";
+export type Tool = "none" | "distance" | "path" | "fly" | "sight" | "viewshed";
 
 export interface Filters {
   query: string;
@@ -32,7 +32,8 @@ interface AppState {
   globe: boolean;
   leftOpen: boolean;
   rightOpen: boolean;
-  rightTab: "measure" | "props" | "tours";
+  rightTab: "measure" | "props" | "tours" | "analysis";
+  leftTab: "model" | "map";
   libraryView: "grid" | "globe";
   paletteOpen: boolean;
   helpOpen: boolean;
@@ -62,6 +63,7 @@ export const useApp = create<AppState>((set) => ({
   leftOpen: true,
   rightOpen: false,
   rightTab: "measure",
+  leftTab: "model",
   libraryView: "grid",
   paletteOpen: false,
   helpOpen: false,

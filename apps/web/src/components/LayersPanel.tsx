@@ -4,6 +4,8 @@ import { effectiveVisibility, filterLayers, isolate, setAllVisible, setVisible, 
 import { useEngine, useSignal } from "../engine";
 import { ChevronRight, Eye, EyeOff, Focus, Layers, Scan, Search, X } from "./icons";
 import { IconButton, Panel, cx } from "./primitives";
+import { MapTab } from "./MapTab";
+import { useApp } from "../state/store";
 
 /** Layers panel (LYR-01..05): tree, eye toggles, search, show/hide all, isolate, Alt+click solo, drag-paint. */
 export function LayersPanel({ onClose, className }: { onClose?: () => void; className?: string }) {
@@ -14,6 +16,8 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
   const [beforeIsolate, setBeforeIsolate] = useState<Layer[] | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const paint = useRef<boolean | null>(null);
+  const leftTab = useApp((s) => s.leftTab);
+  const setApp = useApp((s) => s.set);
 
   const vis = useMemo(() => effectiveVisibility(layers), [layers]);
   const shown = useMemo(() => filterLayers(layers, query), [layers, query]);
@@ -92,16 +96,40 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
   };
 
   return (
-    <Panel className={cx("w-[280px] max-h-full", className)}>
+    <Panel className={cx("w-[300px] max-h-full", className)}>
       <header className="flex h-11 shrink-0 items-center gap-2 ps-3 pe-1.5 border-b border-line">
         <Layers size={16} className="text-fg2" />
-        <h2 className="flex-1 text-[13px] font-semibold">{t("viewer.layers")}</h2>
+        <div role="tablist" className="flex flex-1 gap-0.5">
+          {(
+            [
+              ["model", t("viewer.layers")],
+              ["map", "Map & data"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              role="tab"
+              type="button"
+              aria-selected={leftTab === id}
+              onClick={() => setApp({ leftTab: id })}
+              className={cx("h-8 rounded-[6px] px-2.5 text-[13px] font-medium", leftTab === id ? "bg-s3 text-fg" : "text-fg3 hover:text-fg")}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         {onClose && (
           <IconButton size="sm" label={t("common.close")} shortcut="L" onClick={onClose}>
             <X size={15} />
           </IconButton>
         )}
       </header>
+      {leftTab === "map" ? (
+        <div className="min-h-0 flex-1 overflow-auto scrollbar-thin">
+          <MapTab />
+        </div>
+      ) : (
+      <>
       <div className="flex flex-col gap-2 p-2 border-b border-line">
         <label className="flex h-8 items-center gap-2 rounded-[6px] bg-s2 px-2 border border-line focus-within:border-accent">
           <Search size={14} className="text-fg3" />
@@ -141,6 +169,8 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
           <p className="p-3 text-fg3">{t("viewer.noLayers")}</p>
         )}
       </div>
+      </>
+      )}
     </Panel>
   );
 }
