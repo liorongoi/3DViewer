@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
-import { useClassOf } from "../state/classification";
+import { useClassOf, useLevels } from "../state/classification";
 import { useLibrary } from "../state/library";
 import { useTranslation } from "react-i18next";
-import { SAMPLE_CLASSIFICATIONS, UPDATE_STATUSES, type ModelSummary } from "@viewer/shared";
+import { UPDATE_STATUSES, type ModelSummary } from "@viewer/shared";
 import { useApp, type Filters } from "../state/store";
 import { Box, Boxes, ChevronDown, FileBox, Search, X } from "./icons";
 import { StatusBadge, cx } from "./primitives";
@@ -52,6 +52,7 @@ export function SearchField({ className, autoFocus }: { className?: string; auto
 }
 
 export function FilterChips({ className }: { className?: string }) {
+  const levels = useLevels();
   const { t } = useTranslation();
   const f = useApp((s) => s.filters);
   const setFilters = useApp((s) => s.setFilters);
@@ -62,7 +63,7 @@ export function FilterChips({ className }: { className?: string }) {
     { key: "operation", label: t("library.filters.operation"), options: uniq("operation").map((v) => ({ value: v, label: v })) },
     { key: "status", label: t("library.filters.status"), options: UPDATE_STATUSES.map((s) => ({ value: s, label: t(`status.${s}`) })) },
     { key: "entity", label: t("library.filters.entity"), options: uniq("responsibleEntity").map((v) => ({ value: v, label: v })) },
-    { key: "classification", label: t("library.filters.classification"), options: SAMPLE_CLASSIFICATIONS.map((c) => ({ value: c.id, label: c.label })) },
+    { key: "classification", label: t("library.filters.classification"), options: levels.map((c) => ({ value: c.id, label: c.label })) },
   ];
   const any = chips.some((c) => f[c.key]);
   return (

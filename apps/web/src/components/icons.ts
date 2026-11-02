@@ -65,6 +65,11 @@ export {
   ScanEye,
   FolderOpen,
   XCircle,
+  ShieldCheck,
+  Lock,
+  ArrowUp,
+  ArrowDown,
+  HardDrive,
 } from "lucide-react";
 export { CircleDashed as CircleDraft } from "lucide-react";
 export { CircleHalf } from "./circle-half";

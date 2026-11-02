@@ -3,6 +3,7 @@ import { rm, statfs } from "node:fs/promises";
 import path from "node:path";
 import type { FastifyInstance, FastifyRequest, onRequestAsyncHookHandler } from "fastify";
 import { argon2id, argon2Verify } from "hash-wasm";
+import type { BaseMapConfig } from "@viewer/shared/model";
 import { audit } from "./audit.ts";
 import type { Db, Queryable } from "./db.ts";
 import { enqueue } from "./jobs.ts";
@@ -92,32 +93,6 @@ export async function quotaError(q: Queryable, addBytes: number): Promise<string
 }
 
 // ---- Base map sources (RND-11) ----
-
-export interface BaseMapSource {
-  id: string;
-  label: string;
-  /** Imagery draped on the globe, or terrain under it. */
-  kind: "imagery" | "terrain";
-  /** xyz / tms / wmts for imagery; terrarium (PNG heights) or quantized-mesh for terrain. */
-  type: "xyz" | "tms" | "wmts" | "terrarium" | "quantized-mesh";
-  /** Template with {z}/{x}/{y} for xyz and terrarium; the service root for tms, wmts and quantized-mesh. Relative paths resolve against the web app. */
-  url: string;
-  layer?: string;
-  style?: string;
-  matrixSet?: string;
-  format?: string;
-  maxZoom?: number;
-  attribution?: string;
-}
-
-export interface BaseMapConfig {
-  sources: BaseMapSource[];
-  /** What the viewer opens with; ids from `sources` or the built-in catalogue. */
-  defaultImagery?: string;
-  defaultTerrain?: string;
-  /** Hide the built-in internet presets, for the internal network. */
-  hideOnline?: boolean;
-}
 
 const short = { type: "string", maxLength: 200 } as const;
 const baseMapSchema = {

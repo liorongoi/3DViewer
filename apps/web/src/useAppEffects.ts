@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { findModel, refreshLibrary } from "./state/library";
-import { findServer, recordView } from "./server/api";
+import { findServer, getBaseMaps, listLevels, recordView } from "./server/api";
 import { readShare } from "./share";
 import { setVisible } from "@viewer/core";
 import { useEngine } from "./engine";
@@ -60,7 +60,11 @@ export function useAppEffects(): void {
       const server = await findServer();
       if (!live) return;
       useApp.setState({ server });
-      if (server) await refreshLibrary().catch(() => useApp.setState({ server: null }));
+      if (server) {
+        const levels = await listLevels(server).catch(() => null);
+        if (levels?.length) useApp.setState({ levels });
+        await refreshLibrary().catch(() => useApp.setState({ server: null }));
+      }
       if (live) useApp.setState({ libraryReady: true });
     })();
     return () => {
@@ -68,6 +72,16 @@ export function useAppEffects(): void {
     };
   }, []);
   const libraryReady = useApp((s) => s.libraryReady);
+
+  // The admin's base map sources and defaults (WP 3.9, RND-11), once the engine and server are both up.
+  const server = useApp((s) => s.server);
+  useEffect(() => {
+    if (!engine || !server) return;
+    void getBaseMaps(server)
+      .then((cfg) => (cfg.sources.length || cfg.hideOnline || cfg.defaultImagery || cfg.defaultTerrain ? engine.useSiteBaseMaps(cfg, server.base) : []))
+      .then((problems) => problems.forEach((p) => console.warn(p)))
+      .catch(() => undefined);
+  }, [engine, server]);
 
   // A share link opens its model at the shared camera, view mode and layer visibility (WP 4.6).
   useEffect(() => {

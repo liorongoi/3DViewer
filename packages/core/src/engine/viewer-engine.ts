@@ -39,13 +39,13 @@ import {
   HeightReference,
   DistanceDisplayCondition,
 } from "cesium";
-import type { ModelSummary, UpdateStatus } from "@viewer/shared";
+import type { BaseMapConfig, ModelSummary, UpdateStatus } from "@viewer/shared";
 import { CameraController } from "./camera-controller";
 import { MeasureTool } from "./measure-tool";
 import { FlyByTour, FlyMode, captureViewpoint, type Viewpoint } from "./fly";
 import { signal } from "../signal";
 import { effectiveVisibility, layersFromGltf, type Layer } from "../layers/layers";
-import { BASE_MAPS, TERRAINS, makeBaseLayers } from "./basemaps";
+import { applySiteConfig, catalogue, makeBaseLayers } from "./basemaps";
 import { ENVIRONMENTS, environmentSh, environmentSpecular, type EnvironmentId } from "./environments";
 import { cubeToKtx2 } from "./ktx2";
 import { createLayeredTerrain, type DemSource, type LayerableTerrain } from "./terrain";
@@ -460,7 +460,7 @@ export class ViewerEngine {
 
   /** Swap the base map (VWR-GEO-01). User layers above it are kept. */
   async setBaseMap(id: string): Promise<void> {
-    const def = BASE_MAPS.find((b) => b.id === id);
+    const def = catalogue.get().baseMaps.find((b) => b.id === id);
     if (!def) return;
     const layers = await makeBaseLayers(id);
     const coll = this.widget.imageryLayers;
@@ -474,9 +474,24 @@ export class ViewerEngine {
     this.applyPinVisibility();
   }
 
+  /**
+   * This site's base map sources from the server (WP 3.9). They join the pickers, and the
+   * admin's defaults are shown. A source that fails to load leaves the current one in place.
+   */
+  async useSiteBaseMaps(cfg: BaseMapConfig, serverBase: string): Promise<string[]> {
+    applySiteConfig(cfg, serverBase);
+    const problems: string[] = [];
+    const { baseMaps, terrains } = catalogue.get();
+    const imagery = cfg.defaultImagery && baseMaps.some((b) => b.id === cfg.defaultImagery) ? cfg.defaultImagery : baseMaps.some((b) => b.id === this.baseMapId.get()) ? null : "bundled";
+    const terrain = cfg.defaultTerrain && terrains.some((t) => t.id === cfg.defaultTerrain) ? cfg.defaultTerrain : terrains.some((t) => t.id === this.terrainId.get()) ? null : "none";
+    if (imagery) await this.setBaseMap(imagery).catch((e) => problems.push(`Base map "${imagery}": ${e instanceof Error ? e.message : e}`));
+    if (terrain) await this.setTerrain(terrain).catch((e) => problems.push(`Terrain "${terrain}": ${e instanceof Error ? e.message : e}`));
+    return problems;
+  }
+
   /** Swap the terrain (VWR-GEO-01) and put the open model back on the ground. */
   async setTerrain(id: string): Promise<void> {
-    const def = TERRAINS.find((t) => t.id === id);
+    const def = catalogue.get().terrains.find((t) => t.id === id);
     if (!def) return;
     const base = await def.create();
     // The user's elevation GeoTIFFs replace the chosen terrain inside their footprints.

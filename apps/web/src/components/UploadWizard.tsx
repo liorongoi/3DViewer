@@ -3,13 +3,14 @@ import { useTranslation } from "react-i18next";
 import { checkFiles, converterForEpsg, fmtBytes, prepareFiles, type CheckReport, type LocalFile } from "@viewer/core";
 import { uploadAndIngest, type UploadProgress } from "../server/api";
 import { refreshLibrary } from "../state/library";
-import { SAMPLE_CLASSIFICATIONS, UPDATE_STATUSES, type ModelSummary, type UpdateStatus } from "@viewer/shared";
+import { UPDATE_STATUSES, type ModelSummary, type UpdateStatus } from "@viewer/shared";
 import { useEngine } from "../engine";
 import { useApp } from "../state/store";
 import { useOpenModel } from "../useAppEffects";
 import { fromDrop, fromInput, suggestLayer } from "../upload/read-drop";
 import { Check, ChevronLeft, ChevronRight, Upload, Wand2, X, AlertTriangle, FolderOpen, XCircle } from "./icons";
 import { IconButton, cx } from "./primitives";
+import { useLevels } from "../state/classification";
 
 const STEPS = ["drop", "check", "place", "layers", "details"] as const;
 
@@ -41,6 +42,7 @@ interface Place {
  * model is added to this session's library. The server keeps them from Phase 3 on.
  */
 export function UploadWizard() {
+  const levels = useLevels();
   const { t } = useTranslation();
   const open = useApp((s) => s.uploadOpen);
   const set = useApp((s) => s.set);
@@ -59,7 +61,7 @@ export function UploadWizard() {
   const [progress, setProgress] = useState<UploadProgress | null>(null);
   const server = useApp((s) => s.server);
   const folderInput = useRef<HTMLInputElement>(null);
-  const chosen = SAMPLE_CLASSIFICATIONS.find((c) => c.id === cls);
+  const chosen = levels.find((c) => c.id === cls);
   const report = checked?.report ?? null;
 
   useEffect(() => {
@@ -406,7 +408,7 @@ export function UploadWizard() {
                   <option value="" disabled>
                     Choose the classification…
                   </option>
-                  {SAMPLE_CLASSIFICATIONS.map((c) => (
+                  {levels.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.label.replace(/ · .*$/, "")}
                     </option>

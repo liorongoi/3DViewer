@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { ensureAdminPassword } from "./admin.ts";
+import { audit } from "./audit.ts";
 import { buildApp } from "./app.ts";
 import { MIGRATIONS, migrate, openPglite, openPostgres, type Db } from "./db.ts";
 import { seed } from "./seed.ts";
@@ -113,6 +114,11 @@ describe("audit log", () => {
     expect(lines).toHaveLength(2);
     const last = (await read("/api/audit?limit=1")).json()[0];
     expect(last.action).toBe("audit.export");
+  });
+
+  it("an entry with an empty detail field still checks", async () => {
+    await audit(db, { ip: "", host: "test", action: "test.undefined", detail: { kept: 1, dropped: undefined, list: [1, null] } });
+    expect((await read("/api/audit/verify")).json().ok).toBe(true);
   });
 
   it("detects a changed row", async () => {

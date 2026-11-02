@@ -64,3 +64,34 @@ export interface ModelSummary {
   thumbnail?: string;
   sizeBytes: number;
 }
+
+/** A base map or terrain source the admin configured for this site (WP 3.9, RND-11). */
+export interface BaseMapSource {
+  id: string;
+  label: string;
+  /** Imagery draped on the globe, or terrain under it. */
+  kind: "imagery" | "terrain";
+  /** xyz, tms or wmts for imagery; terrarium (PNG heights) or quantized-mesh for terrain. */
+  type: "xyz" | "tms" | "wmts" | "terrarium" | "quantized-mesh";
+  /**
+   * xyz and terrarium: a template with {z}, {x} and {y}. tms and quantized-mesh: the service root.
+   * wmts: a GetCapabilities address, or the service address with layer, style, matrixSet and format.
+   * A path without a scheme is on the VIEWER server.
+   */
+  url: string;
+  layer?: string;
+  style?: string;
+  matrixSet?: string;
+  format?: string;
+  maxZoom?: number;
+  attribution?: string;
+}
+
+export interface BaseMapConfig {
+  sources: BaseMapSource[];
+  /** What the viewer opens with: an id from `sources` or from the built-in list. */
+  defaultImagery?: string;
+  defaultTerrain?: string;
+  /** Hide the built-in internet sources, for the internal network. */
+  hideOnline?: boolean;
+}
