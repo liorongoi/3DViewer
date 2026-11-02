@@ -24,3 +24,13 @@ git clone -q --depth 1 --filter=blob:none --sparse https://github.com/CesiumGS/3
 cp -r "$TMP/tiles/1.0/TilesetWithDiscreteLOD" "$TMP/tiles/1.0/TilesetWithRequestVolume" "$OUT/3dtiles/"
 rm -rf "$OUT"/3dtiles/*/screenshot
 echo "Done: $OUT"
+
+# Georeferenced real-world 3D Tiles from the iTowns sample data repository:
+# Lyon 1st district textured buildings (Data Grand Lyon, Licence Ouverte 2.0) and
+# IGN Lidar HD point cloud of the Tarn gorges (Licence Ouverte 2.0), ~490 MB.
+ITOWNS="$TMP/itowns"
+git clone -q --depth 1 --filter=blob:none --sparse https://github.com/iTowns/iTowns2-sample-data "$ITOWNS"
+(cd "$ITOWNS" && git sparse-checkout set 3DTiles/lyon_1_4978 3DTiles/lidar-hd-gorges-saint-chely-tarn)
+mkdir -p "$OUT/3dtiles/lyon1" "$OUT/3dtiles/tarn-lidar"
+cp -r "$ITOWNS/3DTiles/lyon_1_4978/." "$OUT/3dtiles/lyon1/"
+cp -r "$ITOWNS/3DTiles/lidar-hd-gorges-saint-chely-tarn/." "$OUT/3dtiles/tarn-lidar/"

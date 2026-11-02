@@ -31,7 +31,7 @@ import {
   HorizontalOrigin,
   VerticalOrigin,
   LabelStyle,
-  type Entity,
+  Entity,
   HeightReference,
   DistanceDisplayCondition,
 } from "cesium";
@@ -42,6 +42,8 @@ import { FlyByTour, FlyMode, captureViewpoint, type Viewpoint } from "./fly";
 import { signal } from "../signal";
 import { effectiveVisibility, layersFromGltf, type Layer } from "../layers/layers";
 import { BASE_MAPS, TERRAINS, makeBaseLayers } from "./basemaps";
+import { SightlineTool } from "./sightline";
+import { Viewshed } from "./viewshed";
 
 export type ViewMode = "shaded" | "edges" | "wireframe" | "unlit";
 export type Quality = "low" | "balanced" | "high" | "ultra";
@@ -84,6 +86,8 @@ export class ViewerEngine {
   readonly measure: MeasureTool;
   readonly fly: FlyMode;
   readonly tour: FlyByTour;
+  readonly sight: SightlineTool;
+  readonly viewshed: Viewshed;
 
   readonly cursor = signal<CursorInfo | null>(null);
   readonly cameraInfo = signal<CameraInfo>({ heading: 0, pitch: -0.5, metresPerPixel: 1, height: 0 });
@@ -157,7 +161,7 @@ export class ViewerEngine {
       scene,
       canvas: this.widget.canvas,
       pick: (p) => this.pick(p),
-      isToolActive: () => this.measure.active.get() !== null,
+      isToolActive: () => this.measure.active.get() !== null || this.sight.active.get() || this.viewshed.placing.get() || this.viewshed.dragging.get(),
       onPivotSet: (p) => this.showPivot(p),
     });
     this.camera.onMoveStart = () => this.setMovingQuality(true);
@@ -165,6 +169,8 @@ export class ViewerEngine {
     this.measure = new MeasureTool(this.widget.entities, () => scene.requestRender());
     this.fly = new FlyMode(scene, this.widget.canvas);
     this.tour = new FlyByTour(scene);
+    this.sight = new SightlineTool(scene, this.widget.entities, (pts) => this.sampleGround(pts));
+    this.viewshed = new Viewshed(scene, this.widget.entities);
 
     this.bindPointer();
     scene.postRender.addEventListener(() => this.afterFrame());
@@ -576,13 +582,20 @@ export class ViewerEngine {
 
   // ---------- picking & pointer ----------
 
-  pick(pos: Cartesian2): Cartesian3 | undefined {
+  /**
+   * World position under a screen point: depth-accurate on models, tiles and terrain.
+   * With surfaceOnly, our own drawings (lines, labels, markers) are looked through.
+   */
+  pick(pos: Cartesian2, surfaceOnly = false): Cartesian3 | undefined {
     const scene = this.widget.scene;
-    if (scene.pickPositionSupported) {
+    const onDrawing = surfaceOnly && (scene.pick(pos)?.id as unknown) instanceof Entity;
+    if (scene.pickPositionSupported && !onDrawing) {
       const p = scene.pickPosition(pos);
       if (p && Number.isFinite(p.x) && Cartesian3.magnitude(p) > 1000) return p;
     }
-    return this.widget.camera.pickEllipsoid(pos) ?? undefined;
+    const ray = this.widget.camera.getPickRay(pos);
+    const g = ray && scene.globe.show ? scene.globe.pick(ray, scene) : undefined;
+    return g ?? this.widget.camera.pickEllipsoid(pos) ?? undefined;
   }
 
   private bindPointer(): void {
@@ -596,10 +609,46 @@ export class ViewerEngine {
       pending = null;
       this.cursor.set(null);
       this.measure.setHover(undefined);
+      this.sight.setHover(null);
     });
-    canvas.addEventListener("pointerdown", (e) => {
-      downAt = { x: e.offsetX, y: e.offsetY };
+    // Viewshed observer: drag to move it on the ground, Shift+drag to raise or lower it.
+    let vsDrag: { y: number; h: number } | null = null;
+    canvas.addEventListener(
+      "pointerdown",
+      (e) => {
+        downAt = { x: e.offsetX, y: e.offsetY };
+        if (e.button !== 0 || !this.viewshed.state.get()) return;
+        const picked = this.widget.scene.pick(new Cartesian2(e.offsetX, e.offsetY));
+        if (picked && this.viewshed.isObserver(picked.id)) {
+          vsDrag = { y: e.offsetY, h: this.viewshed.state.get()!.height };
+          this.viewshed.dragging.set(true);
+          canvas.setPointerCapture(e.pointerId);
+          e.stopImmediatePropagation();
+        }
+      },
+      { capture: true },
+    );
+    canvas.addEventListener("pointermove", (e) => {
+      if (!vsDrag) return;
+      if (e.shiftKey) {
+        // Vertical: 1 px = 0.5 % of the radius, so it scales from a room to a valley.
+        const r = this.viewshed.state.get()!.radius;
+        this.viewshed.setHeight(vsDrag.h + (vsDrag.y - e.offsetY) * r * 0.005);
+      } else {
+        const p = this.pick(new Cartesian2(e.offsetX, e.offsetY), true);
+        if (p) this.viewshed.place(p);
+        vsDrag.y = e.offsetY;
+        vsDrag.h = this.viewshed.state.get()!.height;
+      }
     });
+    const endDrag = () => {
+      if (!vsDrag) return;
+      vsDrag = null;
+      downAt = null;
+      setTimeout(() => this.viewshed.dragging.set(false), 0);
+    };
+    canvas.addEventListener("pointerup", endDrag, { capture: true });
+    canvas.addEventListener("pointercancel", endDrag);
     canvas.addEventListener("pointerup", (e) => {
       if (e.button !== 0 || !downAt) return;
       const moved = Math.hypot(e.offsetX - downAt.x, e.offsetY - downAt.y);
@@ -609,6 +658,16 @@ export class ViewerEngine {
       if (this.measure.active.get()) {
         const p = this.pick(pos);
         if (p) this.measure.addPoint(p);
+        return;
+      }
+      if (this.viewshed.placing.get()) {
+        const p = this.pick(pos, true);
+        if (p) this.viewshed.place(p);
+        return;
+      }
+      if (this.sight.active.get()) {
+        const p = this.pick(pos, true);
+        if (p) this.sight.addPoint(p);
         return;
       }
       const picked = this.widget.scene.pick(pos);
@@ -632,6 +691,7 @@ export class ViewerEngine {
       if (!c) return;
       this.cursor.set({ lat: CMath.toDegrees(c.latitude), lon: CMath.toDegrees(c.longitude), height: c.height, onModel: true });
       this.measure.setHover(p);
+      this.sight.setHover(p);
     });
   }
 
