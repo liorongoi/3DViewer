@@ -82,16 +82,32 @@ export function ViewCube({ className }: { className?: string }) {
   const info = useSignal(engine?.cameraInfo, { heading: 0, pitch: -0.5, metresPerPixel: 1, height: 0 });
   const hDeg = (info.heading * 180) / Math.PI;
   const pDeg = (info.pitch * 180) / Math.PI;
-  const face = (v: PresetView, label: string, transform: string) => (
-    <button
-      type="button"
-      aria-label={`${label} view`}
-      onClick={() => void engine?.preset(v)}
-      className="absolute inset-0 grid place-items-center border border-white/15 bg-[rgb(38_42_49/0.92)] text-[10px] font-semibold tracking-wider text-fg2 hover:bg-accent hover:text-accent-on [backface-visibility:hidden]"
-      style={{ transform }}
-    >
-      {label}
-    </button>
+  // Each face is a 3 × 3 grid: the centre looks at that face, the sides at an edge, the corners at a corner.
+  // Together the six faces give the 26 views of NAV-05. Axes are east, north, up.
+  type V = [number, number, number];
+  const face = (label: string, n: V, right: V, up: V, transform: string) => (
+    <div className="absolute inset-0 grid grid-cols-[1fr_2fr_1fr] grid-rows-[1fr_2fr_1fr] border border-white/15 bg-[rgb(38_42_49/0.92)] [backface-visibility:hidden]" style={{ transform }}>
+      {[-1, 0, 1].flatMap((r) =>
+        [-1, 0, 1].map((c) => {
+          const d: V = [0, 1, 2].map((k) => n[k]! + c * right[k]! - r * up[k]!) as V;
+          const centre = r === 0 && c === 0;
+          const name = centre ? `${label} view` : `${label} ${r === 0 || c === 0 ? "edge" : "corner"} view`;
+          return (
+            <button
+              key={`${r}${c}`}
+              type="button"
+              aria-label={name}
+              data-dir={d.join(",")}
+              title={centre ? undefined : name}
+              onClick={() => void engine?.viewFrom(d)}
+              className={cx("grid place-items-center hover:bg-accent hover:text-accent-on", centre ? "text-[10px] font-semibold tracking-wider text-fg2" : "")}
+            >
+              {centre ? label : null}
+            </button>
+          );
+        }),
+      )}
+    </div>
   );
   const s = 26; // half size
   return (
@@ -106,13 +122,14 @@ export function ViewCube({ className }: { className?: string }) {
       <div className="absolute left-1/2 top-1/2 h-[52px] w-[52px] -translate-x-1/2 -translate-y-1/2 [perspective:300px]">
         <div
           className="relative h-full w-full [transform-style:preserve-3d]"
-          style={{ transform: `rotateX(${90 + pDeg}deg) rotateZ(${hDeg}deg)` }}
+          style={{ transform: `rotateX(${90 + pDeg}deg) rotateZ(${-hDeg}deg)` }}
         >
-          {face("top", "TOP", `translateZ(${s}px)`)}
-          {face("front", "S", `rotateX(90deg) translateZ(${s}px)`)}
-          {face("back", "N", `rotateX(-90deg) rotateZ(180deg) translateZ(${s}px)`)}
-          {face("left", "W", `rotateY(-90deg) rotateZ(90deg) translateZ(${s}px)`)}
-          {face("right", "E", `rotateY(90deg) rotateZ(-90deg) translateZ(${s}px)`)}
+          {face("TOP", [0, 0, 1], [1, 0, 0], [0, 1, 0], `translateZ(${s}px)`)}
+          {face("S", [0, -1, 0], [1, 0, 0], [0, 0, 1], `rotateX(-90deg) translateZ(${s}px)`)}
+          {face("N", [0, 1, 0], [-1, 0, 0], [0, 0, 1], `rotateX(90deg) rotateZ(180deg) translateZ(${s}px)`)}
+          {face("W", [-1, 0, 0], [0, -1, 0], [0, 0, 1], `rotateY(-90deg) rotateZ(90deg) translateZ(${s}px)`)}
+          {face("E", [1, 0, 0], [0, 1, 0], [0, 0, 1], `rotateY(90deg) rotateZ(-90deg) translateZ(${s}px)`)}
+          {face("BTM", [0, 0, -1], [1, 0, 0], [0, -1, 0], `rotateX(180deg) translateZ(${s}px)`)}
         </div>
       </div>
       <button

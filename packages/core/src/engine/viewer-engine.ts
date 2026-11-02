@@ -86,6 +86,19 @@ const STATUS_COLOURS: Record<UpdateStatus, string> = {
  * The only class in the product that talks to CesiumJS. The UI drives it through
  * plain methods and reads per-frame state from signals (plan section 2.3).
  */
+/**
+ * Camera heading and pitch (degrees) that look at a target from direction `dir` (east, north, up).
+ * Level views tilt down 5° so the ground stays readable; straight up or down stops just short of 90°.
+ */
+export function cubeView([e, n, u]: [number, number, number]): { heading: number; pitch: number } {
+  const flat = Math.hypot(e, n);
+  const heading = flat < 1e-9 ? 0 : ((Math.atan2(-e, -n) * 180) / Math.PI + 360) % 360;
+  let pitch = (-Math.atan2(u, flat) * 180) / Math.PI;
+  if (Math.abs(u) < 1e-9) pitch = -5;
+  pitch = Math.max(-89.9, Math.min(89.9, pitch));
+  return { heading: Math.abs(heading) < 1e-9 ? 0 : heading, pitch };
+}
+
 /** Screen-space error per quality preset: lower draws finer tiles (WP 1.5). */
 const SSE: Record<Quality, number> = { low: 24, balanced: 16, high: 8, ultra: 4 };
 
@@ -342,6 +355,13 @@ export class ViewerEngine {
   async focusLayer(_layerId: string): Promise<void> {
     // Per-node bounds need runtime node data; for now focus fits the whole model.
     await this.home(0.8);
+  }
+
+  /** Looks at the model from a direction in east, north, up: a face, edge or corner of the view cube (NAV-05). */
+  async viewFrom(dir: [number, number, number]): Promise<void> {
+    const bs = this.boundingSphere() ?? new BoundingSphere(this.camera.pivot, 200);
+    const { heading, pitch } = cubeView(dir);
+    await this.flySphere(bs, CMath.toRadians(heading), CMath.toRadians(pitch), 0.8);
   }
 
   async preset(view: PresetView): Promise<void> {
