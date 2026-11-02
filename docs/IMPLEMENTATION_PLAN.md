@@ -2,7 +2,7 @@
 
 **Product:** 3D Intelligence Model Viewer (VIEWER), Release 1
 **Source:** *SRS: 3D Intelligence Model Viewer* (Nov 1, 2026, Lior Ron)
-**Status:** Draft for product-owner approval. Nothing is built until this plan is signed off.
+**Status:** Approved by the product owner on 2 Nov 2026. Phase 0 in progress.
 **Companion docs:** [UI/UX design spec](./UI_UX_DESIGN.md) · [Test data and base map sources](./DATA_SOURCES.md) · [Requirements traceability](./TRACEABILITY.md)
 
 ---
@@ -47,17 +47,17 @@ Release 1 is planned as **7 phases over 27 weeks** (plus a 4-week pilot) with tw
 
 Objective requirements are **not built in Release 1**, but the architecture leaves a named seam for each one (section 4.4), so none of them needs a redesign later.
 
-### 1.1 Points that need a product-owner decision
+### 1.1 Product-owner decisions
 
-These come from checking the SRS against what the chosen tools can actually do. None of them blocks Phase 0.
+These came from checking the SRS against what the chosen tools can actually do. All five were accepted by the product owner on 2 Nov 2026.
 
 | # | Topic | Finding | Proposed resolution |
 |---|---|---|---|
-| D-1 | WebGPU | SRS 2.3 says "WebGPU used when available". CesiumJS 1.146 (Oct 2026) is WebGL 2 only and has no WebGPU backend. | Accept WebGL 2 as the Release 1 renderer (it is the stated baseline and meets every NFR). Revisit if CesiumJS ships WebGPU. |
-| D-2 | NFR-08 Khronos visual check | CesiumJS supports core metallic-roughness plus `KHR_materials_unlit`, `_specular`, `_anisotropy`, `_clearcoat`, `KHR_texture_transform`, `KHR_texture_basisu`, but not `_transmission`, `_volume`, `_sheen`, `_iridescence`. | Run AC-03 on core-PBR Khronos samples (e.g. DamagedHelmet, FlightHelmet, MetalRoughSpheres, Sponza, ABeautifulGame). These extensions are not used by terrain/urban models. |
-| D-3 | FBX read directly in the EXE (SRS 5.3) | Reading FBX in the client conflicts with AD-03. | The EXE bundles the **same converter binary** as the server and converts locally to GLB in a sandboxed child process. Same result, one code path. |
-| D-4 | Tauri vs Electron (AD-02 leaves it open) | See 3.2. | Electron, for one pinned Chromium in both clients (NFR-18 parity, accreditation of one browser engine). |
-| D-5 | Identity without login (ADM-01, NFR-11) | "Workstation name" over HTTP is not sent by browsers. | Log IP plus reverse-DNS hostname on the server; the EXE also sends the Windows computer name in a header. Web clients log IP + reverse DNS only. |
+| D-1 | WebGPU | SRS 2.3 says "WebGPU used when available". CesiumJS 1.146 (Oct 2026) is WebGL 2 only and has no WebGPU backend. | **Accepted by product owner, 2 Nov 2026:** WebGL 2 is the Release 1 renderer (the stated baseline; meets every NFR). Revisit if CesiumJS ships WebGPU. |
+| D-2 | NFR-08 Khronos visual check | CesiumJS supports core metallic-roughness plus `KHR_materials_unlit`, `_specular`, `_anisotropy`, `_clearcoat`, `KHR_texture_transform`, `KHR_texture_basisu`, but not `_transmission`, `_volume`, `_sheen`, `_iridescence`. | **Accepted by product owner, 2 Nov 2026:** run AC-03 on core-PBR Khronos samples (e.g. DamagedHelmet, FlightHelmet, MetalRoughSpheres, Sponza, ABeautifulGame). These extensions are not used by terrain/urban models. |
+| D-3 | FBX read directly in the EXE (SRS 5.3) | Reading FBX in the client conflicts with AD-03. | **Accepted by product owner, 2 Nov 2026:** The EXE bundles the **same converter binary** as the server and converts locally to GLB in a sandboxed child process. Same result, one code path. |
+| D-4 | Tauri vs Electron (AD-02 leaves it open) | See 3.2. | **Accepted by product owner, 2 Nov 2026:** Electron, for one pinned Chromium in both clients (NFR-18 parity, accreditation of one browser engine). |
+| D-5 | Identity without login (ADM-01, NFR-11) | "Workstation name" over HTTP is not sent by browsers. | **Accepted by product owner, 2 Nov 2026:** Log IP plus reverse-DNS hostname on the server; the EXE also sends the Windows computer name in a header. Web clients log IP + reverse DNS only. |
 
 ---
 
@@ -516,7 +516,7 @@ Definition of done for every WP: code reviewed, tests added, works in both theme
 ## 8. What I need from the product owner
 
 1. **Approve this plan**, or mark changes.
-2. Decisions **D-1 to D-5** (section 1.1); the proposals are the defaults if no change is requested.
+2. ~~Decisions D-1 to D-5~~ (accepted 2 Nov 2026, section 1.1).
 3. **10 real producer FBX files** and **2 real 3D Tiles datasets** for the Phase 0 bake-offs (or approval to use only the open data in [DATA_SOURCES](./DATA_SOURCES.md)).
 4. **Team and start date** (the plan assumes 7 people from 16 Nov 2026).
 5. **Design direction** sign-off at the end of Phase 0 ([UI/UX spec](./UI_UX_DESIGN.md)).

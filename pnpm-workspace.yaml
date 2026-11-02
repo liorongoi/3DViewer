@@ -1,0 +1,6 @@
+packages:
+  - apps/*
+  - packages/*
+minimumReleaseAgeExclude:
+  - i18next@26.7.1
+  - react-i18next@17.1.11

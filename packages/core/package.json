@@ -1,0 +1,19 @@
+{
+  "name": "@viewer/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@viewer/shared": "workspace:*",
+    "cesium": "1.146.0",
+    "geographiclib-geodesic": "2.2.0",
+    "proj4": "2.22.0"
+  }
+}
