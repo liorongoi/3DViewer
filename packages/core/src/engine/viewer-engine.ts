@@ -46,7 +46,8 @@ import { FlyByTour, FlyMode, captureViewpoint, type Viewpoint } from "./fly";
 import { signal } from "../signal";
 import { effectiveVisibility, layersFromGltf, type Layer } from "../layers/layers";
 import { BASE_MAPS, TERRAINS, makeBaseLayers } from "./basemaps";
-import { ENVIRONMENTS, environmentSh, type EnvironmentId } from "./environments";
+import { ENVIRONMENTS, environmentSh, environmentSpecular, type EnvironmentId } from "./environments";
+import { cubeToKtx2 } from "./ktx2";
 import { createLayeredTerrain, type DemSource, type LayerableTerrain } from "./terrain";
 import { SightlineTool } from "./sightline";
 import { Viewshed } from "./viewshed";
@@ -607,10 +608,22 @@ export class ViewerEngine {
   }
 
   private makeIbl(): ImageBasedLighting {
-    const sh = environmentSh(this.environment.get());
+    const id = this.environment.get();
+    const sh = environmentSh(id);
     const ibl = new ImageBasedLighting();
     if (sh) ibl.sphericalHarmonicCoefficients = sh.map(([r, g, b]) => new Cartesian3(r, g, b));
+    const url = this.specularUrl(id);
+    if (url) ibl.specularEnvironmentMaps = url;
     return ibl;
+  }
+
+  private specularUrls = new Map<EnvironmentId, string>();
+  /** The environment's pre-filtered reflections as a KTX2 in memory, made once per session. */
+  private specularUrl(id: EnvironmentId): string | null {
+    const cube = environmentSpecular(id);
+    if (!cube || typeof URL.createObjectURL !== "function") return null;
+    if (!this.specularUrls.has(id)) this.specularUrls.set(id, URL.createObjectURL(new Blob([cubeToKtx2(cube)] as ConstructorParameters<typeof Blob>[0], { type: "image/ktx2" })));
+    return this.specularUrls.get(id)!;
   }
 
   /** Switches the light that models and tilesets receive from their surroundings. */
