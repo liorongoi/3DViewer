@@ -27,7 +27,7 @@ const worker =
     : new Worker(
         db,
         {
-          ingest: ingestHandler(db, storage, { clamdscan: process.env.CLAMDSCAN, fbx2gltf: process.env.FBX2GLTF, thumbnails }),
+          ingest: ingestHandler(db, storage, { clamdscan: process.env.CLAMDSCAN, fbx2gltf: process.env.FBX2GLTF, thumbnails, strictValidation: process.env.STRICT_VALIDATION === "1" }),
           ...(renderer ? { thumbnail: thumbnailHandler(db, storage, renderer) } : {}),
         } as Record<string, Handler>,
         { onError: (e, job) => app.log.warn({ err: e, job: job.id }, "job failed") },

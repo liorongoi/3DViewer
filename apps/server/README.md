@@ -17,6 +17,7 @@ DATABASE_URL=postgres://… pnpm --filter @viewer/server dev   # a real PostgreS
 | `CORS_ORIGINS` | none | Comma-separated origins allowed to call the API from elsewhere (the desktop app, a separate web host); `*` allows any. |
 | `THUMBNAIL_WEB_URL` | none | Address of the web app the thumbnail renderer opens (for example `http://localhost:5173`). Without it no thumbnails are made and library cards show a plain tile. |
 | `CHROMIUM` | Playwright's own | Path to a Chromium for thumbnails. Needs the optional `playwright-core` package. |
+| `STRICT_VALIDATION` | `0` | `1` makes errors from the official glTF and 3D Tiles validators block publishing. By default they are listed in the report as warnings, because many real tilesets break a rule and still load (Lyon's has 72 misaligned tiles). |
 | `WORKERS` | `1` | `0` runs the API without the conversion worker. |
 | `SEED_SAMPLES` | `1` | `0` starts with an empty library (classification levels are always seeded once). |
 | `HOST`, `PORT` | `127.0.0.1`, `8787` | Listen address. |

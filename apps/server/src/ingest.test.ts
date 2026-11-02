@@ -180,6 +180,7 @@ describe("ingest job", () => {
     const zip = zipSync({ "city/tileset.json": enc(JSON.stringify(tileset)), "city/tiles/0.glb": glb(triangle) });
     const r = await submitAndRun((await upload([{ path: "city.zip", data: zip }], { model: { ...model, name: "City block" }, groundFit: "street" })).id);
     expect(r, JSON.stringify(r.report?.items)).toMatchObject({ state: "ready", report: { format: "3dtiles", mainFile: "tileset.json" } });
+    expect(r.report.items.find((i: { id: string }) => i.id === "validator")?.title).toMatch(/official 3D Tiles validator/);
     const m = (await app.inject(`/api/models/${r.modelId}`)).json();
     expect(m.source).toEqual({ kind: "3dtiles", url: `files/${r.modelId}/${r.id}/tileset.json`, groundFit: "street" });
     expect(m.centre.lat).toBeCloseTo((0.555 * 180) / Math.PI, 3);
@@ -240,6 +241,8 @@ describe("ingest job", () => {
       const r = await submitAndRun((await upload([{ path: "plant.fbx", data: fbx }])).id);
       expect(r, r.error).toMatchObject({ state: "ready", report: { format: "fbx", ok: true, nodes: ["Water tower"] } });
       expect(r.report.items.map((i: { id: string; severity: string }) => `${i.id}:${i.severity}`)).toEqual(expect.arrayContaining(["format:ok", "conversion:ok"]));
+      // The official validator checks the converted GLB, not the FBX.
+      expect(r.report.items.find((i: { id: string }) => i.id === "validator")?.title).toMatch(/official glTF validator/);
       const m = (await app.inject(`/api/models/${r.modelId}`)).json();
       expect(m).toMatchObject({ sourceFormat: "fbx", source: { kind: "glb", url: `files/${r.modelId}/${r.id}/plant.glb` } });
       expect((await app.inject(`/files/${r.modelId}/${r.id}/original/plant.fbx`)).statusCode).toBe(200);

@@ -13,6 +13,7 @@ import type { Db, Queryable } from "./db.ts";
 import { enqueue, PermanentError, type Handler } from "./jobs.ts";
 import { addVersion, createModel, type NewModel } from "./library.ts";
 import { Storage, validRelPath } from "./storage.ts";
+import { validateOfficial } from "./validate.ts";
 
 /**
  * Uploads and ingest (WP 3.2–3.4, 3.7).
@@ -43,6 +44,10 @@ export interface IngestOptions {
   fbx2gltf?: string;
   /** Queue a thumbnail render after each publish (WP 3.5). */
   thumbnails?: boolean;
+  /** Errors from the official glTF and 3D Tiles validators block publishing (otherwise they are warnings). */
+  strictValidation?: boolean;
+  /** Stop the official validator after this long. */
+  validatorTimeoutMs?: number;
 }
 
 const MAX_FILES = 100_000;
@@ -421,6 +426,15 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
         };
         // The original FBX is kept beside the GLB (FMT-08), under its own folder so names cannot clash.
         publish = [...(converted.files as DiskFile[]), { ...fbx, path: `original/${path.basename(fbx.path)}` }];
+      }
+
+      // The official validator, on what will be published (the GLB for an FBX).
+      await ctx.progress({ step: "validate" });
+      const main = report.format === "fbx" ? publish[0] : publish.find((f) => f.path === report.mainFile);
+      if (main) {
+        const official = await validateOfficial(report.format === "3dtiles" ? "3dtiles" : "gltf", main.src, { strict: opts.strictValidation, timeoutMs: opts.validatorTimeoutMs });
+        report.items.push(official);
+        if (official.severity === "error") return reject({ ...report, ok: false }, official.title);
       }
 
       // Where it goes and where it stands.

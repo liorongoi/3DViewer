@@ -11,12 +11,14 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "3d-tiles-validator": "0.6.1",
     "@electric-sql/pglite": "0.5.14",
     "@fastify/swagger": "9.9.3",
     "@viewer/core": "workspace:*",
     "@viewer/shared": "workspace:*",
     "fastify": "5.12.7",
     "fflate": "0.8.2",
+    "gltf-validator": "2.0.0-dev.3.10",
     "pg": "8.23.1"
   },
   "devDependencies": {
