@@ -54,7 +54,7 @@ These came from checking the SRS against what the chosen tools can actually do. 
 | # | Topic | Finding | Proposed resolution |
 |---|---|---|---|
 | D-1 | WebGPU | SRS 2.3 says "WebGPU used when available". CesiumJS 1.146 (Oct 2026) is WebGL 2 only and has no WebGPU backend. | **Accepted by product owner, 2 Nov 2026:** WebGL 2 is the Release 1 renderer (the stated baseline; meets every NFR). Revisit if CesiumJS ships WebGPU. |
-| D-2 | NFR-08 Khronos visual check | CesiumJS supports core metallic-roughness plus `KHR_materials_unlit`, `_specular`, `_anisotropy`, `_clearcoat`, `KHR_texture_transform`, `KHR_texture_basisu`, but not `_transmission`, `_volume`, `_sheen`, `_iridescence`. | **Accepted by product owner, 2 Nov 2026:** run AC-03 on core-PBR Khronos samples (e.g. DamagedHelmet, FlightHelmet, MetalRoughSpheres, Sponza, ABeautifulGame). These extensions are not used by terrain/urban models. |
+| D-2 | NFR-08 Khronos visual check | CesiumJS supports core metallic-roughness plus `KHR_materials_unlit`, `_specular`, `_anisotropy`, `_clearcoat`, `KHR_texture_transform`, `KHR_texture_basisu`, but not `_transmission`, `_volume`, `_sheen`, `_iridescence`. | **Accepted by product owner, 2 Nov 2026:** run AC-03 on core-PBR Khronos samples that use no extensions and have open licences: SciFiHelmet, WaterBottle, BoomBox, Lantern, Corset (CC0) and MetalRoughSpheres (CC BY 4.0). FlightHelmet and ABeautifulGame were dropped because they use `KHR_materials_transmission`; DamagedHelmet (CC BY-NC) and Sponza (Cryengine licence) because of their licences. These extensions are not used by terrain/urban models. |
 | D-3 | FBX read directly in the EXE (SRS 5.3) | Reading FBX in the client conflicts with AD-03. | **Accepted by product owner, 2 Nov 2026:** The EXE bundles the **same converter binary** as the server and converts locally to GLB in a sandboxed child process. Same result, one code path. |
 | D-4 | Tauri vs Electron (AD-02 leaves it open) | See 3.2. | **Accepted by product owner, 2 Nov 2026:** Electron, for one pinned Chromium in both clients (NFR-18 parity, accreditation of one browser engine). |
 | D-5 | Identity without login (ADM-01, NFR-11) | "Workstation name" over HTTP is not sent by browsers. | **Accepted by product owner, 2 Nov 2026:** Log IP plus reverse-DNS hostname on the server; the EXE also sends the Windows computer name in a header. Web clients log IP + reverse DNS only. |
@@ -454,14 +454,16 @@ Each work package (WP) lists its tasks, what it depends on, and how we know it i
 
 #### Phase 5 — Desktop EXE and offline install (weeks 18–22)
 
+Phase 5 builds and tests the installer **pipeline**. The release installers themselves are produced in WP 6.8, after the user manual.
+
 | WP | Tasks | Requirements | Done when |
 |---|---|---|---|
 | 5.1 Electron shell | Same web build; hardened config; file associations (.glb, .gltf, .fbx, tileset.json, .zip); drag-drop | ADM-03, C-4 | Feature parity checklist 100% |
 | 5.2 Local FBX | Bundled converter (from 3.4) in a sandboxed child process | ADM-03, FMT-01 | Local FBX opens offline |
 | 5.3 Local 3D Tiles | `viewer-file://` protocol with range requests and directory sandboxing | ADM-03, FMT-03 | 50 GB local tileset streams smoothly |
 | 5.4 Online/offline | Server reachability, library mode when online, local mode when offline, clear status pill | ADM-03 | Switching network on/off works without restart |
-| 5.5 Installer | electron-builder NSIS per-user (no admin), org code-signing certificate, server URL pre-configurable via MSI/registry/JSON | 2.3 | Installs on a locked-down Windows 10 and 11 image |
-| 5.6 Server bundle | Offline images tarball, `install.sh`, systemd, backup/restore scripts; base map package installer | NFR-20, RND-11 | Clean install ≤ 2 h by someone following the guide |
+| 5.5 Installer (pipeline) | electron-builder NSIS per-user (no admin), org code-signing certificate, server URL pre-configurable via MSI/registry/JSON | 2.3 | Installs on a locked-down Windows 10 and 11 image |
+| 5.6 Server bundle (pipeline) | Offline images tarball, `install.sh`, systemd, backup/restore scripts; base map package installer | NFR-20, RND-11 | Clean install ≤ 2 h by someone following the guide |
 
 #### Phase 6 — Hardening and acceptance (weeks 22–27)
 
@@ -472,8 +474,9 @@ Each work package (WP) lists its tasks, what it depends on, and how we know it i
 | 6.3 Performance | Profiling on A4000; 20-user k6 load test; 10 TB storage test with synthetic data | NFR-01–06 | All numbers in the NFR table met and recorded |
 | 6.4 Security | Pen test, outbound capture, TLS config review, SBOM + licence report, accreditation package | NFR-12–14, C-2 | AC-10 passes; accreditation package delivered |
 | 6.5 Usability | 5 first-time users: open, navigate, measure, no training | NFR-15 | ≥ 4 of 5 in ≤ 5 min |
-| 6.6 Documentation | Admin install guide, producer guide, consumer quick guide (he/en), runbook | NFR-20 | Reviewed by admin and producer reps |
+| 6.6 User manual & documentation | Written **once, after feature freeze** (product-owner rule, 2 Nov 2026) so it is not rewritten every sprint: user manual for consumers and producers (Hebrew and English, with screenshots from the final build), admin install guide, runbook | NFR-15, NFR-20 | Manual reviewed by a consumer, a producer and an admin rep; screenshots match the release build |
 | 6.7 Acceptance | Run AC-01 to AC-10 in web and EXE on the reference workstation inside the internal network | All | Signed acceptance report |
+| 6.8 Release installers | Final signed EXE installer and offline server bundle built from the frozen release, **after the manual is done**, with the manual included in both | NFR-20, C-1 | Installers install cleanly offline; the manual opens from the Help menu |
 
 ---
 

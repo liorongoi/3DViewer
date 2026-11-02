@@ -1,0 +1,71 @@
+/* Night Instrument design tokens (docs/UI_UX_DESIGN.md §4). Contrast checked ≥ 4.5:1. */
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/ibm-plex-sans-hebrew/400.css";
+@import "@fontsource/ibm-plex-sans-hebrew/500.css";
+@import "@fontsource/ibm-plex-sans-hebrew/600.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas-bg: #1b1d21;
+  --surface-1: rgb(21 23 27 / 0.82);
+  --surface-1-solid: #15171b;
+  --surface-2: #1e2127;
+  --surface-3: #262a31;
+  --border: #2c3038;
+  --border-strong: #3a3f49;
+  --text-primary: #e8eaed;
+  --text-secondary: #a7adb8;
+  --text-tertiary: #8a919d;
+  --accent: #f05bdc;
+  --accent-soft: rgb(240 91 220 / 0.14);
+  --accent-on: #14161a;
+  --status-draft: #a7adb8;
+  --status-production: #f2b33d;
+  --status-current: #3dd68c;
+  --status-superseded: #8f98a8;
+  --danger: #ff6b6b;
+  --highlight: rgb(255 255 255 / 0.06);
+  --shadow: 0 8px 32px rgb(0 0 0 / 0.35);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --canvas-bg: #dadde2;
+  --surface-1: rgb(255 255 255 / 0.88);
+  --surface-1-solid: #ffffff;
+  --surface-2: #f5f6f8;
+  --surface-3: #eceef1;
+  --border: #dfe2e7;
+  --border-strong: #c9cdd4;
+  --text-primary: #14161a;
+  --text-secondary: #4a515c;
+  --text-tertiary: #5e6570;
+  --accent: #a3128c;
+  --accent-soft: rgb(163 18 140 / 0.1);
+  --accent-on: #ffffff;
+  --status-draft: #5e6570;
+  --status-production: #8a5a00;
+  --status-current: #0f7a47;
+  --status-superseded: #56606e;
+  --danger: #c0262d;
+  --highlight: rgb(255 255 255 / 0.6);
+  --shadow: 0 8px 28px rgb(20 22 26 / 0.14);
+}
+
+:root {
+  --font-sans: "IBM Plex Sans", "IBM Plex Sans Hebrew", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --radius-control: 6px;
+  --radius-card: 10px;
+  --radius-panel: 14px;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+}
+
+:root[lang="he"] {
+  --font-sans: "IBM Plex Sans Hebrew", "IBM Plex Sans", system-ui, sans-serif;
+}

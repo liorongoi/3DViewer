@@ -35,7 +35,7 @@ These are photogrammetry meshes made from oblique aerial photos, so building fro
 
 | Dataset | Format | Licence | Use |
 |---|---|---|---|
-| **Khronos glTF Sample Assets** (`KhronosGroup/glTF-Sample-Assets`) | glTF, GLB, Draco, meshopt, KTX2 variants | **Per model — verified**: each model's README states its licence (many CC BY 4.0 or CC0). Avoid the five models the repo flags as uncertain (Antique Camera, Box Textured, Box Textured not 2^N, Cesium Man, Cesium Milk Truck). | AC-03 / NFR-08 visual check vs Khronos Sample Viewer; FMT-02, FMT-04 |
+| **Khronos glTF Sample Assets** (`KhronosGroup/glTF-Sample-Assets`) | glTF, GLB, Draco, meshopt, KTX2 variants | **Per model — verified**: each model's README states its licence (many CC BY 4.0 or CC0). Avoid the five models the repo flags as uncertain (Antique Camera, Box Textured, Box Textured not 2^N, Cesium Man, Cesium Milk Truck). Also note: DamagedHelmet is CC BY-NC 4.0 and Sponza is under the Cryengine Limited License, so keep them out of the kit. | AC-03 / NFR-08 visual check vs Khronos Sample Viewer; FMT-02, FMT-04 |
 | **CesiumGS 3d-tiles-samples** | 3D Tiles 1.0 and 1.1 (implicit tiling, metadata, multiple contents, i3dm, discrete LOD) | **To confirm** (check the repo LICENSE file) | FMT-03 conformance for every tile type |
 | **bertt/cesium_3dtiles_samples** (Utrecht 3D, Delaware 1.1, Grenoble trees) | 3D Tiles 1.0/1.1 | **To confirm** | Extra real-world 1.1 tilesets |
 | **3DBAG** (TU Delft) — all buildings in the Netherlands | CityJSON / OBJ / GPKG on 3dbag.nl; GeoParquet + PMTiles mirror on Source Cooperative | **CC BY 4.0 — verified** | Untextured LOD2 at country scale; tiler stress test; layer naming |
@@ -84,7 +84,7 @@ The real deployment uses the organisation's own DEM and orthophotos (SRS 5.2). T
 | 1 glTF/GLB urban block | Khronos-style test block made from PLATEAU or 3DBAG + producer file | AC-01, FMT-02 |
 | 1 3D Tiles city with realistic façades (subset, ~20–50 GB) | Strasbourg photomesh | AC-01, FMT-03, RND-06, NFR-02/04 |
 | 1 3D Tiles terrain/city from our own tiler | Helsinki mesh → mago 3DTiler | FMT-06, AD-04 |
-| Khronos sample set (5 core-PBR models) | Khronos glTF Sample Assets | AC-03, NFR-08 |
+| Khronos sample set: SciFiHelmet, WaterBottle, BoomBox, Lantern, Corset (CC0), MetalRoughSpheres (CC BY 4.0). All use core metallic-roughness only, with no extensions (checked 2 Nov 2026) | Khronos glTF Sample Assets | AC-03, NFR-08 |
 | 3D Tiles conformance set | CesiumGS 3d-tiles-samples | FMT-03 every tile type |
 | Corrupt / hostile files | Made by us | AC-02, NFR-14 |
 | Base map package (test) | Copernicus DEM + Sentinel-2 cloudless 2016 over the test cities | RND-08 to RND-11 |
