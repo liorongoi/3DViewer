@@ -41,7 +41,7 @@ export const SAMPLE_LIBRARY: ModelSummary[] = [
     operation: "Fourvière photomesh",
     responsibleEntity: "Mapping unit",
     description:
-      "Photogrammetric mesh of Fourvière and the north of Vieux Lyon from the 2023 aerial survey (5.5 cm), 3D Tiles (b3dm, Draco) with 7 levels of detail.",
+      "Photogrammetric mesh of Fourvière and the north of Vieux Lyon from the 2023 aerial survey (5.5 cm), 3D Tiles (b3dm, Draco) with 5 levels of detail.",
     status: "current",
     statusChangedAt: "2026-11-02",
     classificationId: "restricted",
