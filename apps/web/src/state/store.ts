@@ -41,6 +41,9 @@ interface AppState {
   fullscreen: boolean;
   onboardingDone: boolean;
   filters: Filters;
+  /** Classification chosen by the user per model id (overrides the library value). */
+  classOverrides: Record<string, string>;
+  setClassification: (modelId: string, classificationId: string) => void;
   set: (patch: Partial<AppState>) => void;
   setPref: <K extends "theme" | "lang" | "coordSystem" | "unit" | "quality" | "fadeTools">(k: K, v: AppState[K]) => void;
   setFilters: (patch: Partial<Filters>) => void;
@@ -71,6 +74,19 @@ export const useApp = create<AppState>((set) => ({
   fullscreen: false,
   onboardingDone: readPref<string>("onboarding", "0") === "1",
   filters: { query: "", project: null, operation: null, status: null, entity: null, classification: null },
+  classOverrides: (() => {
+    try {
+      return JSON.parse(readPref<string>("classOverrides", "{}")) as Record<string, string>;
+    } catch {
+      return {};
+    }
+  })(),
+  setClassification: (modelId, classificationId) =>
+    set((s) => {
+      const classOverrides = { ...s.classOverrides, [modelId]: classificationId };
+      writePref("classOverrides", JSON.stringify(classOverrides));
+      return { classOverrides };
+    }),
   set: (patch) => set(patch),
   setPref: (k, v) => {
     writePref(k, String(v));

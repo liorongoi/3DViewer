@@ -7,7 +7,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WEB="$ROOT/apps/web"
 OUT="$WEB/dist-preview"
-(cd "$WEB" && VITE_SAMPLE_SUFFIX="$([ "${ARTIFACT:-0}" = "1" ] && echo .wasm)" npx vite build --outDir "$OUT" --emptyOutDir >/dev/null)
+(cd "$WEB" && VITE_NO_ONLINE="${ARTIFACT:-0}" VITE_SAMPLE_SUFFIX="$([ "${ARTIFACT:-0}" = "1" ] && echo .wasm)" npx vite build --outDir "$OUT" --emptyOutDir >/dev/null)
 rm -rf "$OUT/cesium/Widgets" "$OUT/cesium/Assets/Textures/maki"
 for f in "$OUT"/samples/khronos/*.glb; do
   npx -y @gltf-transform/cli@4.5.1 optimize "$f" "$f.tmp.glb" \
@@ -25,7 +25,7 @@ if [ "${ARTIFACT:-0}" = "1" ]; then
   find "$OUT/samples" -type f \( -name '*.glb' -o -name '*.b3dm' -o -name '*.pnts' \) -exec mv {} {}.wasm \;
   # User data samples keep their real names inside the app (VITE_SAMPLE_SUFFIX).
   find "$OUT/samples/user-data" -maxdepth 1 -type f -exec mv {} {}.wasm \;
-  find "$OUT/samples" -name 'tileset.json' -exec sed -i -E 's/\.(b3dm|pnts)"/.\1.wasm"/g' {} \;
+  find "$OUT/samples" -name 'tileset.json' -exec sed -i -E 's/\.(b3dm|pnts|glb)"/.\1.wasm"/g' {} \;
   sed -i -E 's#(/khronos/[A-Za-z]+\.glb)#\1.wasm#g' "$OUT"/assets/index-*.js
   rm -f "$OUT"/samples/3dtiles/*/README.md
   # The artifact host adds its own document skeleton, so the page is the head and body content only.

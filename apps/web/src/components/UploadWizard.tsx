@@ -13,6 +13,8 @@ export function UploadWizard() {
   const open = useApp((s) => s.uploadOpen);
   const set = useApp((s) => s.set);
   const [step, setStep] = useState(0);
+  const [cls, setCls] = useState("");
+  const chosen = SAMPLE_CLASSIFICATIONS.find((c) => c.id === cls);
   const [files, setFiles] = useState<File[]>([]);
   const [progress, setProgress] = useState(0);
   useEffect(() => {
@@ -149,8 +151,24 @@ export function UploadWizard() {
               <Field label={t("upload.fields.status")}>
                 <select className="input">{UPDATE_STATUSES.map((s) => <option key={s}>{t(`status.${s}`)}</option>)}</select>
               </Field>
-              <Field label={t("upload.fields.classification")}>
-                <select className="input">{SAMPLE_CLASSIFICATIONS.map((c) => <option key={c.id}>{c.label}</option>)}</select>
+              <Field label={`${t("upload.fields.classification")} *`}>
+                <select
+                  className="input font-semibold"
+                  required
+                  aria-required="true"
+                  value={cls}
+                  onChange={(e) => setCls(e.target.value)}
+                  style={chosen ? { background: chosen.color, color: chosen.textColor } : undefined}
+                >
+                  <option value="" disabled>
+                    Choose the classification…
+                  </option>
+                  {SAMPLE_CLASSIFICATIONS.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label.replace(/ · .*$/, "")}
+                    </option>
+                  ))}
+                </select>
               </Field>
               <div className="col-span-2"><Field label={t("upload.fields.description")}><textarea className="input h-24 py-2" /></Field></div>
             </div>
@@ -165,9 +183,12 @@ export function UploadWizard() {
               {t("common.next")} <ChevronRight size={14} className="rtl:-scale-x-100" />
             </button>
           ) : (
-            <button type="button" className="btn-primary" onClick={close}>
-              <Upload size={14} /> {t("upload.publish")}
-            </button>
+            <span className="flex items-center gap-3">
+              {!cls && <span className="text-[12px] text-fg3">Choose a classification to publish.</span>}
+              <button type="button" className="btn-primary" disabled={!cls} onClick={close}>
+                <Upload size={14} /> {t("upload.publish")}
+              </button>
+            </span>
           )}
         </footer>
       </div>
