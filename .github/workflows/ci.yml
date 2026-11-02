@@ -1,0 +1,33 @@
+# WP 0.1: type-check, unit tests and build on every push and pull request.
+# The internal CI runs the same steps against the offline package mirror.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Type-check
+        run: pnpm -r --if-present run typecheck
+      - name: Unit tests
+        run: pnpm -r --if-present run test
+      - name: Build
+        run: pnpm -r --if-present run build
