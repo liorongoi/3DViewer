@@ -1,0 +1,126 @@
+import { CustomHeightmapTerrainProvider, GeographicTilingScheme, Math as CMath } from "cesium";
+
+/**
+ * Terrain from "Terrarium" PNG elevation tiles (Web Mercator XYZ; height = R·256 + G + B/256 − 32768).
+ * Works with the public AWS Terrain Tiles and with any internal mirror of the same layout,
+ * so the same code runs online and on the air-gapped network (plan WP 1.6, VWR-GEO-01).
+ *
+ * Cesium asks for geographic tiles; each one is resampled from the matching Mercator tiles.
+ * A missing tile falls back to its parent, so a partial mirror (a few areas at high zoom,
+ * the world at low zoom) still gives continuous terrain.
+ */
+export interface TerrariumOptions {
+  /** URL template with {z}, {x}, {y}. */
+  url: string;
+  /** Deepest zoom the source has. AWS has 15; local demo mirrors less. */
+  maxZoom?: number;
+  /** Size of the geographic heightmap Cesium builds per tile. */
+  samples?: number;
+}
+
+type Pixels = { data: Uint8ClampedArray; size: number } | null;
+
+export function createTerrariumTerrain(opts: TerrariumOptions): CustomHeightmapTerrainProvider {
+  const maxZoom = opts.maxZoom ?? 15;
+  const n = opts.samples ?? 65;
+  const cache = new Map<string, Promise<Pixels>>();
+  const order: string[] = [];
+
+  const load = (z: number, x: number, y: number): Promise<Pixels> => {
+    const key = `${z}/${x}/${y}`;
+    let p = cache.get(key);
+    if (p) return p;
+    const url = opts.url.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y));
+    p = fetch(url)
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(String(r.status)))))
+      .then((b) => createImageBitmap(b))
+      .then((bmp) => {
+        const c = new OffscreenCanvas(bmp.width, bmp.height);
+        const ctx = c.getContext("2d", { willReadFrequently: true })!;
+        ctx.drawImage(bmp, 0, 0);
+        return { data: ctx.getImageData(0, 0, bmp.width, bmp.height).data, size: bmp.width };
+      })
+      .catch(() => null);
+    cache.set(key, p);
+    order.push(key);
+    if (order.length > 512) cache.delete(order.shift()!);
+    return p;
+  };
+
+  /** Tile at zoom z, or the nearest parent that exists. Returns the pixels and the zoom found. */
+  const loadWithFallback = async (z: number, x: number, y: number): Promise<{ px: NonNullable<Pixels>; z: number; x: number; y: number } | null> => {
+    for (let zz = z, xx = x, yy = y; zz >= 0; zz--, xx >>= 1, yy >>= 1) {
+      const px = await load(zz, xx, yy);
+      if (px) return { px, z: zz, x: xx, y: yy };
+    }
+    return null;
+  };
+
+  const heightAt = (px: NonNullable<Pixels>, fx: number, fy: number): number => {
+    // Bilinear sample inside one tile (fx, fy in pixels).
+    const s = px.size;
+    const x0 = Math.max(0, Math.min(s - 1, Math.floor(fx)));
+    const y0 = Math.max(0, Math.min(s - 1, Math.floor(fy)));
+    const x1 = Math.min(s - 1, x0 + 1);
+    const y1 = Math.min(s - 1, y0 + 1);
+    const tx = fx - x0;
+    const ty = fy - y0;
+    const h = (x: number, y: number) => {
+      const i = (y * s + x) * 4;
+      return px.data[i]! * 256 + px.data[i + 1]! + px.data[i + 2]! / 256 - 32768;
+    };
+    return (h(x0, y0) * (1 - tx) + h(x1, y0) * tx) * (1 - ty) + (h(x0, y1) * (1 - tx) + h(x1, y1) * tx) * ty;
+  };
+
+  const tilingScheme = new GeographicTilingScheme();
+  return new CustomHeightmapTerrainProvider({
+    width: n,
+    height: n,
+    tilingScheme,
+    callback: async (x, y, level) => {
+      const rect = tilingScheme.tileXYToRectangle(x, y, level);
+      const z = Math.max(0, Math.min(maxZoom, level + 1));
+      const world = 2 ** z;
+      const toMerc = (lon: number, lat: number) => {
+        const la = Math.max(-85.0511, Math.min(85.0511, lat));
+        const mx = ((lon + 180) / 360) * world;
+        const s = Math.sin(CMath.toRadians(la));
+        const my = (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * world;
+        return [mx, my] as const;
+      };
+      const heights = new Float32Array(n * n);
+      const tiles = new Map<string, Awaited<ReturnType<typeof loadWithFallback>>>();
+      // Gather the tiles this geographic tile touches first, then sample.
+      const nw = toMerc(CMath.toDegrees(rect.west), CMath.toDegrees(rect.north));
+      const se = toMerc(CMath.toDegrees(rect.east), CMath.toDegrees(rect.south));
+      const tx0 = Math.floor(nw[0]);
+      const ty0 = Math.floor(nw[1]);
+      const tx1 = Math.min(world - 1, Math.floor(se[0] - 1e-9));
+      const ty1 = Math.min(world - 1, Math.floor(se[1] - 1e-9));
+      if ((tx1 - tx0 + 1) * (ty1 - ty0 + 1) > 16) return heights; // only at very coarse levels near the poles
+      await Promise.all(
+        Array.from({ length: (tx1 - tx0 + 1) * (ty1 - ty0 + 1) }, (_, i) => {
+          const tx = tx0 + (i % (tx1 - tx0 + 1));
+          const ty = ty0 + Math.floor(i / (tx1 - tx0 + 1));
+          return loadWithFallback(z, tx, ty).then((t) => tiles.set(`${tx}/${ty}`, t));
+        }),
+      );
+      for (let r = 0; r < n; r++) {
+        const lat = CMath.toDegrees(rect.north - ((rect.north - rect.south) * r) / (n - 1));
+        for (let c = 0; c < n; c++) {
+          const lon = CMath.toDegrees(rect.west + ((rect.east - rect.west) * c) / (n - 1));
+          const [mx, my] = toMerc(lon, lat);
+          const tx = Math.min(world - 1, Math.floor(mx));
+          const ty = Math.min(world - 1, Math.floor(my));
+          const t = tiles.get(`${tx}/${ty}`);
+          if (!t) continue;
+          const scale = 2 ** (t.z - z); // < 1 when we fell back to a parent
+          const fx = (mx * scale - t.x) * t.px.size;
+          const fy = (my * scale - t.y) * t.px.size;
+          heights[r * n + c] = heightAt(t.px, fx, fy);
+        }
+      }
+      return heights;
+    },
+  });
+}

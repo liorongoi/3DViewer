@@ -4,6 +4,8 @@ import {
   Cartesian3,
   Cartographic,
   Cesium3DTileset,
+  type Cesium3DTile,
+  OrientedBoundingBox,
   CesiumWidget,
   Color,
   CustomShader,
@@ -13,6 +15,7 @@ import {
   JulianDate,
   LightingModel,
   Math as CMath,
+  Matrix4,
   Model,
   NearFarScalar,
   PostProcessStageLibrary,
@@ -20,10 +23,11 @@ import {
   type PostProcessStageComposite,
   ScreenSpaceEventType,
   ShadowMode,
-  TileMapServiceImageryProvider,
+  EllipsoidTerrainProvider,
+  sampleTerrain,
+  sampleTerrainMostDetailed,
   Tonemapper,
   Transforms,
-  buildModuleUrl,
   HorizontalOrigin,
   VerticalOrigin,
   LabelStyle,
@@ -37,6 +41,7 @@ import { MeasureTool } from "./measure-tool";
 import { FlyByTour, FlyMode, captureViewpoint, type Viewpoint } from "./fly";
 import { signal } from "../signal";
 import { effectiveVisibility, layersFromGltf, type Layer } from "../layers/layers";
+import { BASE_MAPS, TERRAINS, makeBaseLayers } from "./basemaps";
 
 export type ViewMode = "shaded" | "edges" | "wireframe" | "unlit";
 export type Quality = "low" | "balanced" | "high" | "ultra";
@@ -89,6 +94,10 @@ export class ViewerEngine {
   readonly current = signal<ModelSummary | null>(null);
   readonly viewMode = signal<ViewMode>("shaded");
   readonly viewpoints = signal<Viewpoint[]>([]);
+  readonly baseMapId = signal("bundled");
+  readonly terrainId = signal("none");
+  /** Vertical shift applied to a 3D Tiles dataset to meet the terrain, metres. */
+  readonly groundOffset = signal(0);
 
   private model: Model | null = null;
   private tileset: Cesium3DTileset | null = null;
@@ -96,7 +105,8 @@ export class ViewerEngine {
   private pins: Entity[] = [];
   private pivotMarker: Entity | null = null;
   private onPinClick: ((id: string) => void) | null = null;
-  private baseLayer: ImageryLayer | null = null;
+  private baseLayers: ImageryLayer[] = [];
+  private baseShown = true;
   private frames = 0;
   private lastFpsTime = performance.now();
   private quality: Quality = "high";
@@ -105,8 +115,8 @@ export class ViewerEngine {
   static async create(container: HTMLElement): Promise<ViewerEngine> {
     // No Cesium ion, no Bing, no external requests: everything is bundled (NFR-12).
     Ion.defaultAccessToken = "";
-    const imagery = await TileMapServiceImageryProvider.fromUrl(buildModuleUrl("Assets/Textures/NaturalEarthII"));
-    return new ViewerEngine(container, new ImageryLayer(imagery));
+    const [base] = await makeBaseLayers("bundled");
+    return new ViewerEngine(container, base!);
   }
 
   private constructor(container: HTMLElement, baseLayer: ImageryLayer) {
@@ -122,14 +132,14 @@ export class ViewerEngine {
       useBrowserRecommendedResolution: false,
       contextOptions: { webgl: { preserveDrawingBuffer: true, powerPreference: "high-performance" } },
     });
-    this.baseLayer = baseLayer;
+    this.baseLayers = [baseLayer];
     const scene = this.widget.scene;
     scene.postProcessStages.fxaa.enabled = true;
     scene.postProcessStages.tonemapper = Tonemapper.PBR_NEUTRAL;
     scene.highDynamicRange = true;
     scene.pickTranslucentDepth = true;
     scene.globe.depthTestAgainstTerrain = true;
-    scene.globe.baseColor = Color.fromCssColorString("#1B1D21");
+    scene.globe.baseColor = Color.fromCssColorString("#3A3B36");
     scene.backgroundColor = Color.fromCssColorString("#0E0F12");
     scene.shadowMap.softShadows = true;
     scene.shadowMap.size = 4096;
@@ -188,12 +198,14 @@ export class ViewerEngine {
         scene.primitives.add(tileset);
         this.tileset = tileset;
         this.layers.set([{ id: "tileset", name: summary.name, children: [], visible: true }]);
+        void this.fitTilesetToGround(tileset, summary);
       } else {
         const place = summary.placement ?? { ...summary.centre, height: 0 };
+        const height = await this.placementHeight(place);
         let gltfJson: unknown = null;
         const model = await Model.fromGltfAsync({
           url: summary.source.url,
-          modelMatrix: Transforms.eastNorthUpToFixedFrame(Cartesian3.fromDegrees(place.lon, place.lat, place.height)),
+          modelMatrix: Transforms.eastNorthUpToFixedFrame(Cartesian3.fromDegrees(place.lon, place.lat, height)),
           scale: place.scale ?? 1,
           shadows: ShadowMode.ENABLED,
           enableDebugWireframe: true,
@@ -358,7 +370,112 @@ export class ViewerEngine {
   }
 
   setBaseImagery(on: boolean): void {
-    if (this.baseLayer) this.baseLayer.show = on;
+    this.baseShown = on;
+    for (const l of this.baseLayers) l.show = on;
+  }
+
+  /** Swap the base map (VWR-GEO-01). User layers above it are kept. */
+  async setBaseMap(id: string): Promise<void> {
+    const def = BASE_MAPS.find((b) => b.id === id);
+    if (!def) return;
+    const layers = await makeBaseLayers(id);
+    const coll = this.widget.imageryLayers;
+    for (const l of this.baseLayers) coll.remove(l, true);
+    layers.forEach((l, i) => {
+      l.show = this.baseShown;
+      coll.add(l, i);
+    });
+    this.baseLayers = layers;
+    this.baseMapId.set(id);
+    this.applyPinVisibility();
+  }
+
+  /** Swap the terrain (VWR-GEO-01) and put the open model back on the ground. */
+  async setTerrain(id: string): Promise<void> {
+    const def = TERRAINS.find((t) => t.id === id);
+    if (!def) return;
+    this.widget.scene.terrainProvider = await def.create();
+    this.terrainId.set(id);
+    await this.placeOnGround();
+  }
+
+  /**
+   * Terrain heights at points. Uses the most detailed tiles when the provider knows its
+   * availability (quantized-mesh), otherwise a fixed deep level (heightmap sources).
+   */
+  async sampleGround(points: Cartographic[], level = 14): Promise<Cartographic[]> {
+    const tp = this.widget.scene.terrainProvider;
+    if (tp instanceof EllipsoidTerrainProvider) return points.map((p) => ((p.height = 0), p));
+    return tp.availability ? sampleTerrainMostDetailed(tp, points) : sampleTerrain(tp, level, points);
+  }
+
+  /** Model height from its placement: terrain height + aboveGround when terrain is on. */
+  private async placementHeight(place: NonNullable<ModelSummary["placement"]>): Promise<number> {
+    const tp = this.widget.scene.terrainProvider;
+    if (place.aboveGround === undefined || tp instanceof EllipsoidTerrainProvider) return place.height;
+    try {
+      const [c] = await this.sampleGround([Cartographic.fromDegrees(place.lon, place.lat)]);
+      return c && Number.isFinite(c.height) ? c.height + place.aboveGround : place.height;
+    } catch {
+      return place.height;
+    }
+  }
+
+  private async placeOnGround(): Promise<void> {
+    const m = this.current.get();
+    if (this.tileset && m) return this.fitTilesetToGround(this.tileset, m);
+    if (!this.model || !m?.placement) return;
+    const h = await this.placementHeight(m.placement);
+    this.model.modelMatrix = Transforms.eastNorthUpToFixedFrame(Cartesian3.fromDegrees(m.placement.lon, m.placement.lat, h));
+  }
+
+  /**
+   * Make a georeferenced city meet the terrain (VWR-GEO-01). Datasets often use another
+   * height datum than the terrain (orthometric vs ellipsoidal, or a local datum), which
+   * leaves them floating or buried by tens of metres. We sample the dataset's surface and
+   * the terrain on a grid over its footprint and shift the dataset so its streets (the low
+   * surfaces) sit on the terrain. The shift is shown in Properties and can be adjusted.
+   */
+  private async fitTilesetToGround(tileset: Cesium3DTileset, summary: ModelSummary): Promise<void> {
+    this.setGroundOffset(0);
+    if (summary.source.groundFit !== "street" || this.terrainId.get() === "none") return;
+    // Each child tile's bounding box bottom is the base of the buildings in it.
+    const bases: { at: Cartographic; base: number }[] = [];
+    const corners = new Array(8).fill(0).map(() => new Cartesian3());
+    const visit = (tile: Cesium3DTile, depth: number) => {
+      const obb = (tile as unknown as { boundingVolume?: { boundingVolume?: OrientedBoundingBox } }).boundingVolume?.boundingVolume;
+      if (depth > 0 && obb instanceof OrientedBoundingBox) {
+        obb.computeCorners(corners);
+        let base = Infinity;
+        for (const c of corners) base = Math.min(base, Cartographic.fromCartesian(c).height);
+        bases.push({ at: Cartographic.fromCartesian(obb.center), base });
+      }
+      if (depth < 2) for (const c of tile.children) visit(c, depth + 1);
+    };
+    visit(tileset.root, 0);
+    if (bases.length < 5) return;
+    const ground = await this.sampleGround(bases.map((b) => Cartographic.clone(b.at)));
+    const pairs = bases
+      .map((b, k) => ({ g: ground[k]?.height ?? NaN, base: b.base }))
+      .filter((p) => Number.isFinite(p.g) && Number.isFinite(p.base));
+    const median = (v: number[]) => [...v].sort((x, y) => x - y)[Math.floor(v.length / 2)]!;
+    // Drop samples where the terrain is an outlier (rivers and bad cells in global DEMs).
+    const gMed = median(pairs.map((p) => p.g));
+    const good = pairs.filter((p) => Math.abs(p.g - gMed) < 40);
+    if (good.length < 5) return;
+    const offset = median(good.map((p) => p.g - p.base));
+    if (this.tileset === tileset && Math.abs(offset) > 0.5) this.setGroundOffset(offset);
+  }
+
+  /** Shift the open 3D Tiles dataset up or down along the local vertical. */
+  setGroundOffset(metres: number): void {
+    this.groundOffset.set(metres);
+    const t = this.tileset;
+    if (!t) return;
+    const c = t.boundingSphere.center;
+    const up = Cartesian3.normalize(c, new Cartesian3());
+    Cartesian3.multiplyByScalar(up, metres, up);
+    t.modelMatrix = Matrix4.fromTranslation(up);
   }
 
   setGlobe(on: boolean): void {
@@ -450,10 +567,10 @@ export class ViewerEngine {
     // so the model is the brightest thing on screen (UI spec 1, "Quiet").
     const open = !!this.current.get();
     for (const p of this.pins) p.show = !open;
-    if (this.baseLayer) {
-      this.baseLayer.brightness = open ? 0.42 : 1;
-      this.baseLayer.saturation = open ? 0.3 : 1;
-      this.baseLayer.contrast = open ? 0.9 : 1;
+    for (const l of this.baseLayers) {
+      l.brightness = open ? 0.55 : 1;
+      l.saturation = open ? 0.45 : 1;
+      l.contrast = open ? 0.92 : 1;
     }
   }
 

@@ -18,6 +18,16 @@ export interface ClassificationLevel {
 export interface ModelSource {
   kind: "glb" | "3dtiles";
   url: string;
+  /**
+   * How a georeferenced dataset meets the terrain (VWR-GEO-01):
+   * "street" lifts or lowers it so its lowest surface (streets, ground) meets the terrain;
+   * "none" trusts its own heights.
+   */
+  groundFit?: "street" | "none";
+  /** Cut the terrain away under the model's footprint, for meshes that carry their own ground. */
+  clipTerrain?: boolean;
+  /** Licence and origin, shown in Properties. */
+  attribution?: string;
 }
 
 export interface ModelSummary {
@@ -37,7 +47,16 @@ export interface ModelSummary {
   /** Footprint centre for the globe view. */
   centre: { lat: number; lon: number };
   /** Optional georeference for models that carry none (e.g. plain GLB samples). */
-  placement?: { lat: number; lon: number; height: number; headingDeg?: number; scale?: number };
+  placement?: {
+    lat: number;
+    lon: number;
+    /** Ellipsoidal height in metres, used when there is no terrain or no aboveGround. */
+    height: number;
+    /** When set and terrain is on, the model base sits this many metres above the terrain. */
+    aboveGround?: number;
+    headingDeg?: number;
+    scale?: number;
+  };
   thumbnail?: string;
   sizeBytes: number;
 }
