@@ -91,7 +91,7 @@ export async function prepareFiles(files: LocalFile[], report: CheckReport): Pro
   if (!p?.prepare || !main) throw new LoadError("This file cannot be opened in the browser.");
   const made: string[] = [];
   const url: UrlMaker = (data, type) => {
-    const u = URL.createObjectURL(new Blob([data as BlobPart], type ? { type } : undefined));
+    const u = URL.createObjectURL(new Blob([data] as ConstructorParameters<typeof Blob>[0], type ? { type } : undefined));
     made.push(u);
     return u;
   };

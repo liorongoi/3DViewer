@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "./app.ts";
-import { migrate, openPglite, openPostgres, type Db } from "./db.ts";
+import { MIGRATIONS, migrate, openPglite, openPostgres, type Db } from "./db.ts";
 import { seed } from "./seed.ts";
 
 let db: Db;
@@ -12,7 +12,7 @@ beforeAll(async () => {
   // CI repeats these tests on a real PostgreSQL (TEST_DATABASE_URL); locally they use embedded PGlite.
   const url = process.env.TEST_DATABASE_URL;
   db = url ? await openPostgres(url) : await openPglite();
-  expect(await migrate(db)).toEqual(["001_init.sql"]);
+  expect(await migrate(db)).toEqual(MIGRATIONS.map(([f]) => f));
   expect(await migrate(db)).toEqual([]);
   await seed(db, { samples: true });
   app = await buildApp({ db });

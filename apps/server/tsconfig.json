@@ -7,7 +7,7 @@
     "types": ["node"],
     "noEmit": true,
     "allowImportingTsExtensions": true,
-    "erasableSyntaxOnly": true
+    "erasableSyntaxOnly": false
   },
   "include": ["src"]
 }
