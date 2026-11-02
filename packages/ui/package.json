@@ -8,7 +8,7 @@
     "./tokens.css": "./src/tokens.css"
   },
   "scripts": {
-    "typecheck": "tsc -p .",
+    "typecheck": "echo ui: CSS only, nothing to typecheck",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
