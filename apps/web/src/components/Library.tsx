@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { useClassOf } from "../state/classification";
+import { useLibrary } from "../state/library";
 import { useTranslation } from "react-i18next";
-import { SAMPLE_CLASSIFICATIONS, SAMPLE_LIBRARY, UPDATE_STATUSES, type ModelSummary } from "@viewer/shared";
+import { SAMPLE_CLASSIFICATIONS, UPDATE_STATUSES, type ModelSummary } from "@viewer/shared";
 import { useApp, type Filters } from "../state/store";
 import { Box, Boxes, ChevronDown, FileBox, Search, X } from "./icons";
 import { StatusBadge, cx } from "./primitives";
@@ -22,7 +23,8 @@ export function filterModels(models: ModelSummary[], f: Filters, classOf: (m: Mo
 export function useFilteredModels(): ModelSummary[] {
   const filters = useApp((s) => s.filters);
   const overrides = useApp((s) => s.classOverrides);
-  return useMemo(() => filterModels(SAMPLE_LIBRARY, filters, (m) => overrides[m.id] ?? m.classificationId), [filters, overrides]);
+  const all = useLibrary();
+  return useMemo(() => filterModels(all, filters, (m) => overrides[m.id] ?? m.classificationId), [all, filters, overrides]);
 }
 
 export function SearchField({ className, autoFocus }: { className?: string; autoFocus?: boolean }) {
@@ -53,7 +55,8 @@ export function FilterChips({ className }: { className?: string }) {
   const { t } = useTranslation();
   const f = useApp((s) => s.filters);
   const setFilters = useApp((s) => s.setFilters);
-  const uniq = (k: keyof ModelSummary) => [...new Set(SAMPLE_LIBRARY.map((m) => String(m[k])))].sort();
+  const all = useLibrary();
+  const uniq = (k: keyof ModelSummary) => [...new Set(all.map((m) => String(m[k])))].sort();
   const chips: { key: keyof Filters; label: string; options: { value: string; label: string }[] }[] = [
     { key: "project", label: t("library.filters.project"), options: uniq("project").map((v) => ({ value: v, label: v })) },
     { key: "operation", label: t("library.filters.operation"), options: uniq("operation").map((v) => ({ value: v, label: v })) },

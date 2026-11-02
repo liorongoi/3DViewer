@@ -14,3 +14,13 @@ export function saveText(name: string, text: string, type = "text/csv;charset=ut
 
 /** File-safe name: letters, digits, dash. */
 export const slug = (s: string) => s.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "").toLowerCase() || "export";
+
+/** Saves a data URL (for example a PNG screenshot). */
+export function saveDataUrl(name: string, dataUrl: string): void {
+  const a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+}

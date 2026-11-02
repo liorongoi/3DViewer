@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { CoordinateSystem, LengthUnit, Quality, ViewMode } from "@viewer/core";
-import type { UpdateStatus } from "@viewer/shared";
+import type { ModelSummary, UpdateStatus } from "@viewer/shared";
 import { readPref, writePref } from "./prefs";
 
 export type Route = "home" | "viewer";
@@ -38,14 +38,20 @@ interface AppState {
   paletteOpen: boolean;
   helpOpen: boolean;
   uploadOpen: boolean;
+  /** Performance overlay (Shift+P). */
+  perfOpen: boolean;
+  adaptiveResolution: boolean;
   fullscreen: boolean;
   onboardingDone: boolean;
   filters: Filters;
   /** Classification chosen by the user per model id (overrides the library value). */
   classOverrides: Record<string, string>;
+  /** Models uploaded in this browser session (kept in memory until the server stores them, Phase 3). */
+  uploads: ModelSummary[];
+  addUpload: (m: ModelSummary) => void;
   setClassification: (modelId: string, classificationId: string) => void;
   set: (patch: Partial<AppState>) => void;
-  setPref: <K extends "theme" | "lang" | "coordSystem" | "unit" | "quality" | "fadeTools">(k: K, v: AppState[K]) => void;
+  setPref: <K extends "theme" | "lang" | "coordSystem" | "unit" | "quality" | "fadeTools" | "adaptiveResolution">(k: K, v: AppState[K]) => void;
   setFilters: (patch: Partial<Filters>) => void;
 }
 
@@ -71,6 +77,8 @@ export const useApp = create<AppState>((set) => ({
   paletteOpen: false,
   helpOpen: false,
   uploadOpen: false,
+  perfOpen: false,
+  adaptiveResolution: readPref<string>("adaptiveResolution", "true") === "true",
   fullscreen: false,
   onboardingDone: readPref<string>("onboarding", "0") === "1",
   filters: { query: "", project: null, operation: null, status: null, entity: null, classification: null },
@@ -81,6 +89,8 @@ export const useApp = create<AppState>((set) => ({
       return {};
     }
   })(),
+  uploads: [],
+  addUpload: (m) => set((s) => ({ uploads: [m, ...s.uploads.filter((x) => x.id !== m.id)] })),
   setClassification: (modelId, classificationId) =>
     set((s) => {
       const classOverrides = { ...s.classOverrides, [modelId]: classificationId };

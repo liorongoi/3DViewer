@@ -1,7 +1,7 @@
+import { useLibrary } from "../state/library";
 import { Command } from "cmdk";
 import { useTranslation } from "react-i18next";
 import { parseCoordinateQuery, walk } from "@viewer/core";
-import { SAMPLE_LIBRARY } from "@viewer/shared";
 import { useState } from "react";
 import { useEngine, useSignal } from "../engine";
 import { useApp } from "../state/store";
@@ -10,6 +10,7 @@ import { Box, Crosshair, Eye, House, Layers, Moon, Orbit, Plane, Route, Ruler, S
 /** Ctrl+K: every command, layer and model, plus "fly to coordinates" (UI spec 1.1 #6). */
 export function CommandPalette({ onOpenModel }: { onOpenModel: (id: string) => void }) {
   const { t } = useTranslation();
+  const library = useLibrary();
   const engine = useEngine();
   const open = useApp((s) => s.paletteOpen);
   const set = useApp((s) => s.set);
@@ -82,7 +83,7 @@ export function CommandPalette({ onOpenModel }: { onOpenModel: (id: string) => v
             </Command.Group>
           )}
           <Command.Group heading={t("palette.models")} className={group}>
-            {SAMPLE_LIBRARY.map((m) => (
+            {library.map((m) => (
               <Command.Item key={m.id} value={`model ${m.name} ${m.project} ${m.operation}`} className={item} onSelect={run(() => onOpenModel(m.id))}>
                 <Box size={16} />
                 <span className="flex-1 truncate">{m.name}</span>

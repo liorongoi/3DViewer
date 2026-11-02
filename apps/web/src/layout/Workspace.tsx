@@ -9,6 +9,7 @@ import { Dock } from "../components/Dock";
 import { CoordinatesHud, HintLine, ScaleBar, ViewCube } from "../components/Hud";
 import { ModelHeader } from "../components/ModelHeader";
 import { FeaturePopup } from "../components/FeaturePopup";
+import { PerfHud } from "../components/PerfHud";
 import { Globe, Layers, PanelIcon, Ruler, Upload } from "./parts";
 import { IconButton, cx } from "../components/primitives";
 import { fadeClasses, useChromeFade } from "./useChromeFade";
@@ -84,6 +85,7 @@ export function Workspace() {
 
       {/* right column */}
       <div className={cx("pointer-events-none fixed end-3 z-20 flex flex-col items-end gap-2 bottom-[120px]", top)}>
+        <PerfHud className="pointer-events-auto" />
         <ViewCube className={cx("pointer-events-auto", fade.ambient)} />
         <div className={cx("pointer-events-auto flex flex-col gap-1", fade.ambient)}>
           {route === "viewer" && !leftOpen && (

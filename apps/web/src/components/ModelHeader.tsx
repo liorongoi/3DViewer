@@ -4,7 +4,10 @@ import { useTranslation } from "react-i18next";
 import { SAMPLE_CLASSIFICATIONS } from "@viewer/shared";
 import { useEngine, useSignal } from "../engine";
 import { useApp } from "../state/store";
-import { ChevronDown, ChevronLeft, Command, Share2 } from "./icons";
+import { Camera, ChevronDown, ChevronLeft, Command, Share2 } from "./icons";
+import { hiddenLayers, shareUrl } from "../share";
+import { screenshotWithBanner } from "../screenshot";
+import { saveDataUrl, slug } from "../download";
 import { IconButton, StatusBadge, cx } from "./primitives";
 
 /** Model identity: name, status, version, classification, share (SRS 5.1 top bar). */
@@ -42,16 +45,31 @@ export function ModelHeader({ onBack, backLabel, className, compact }: { onBack:
         <Command size={16} />
       </IconButton>
       <IconButton
-        label={shared ? t("viewer.shareCopied") : t("viewer.share")}
+        label="Screenshot with classification"
         className="tip-below"
         onClick={async () => {
+          if (!engine) return;
+          const png = await screenshotWithBanner(engine, cls, model);
+          saveDataUrl(`${slug(model.name)}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.png`, png);
+        }}
+      >
+        <Camera size={16} />
+      </IconButton>
+      <IconButton
+        label={shared ? t("viewer.shareCopied") : model.id.startsWith("upload-") ? "Uploads in this session cannot be shared yet" : t("viewer.share")}
+        className="tip-below"
+        disabled={model.id.startsWith("upload-")}
+        onClick={async () => {
+          if (!engine) return;
+          const url = shareUrl({ m: model.id, v: model.version, c: engine.getView(), mode: engine.viewMode.get(), hidden: hiddenLayers(engine.layers.get()) });
           try {
-            await navigator.clipboard.writeText(`${location.origin}${location.pathname}#model=${model.id}&v=${model.version}`);
+            await navigator.clipboard.writeText(url);
             setShared(true);
             setTimeout(() => setShared(false), 1500);
           } catch {
-            /* ignore */
+            /* the link is still in the address bar */
           }
+          history.replaceState(null, "", url);
         }}
       >
         <Share2 size={16} />

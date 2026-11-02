@@ -63,6 +63,8 @@ export {
   ScissorsLineDashed,
   Radar,
   ScanEye,
+  FolderOpen,
+  XCircle,
 } from "lucide-react";
 export { CircleDashed as CircleDraft } from "lucide-react";
 export { CircleHalf } from "./circle-half";
