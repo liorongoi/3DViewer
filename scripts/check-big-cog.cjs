@@ -1,14 +1,14 @@
 // WP 1.9 acceptance: a 2 GB Cloud Optimised GeoTIFF streams without loading fully.
 //
-// Writes a 2 GB tiled RGB GeoTIFF with overviews (COG layout, UTM 31N over Lyon), serves it
-// over HTTP with range requests, opens it in the real viewer as a user layer and looks at it
-// from far and from close. It reports how many bytes the viewer actually read.
+// Writes a 2 GB tiled RGB GeoTIFF with overviews (COG layout, UTM 31N over Lyon), links it
+// into the web build so `vite preview` serves it with range requests from the app's own
+// origin, opens it in the real viewer as a user layer and looks at it from far and from
+// close. It reports how many bytes the viewer actually read (from the browser's own count).
 //
-// Usage: start `vite preview` on :4173 (apps/web), then
+// Usage: build apps/web and start `vite preview` on :4173, then
 //   node scripts/check-big-cog.cjs <work folder>   (needs about 2.2 GB free)
 // Set CHROMIUM to a Chromium binary if Playwright's own is not installed.
 const fs = require("fs");
-const http = require("http");
 const path = require("path");
 const { chromium } = require("playwright");
 
@@ -59,8 +59,9 @@ function writeCog(file) {
     put(284, 3, 1, 1);
     put(322, 3, 1, TILE);
     put(323, 3, 1, TILE);
-    put(324, 4, n, offs);
-    put(325, 4, n, counts);
+    // TIFF stores a value that fits in 4 bytes in the entry itself, so a single tile's offset and size go inline.
+    put(324, 4, n, n === 1 ? dataAt[i] : offs);
+    put(325, 4, n, n === 1 ? tileBytes : counts);
     put(339, 3, 3, sf);
     if (i === 0) {
       const scale = arr(24), tie = arr(48), keys = arr(32);
@@ -118,26 +119,6 @@ function writeCog(file) {
   return total;
 }
 
-/** A static file server with range requests and CORS, counting the bytes it sends. */
-function serve(file) {
-  const stat = fs.statSync(file);
-  const stats = { bytes: 0, requests: 0 };
-  const server = http.createServer((req, res) => {
-    res.setHeader("access-control-allow-origin", "*");
-    res.setHeader("access-control-allow-headers", "range");
-    res.setHeader("access-control-expose-headers", "content-range, content-length, accept-ranges");
-    if (req.method === "OPTIONS") return res.writeHead(204).end();
-    const m = /bytes=(\d+)-(\d*)/.exec(req.headers.range || "");
-    const start = m ? Number(m[1]) : 0;
-    const end = m && m[2] ? Math.min(Number(m[2]), stat.size - 1) : stat.size - 1;
-    stats.requests++;
-    stats.bytes += end - start + 1;
-    res.writeHead(m ? 206 : 200, { "accept-ranges": "bytes", "content-length": end - start + 1, ...(m ? { "content-range": `bytes ${start}-${end}/${stat.size}` } : {}), "content-type": "image/tiff" });
-    fs.createReadStream(file, { start, end }).pipe(res);
-  });
-  return new Promise((r) => server.listen(0, "127.0.0.1", () => r({ server, stats, url: `http://127.0.0.1:${server.address().port}/big.tif` })));
-}
-
 (async () => {
   const dir = process.argv[2];
   if (!dir) throw new Error("Usage: node scripts/check-big-cog.cjs <work folder>");
@@ -146,11 +127,22 @@ function serve(file) {
   let t0 = Date.now();
   const size = fs.existsSync(file) ? fs.statSync(file).size : writeCog(file);
   console.log(`COG: ${(size / 1024 ** 3).toFixed(2)} GB, written in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
-  const { server, stats, url } = await serve(file);
+  // Served by vite preview from the web build, so the app's security policy allows it.
+  const linkDir = path.join(__dirname, "../apps/web/dist/cog-check");
+  fs.mkdirSync(linkDir, { recursive: true });
+  try { fs.unlinkSync(path.join(linkDir, "big.tif")); } catch {}
+  fs.symlinkSync(path.resolve(file), path.join(linkDir, "big.tif"));
+  const url = "http://localhost:4173/cog-check/big.tif";
+  const stats = { bytes: 0, requests: 0 };
 
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || undefined, args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   page.on("pageerror", (e) => console.log("page error:", e.message));
+  page.on("requestfinished", async (req) => {
+    if (!req.url().endsWith("/big.tif")) return;
+    stats.requests++;
+    stats.bytes += (await req.sizes()).responseBodySize;
+  });
   await page.goto("http://localhost:4173/?render-only", { waitUntil: "load" });
   await page.waitForFunction(() => !!window.viewerEngine, null, { timeout: 60000 });
   t0 = Date.now();
@@ -187,7 +179,7 @@ function serve(file) {
   const share = stats.bytes / size;
   console.log(`Total read: ${(stats.bytes / 1024 ** 2).toFixed(1)} MB of ${(size / 1024 ** 2).toFixed(0)} MB (${(share * 100).toFixed(2)}%)`);
   await browser.close();
-  server.close();
+  fs.unlinkSync(path.join(linkDir, "big.tif"));
   if (share > 0.05) {
     console.log("FAIL: the viewer read more than 5% of the file");
     process.exit(1);
