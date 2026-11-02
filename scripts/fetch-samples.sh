@@ -34,3 +34,9 @@ git clone -q --depth 1 --filter=blob:none --sparse https://github.com/iTowns/iTo
 mkdir -p "$OUT/3dtiles/lyon1" "$OUT/3dtiles/tarn-lidar"
 cp -r "$ITOWNS/3DTiles/lyon_1_4978/." "$OUT/3dtiles/lyon1/"
 cp -r "$ITOWNS/3DTiles/lidar-hd-gorges-saint-chely-tarn/." "$OUT/3dtiles/tarn-lidar/"
+# Lyon comes as 128 blocks under one root; give it real LOD (simplified parent tiles).
+LODTOOLS="$TMP/lod-tools"
+mkdir -p "$LODTOOLS" && (cd "$LODTOOLS" && npm init -y >/dev/null && npm i -s @gltf-transform/core@4.5.1 @gltf-transform/extensions@4.5.1 \
+  @gltf-transform/functions@4.5.1 draco3dgltf@1.5.7 meshoptimizer@0.25.0 sharp@0.34.5 >/dev/null)
+cp "$(dirname "$0")/build-lod-pyramid.mjs" "$LODTOOLS/"
+node "$LODTOOLS/build-lod-pyramid.mjs" "$OUT/3dtiles/lyon1" "$OUT/3dtiles/lyon1" >/dev/null

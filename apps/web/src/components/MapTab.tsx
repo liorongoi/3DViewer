@@ -29,14 +29,23 @@ function Section({ title, icon: Icon, children }: { title: string; icon: typeof 
   );
 }
 
-function Choice({ checked, label, note, onSelect }: { checked: boolean; label: string; note?: string; onSelect: () => void }) {
+/** The claude.ai preview page cannot reach other sites, so online sources are switched off there. */
+const NO_ONLINE = import.meta.env.VITE_NO_ONLINE === "1";
+const OFFLINE_NOTE = "Online sources can't load in this preview page. They work in the web app and the desktop app.";
+
+function Choice({ checked, label, note, onSelect, disabled }: { checked: boolean; label: string; note?: string; onSelect: () => void; disabled?: boolean }) {
   return (
     <button
       type="button"
       role="radio"
       aria-checked={checked}
+      disabled={disabled}
+      title={disabled ? OFFLINE_NOTE : undefined}
       onClick={onSelect}
-      className={cx("flex h-8 w-full items-center gap-2 rounded-[6px] px-2 text-start", checked ? "bg-accent-soft text-fg" : "hover:bg-s3 text-fg2")}
+      className={cx(
+        "flex h-8 w-full items-center gap-2 rounded-[6px] px-2 text-start disabled:cursor-not-allowed disabled:opacity-45",
+        checked ? "bg-accent-soft text-fg" : "hover:bg-s3 text-fg2 disabled:hover:bg-transparent",
+      )}
     >
       <span className={cx("grid h-3.5 w-3.5 place-items-center rounded-full border", checked ? "border-accent" : "border-line-strong")}>
         {checked && <span className="h-1.5 w-1.5 rounded-full bg-accent" />}
@@ -60,7 +69,8 @@ function BasePicker() {
             key={b.id}
             checked={!userBase && id === b.id}
             label={b.label.replace(/ \((online|offline)\)$/, "")}
-            note={b.online ? "online" : "offline"}
+            note={b.online ? (NO_ONLINE ? "not in preview" : "online") : "offline"}
+            disabled={NO_ONLINE && b.online}
             onSelect={() => {
               if (userBase) engine?.userLayers.setAsBase(userBase.id, false);
               void engine?.setBaseMap(b.id);
@@ -85,7 +95,8 @@ function TerrainPicker() {
             key={t.id}
             checked={id === t.id}
             label={t.label.replace(/ \((online|offline)\)$/, "")}
-            note={t.id === "none" ? undefined : t.online ? "online" : "offline"}
+            note={t.id === "none" ? undefined : t.online ? (NO_ONLINE ? "not in preview" : "online") : "offline"}
+            disabled={NO_ONLINE && t.online}
             onSelect={async () => {
               setBusy(true);
               try {
@@ -98,6 +109,7 @@ function TerrainPicker() {
         ))}
       </div>
       <p className="px-2 pt-1 text-[11px] text-fg3">Models are set on the terrain when it changes, so nothing floats.</p>
+      {NO_ONLINE && <p className="px-2 pt-1 text-[11px] text-fg3">{OFFLINE_NOTE}</p>}
     </Section>
   );
 }

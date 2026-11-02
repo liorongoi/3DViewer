@@ -61,3 +61,7 @@ A = os.path.join(OUT, "assets")
 for f in os.listdir(A):
     if f.endswith(".woff") or any(k in f for k in ("vietnamese", "cyrillic", "greek")):
         os.remove(os.path.join(A, f))
+
+# The flat copy of the Lyon tileset is only a reference for rebuilding the LOD pyramid.
+flat = os.path.join(S, "3dtiles/lyon1/tileset-flat.json")
+if os.path.exists(flat): os.remove(flat)

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useClassOf } from "../state/classification";
 import { useTranslation } from "react-i18next";
 import { SAMPLE_CLASSIFICATIONS } from "@viewer/shared";
 import { useEngine, useSignal } from "../engine";
@@ -13,8 +14,9 @@ export function ModelHeader({ onBack, backLabel, className, compact }: { onBack:
   const model = useSignal(engine?.current, null);
   const set = useApp((s) => s.set);
   const [shared, setShared] = useState(false);
+  const classOf = useClassOf();
   if (!model) return null;
-  const cls = SAMPLE_CLASSIFICATIONS.find((c) => c.id === model.classificationId);
+  const cls = classOf(model);
   return (
     <div className={cx("glass flex h-12 items-center gap-2 rounded-[12px] ps-1.5 pe-1.5", className)}>
       <button type="button" onClick={onBack} className="tip tip-below flex h-9 items-center gap-1 rounded-[8px] ps-1.5 pe-2.5 text-fg2 hover:bg-s3 hover:text-fg" data-tip={backLabel}>

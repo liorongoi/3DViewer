@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useClassOf } from "../state/classification";
 import { useTranslation } from "react-i18next";
 import { ecefToGeodetic, formatCoordinate, formatLength, type Measurement } from "@viewer/core";
 import { SAMPLE_CLASSIFICATIONS } from "@viewer/shared";
@@ -186,8 +187,10 @@ function PropertiesTab() {
   const { t } = useTranslation();
   const engine = useEngine();
   const model = useSignal(engine?.current, null);
+  const classOf = useClassOf();
+  const setClassification = useApp((s) => s.setClassification);
   if (!model) return <p className="p-4 text-fg3">—</p>;
-  const cls = SAMPLE_CLASSIFICATIONS.find((c) => c.id === model.classificationId);
+  const cls = classOf(model);
   const rows: [string, string][] = [
     [t("upload.fields.project"), model.project],
     [t("upload.fields.operation"), model.operation],
@@ -206,6 +209,21 @@ function PropertiesTab() {
           </span>
         )}
       </div>
+      <label className="flex items-center justify-between gap-2">
+        <span className="text-fg3">Classification</span>
+        <select
+          value={cls.id}
+          onChange={(e) => setClassification(model.id, e.target.value)}
+          className="h-8 rounded-[6px] border border-line bg-s1solid px-2 text-[12px] font-semibold"
+          aria-label="Classification of this model"
+        >
+          {SAMPLE_CLASSIFICATIONS.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.label.replace(/ · .*$/, "")}
+            </option>
+          ))}
+        </select>
+      </label>
       <p className="text-fg2">{model.description}</p>
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
         {rows.map(([k, v]) => (
@@ -351,18 +369,26 @@ function LodSection() {
       <label className="flex flex-col gap-0.5">
         <span className="flex justify-between text-[11px] text-fg3">
           Detail (screen-space error)
-          <span className="num text-fg2">{s.sse < 4 ? "very high" : s.sse < 12 ? "high" : s.sse < 32 ? "medium" : "low"} · {Math.round(s.sse * 10) / 10} px</span>
+          <span className="num text-fg2">{s.sse <= 0 ? "full" : s.sse < 4 ? "very high" : s.sse < 12 ? "high" : s.sse < 32 ? "medium" : "low"} · {Math.round(s.sse * 10) / 10} px</span>
         </span>
         <input
           type="range"
           min={0}
           max={1000}
-          value={Math.round((Math.log(s.sse) / Math.log(64)) * 1000)}
+          value={s.sse <= 0 ? 0 : Math.round((Math.log(s.sse) / Math.log(64)) * 1000)}
+          disabled={s.sse <= 0}
           onChange={(e) => set({ sse: Math.max(1, 64 ** (Number(e.target.value) / 1000)) })}
           className="w-full accent-[var(--accent)]"
           style={{ direction: "rtl" }}
           aria-label="Detail"
         />
+      </label>
+      <label className="mt-1 flex items-start gap-2 text-[12px]" title="Loads the finest level everywhere, near and far. Uses the most memory.">
+        <input type="checkbox" className="mt-0.5" checked={s.sse <= 0} onChange={(e) => set({ sse: e.target.checked ? 0 : 8 })} />
+        <span>
+          <span className="text-fg">Full detail: every triangle</span>
+          <span className="block text-[11px] text-fg3">Loads the finest level everywhere, near and far. Uses the most memory.</span>
+        </span>
       </label>
       <div className="mt-1 flex flex-col gap-1">
         {toggle("colorByDepth", "Colour tiles by depth")}

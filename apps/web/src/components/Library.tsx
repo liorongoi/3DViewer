@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
+import { useClassOf } from "../state/classification";
 import { useTranslation } from "react-i18next";
 import { SAMPLE_CLASSIFICATIONS, SAMPLE_LIBRARY, UPDATE_STATUSES, type ModelSummary } from "@viewer/shared";
 import { useApp, type Filters } from "../state/store";
 import { Box, Boxes, ChevronDown, FileBox, Search, X } from "./icons";
 import { StatusBadge, cx } from "./primitives";
 
-export function filterModels(models: ModelSummary[], f: Filters): ModelSummary[] {
+export function filterModels(models: ModelSummary[], f: Filters, classOf: (m: ModelSummary) => string = (m) => m.classificationId): ModelSummary[] {
   const q = f.query.trim().toLocaleLowerCase();
   return models.filter(
     (m) =>
@@ -14,13 +15,14 @@ export function filterModels(models: ModelSummary[], f: Filters): ModelSummary[]
       (!f.operation || m.operation === f.operation) &&
       (!f.status || m.status === f.status) &&
       (!f.entity || m.responsibleEntity === f.entity) &&
-      (!f.classification || m.classificationId === f.classification),
+      (!f.classification || classOf(m) === f.classification),
   );
 }
 
 export function useFilteredModels(): ModelSummary[] {
   const filters = useApp((s) => s.filters);
-  return useMemo(() => filterModels(SAMPLE_LIBRARY, filters), [filters]);
+  const overrides = useApp((s) => s.classOverrides);
+  return useMemo(() => filterModels(SAMPLE_LIBRARY, filters, (m) => overrides[m.id] ?? m.classificationId), [filters, overrides]);
 }
 
 export function SearchField({ className, autoFocus }: { className?: string; autoFocus?: boolean }) {
@@ -134,7 +136,7 @@ const FORMAT_LABEL: Record<string, string> = { glb: "GLB", gltf: "glTF", fbx: "F
 
 export function ModelCard({ m, onOpen, dense }: { m: ModelSummary; onOpen: () => void; dense?: boolean }) {
   const { t } = useTranslation();
-  const cls = SAMPLE_CLASSIFICATIONS.find((c) => c.id === m.classificationId);
+  const cls = useClassOf()(m);
   const [thumbOk, setThumbOk] = useState(true);
   const [frame, setFrame] = useState<number | null>(null);
   const Icon = m.sourceFormat === "3dtiles" ? Boxes : m.sourceFormat === "fbx" ? FileBox : Box;
