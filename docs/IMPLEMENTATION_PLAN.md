@@ -2,7 +2,7 @@
 
 **Product:** 3D Intelligence Model Viewer (VIEWER), Release 1
 **Source:** *SRS: 3D Intelligence Model Viewer* (Nov 1, 2026, Lior Ron)
-**Status:** Approved by the product owner on 2 Nov 2026. Phase 0 in progress.
+**Status:** Approved by the product owner on 2 Nov 2026. Phase 0 closed on 2 Nov 2026; Phase 1 (viewer core) and Phase 3 (server) in progress.
 **Companion docs:** [UI/UX design spec](./UI_UX_DESIGN.md) · [Test data and base map sources](./DATA_SOURCES.md) · [Requirements traceability](./TRACEABILITY.md)
 
 ---
@@ -52,6 +52,14 @@ These requirements are new (not in the SRS). They get their own IDs and are trac
 - VWR-ANL-01/02: many line-of-sight pairs with an interactive profile chart, earth curvature and refraction; CSV export of the pairs and of each profile.
 - VWR-ANL-03: GPU viewshed (point-light depth cube), drag to move, Shift+drag for height, live update; buildings, lidar and terrain all block the view.
 - VWR-LOD-01: LOD inspector for 3D Tiles (colour by depth, detail slider, freeze, bounding boxes, tiles per depth, memory).
+
+**Phase 0 closed, 2 Nov 2026** (product owner: "advance to the next phase"). Carried over:
+- WP 0.2 dependency and licence review (including the Autodesk FBX SDK EULA) stays open with security review; it does not block development.
+- WP 0.5 tiler bake-off: the custom meshoptimizer tiler (`scripts/build-lod-pyramid.mjs`, used for the Lyon LOD pyramid) is the working choice; mago 3DTiler is compared on a large FBX inside WP 3.4.
+- WP 0.6 Windows workstation run: moved to WP 6.7.
+- WP 0.8 test data kit: public data in [DATA_SOURCES](./DATA_SOURCES.md) is used until the internal transfer is arranged.
+
+**Phase 3 progress, 2 Nov 2026.** WP 3.2 tus uploads with resume, WP 3.3 unpack guards (zip slip, zip bomb, counts and sizes measured while inflating), the shared loader check, a ClamAV hook; WP 3.4 a PostgreSQL job queue with leases (plain SQL, `FOR UPDATE SKIP LOCKED`, instead of pg-boss), FBX→GLB with FBX2glTF, original kept; WP 3.7 file delivery with range, ETag and immutable caching for development (Caddy in production). The official glTF and 3D Tiles validators, tiling and the 1.5 GB resume test (AC-07) are still to do.
 
 **Phase 0 progress, 2 Nov 2026.**
 - WP 0.1: CI runs type-check, unit tests and build on every push (GitHub Actions; the internal CI repeats the same steps).

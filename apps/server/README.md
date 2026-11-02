@@ -10,7 +10,11 @@ DATABASE_URL=postgres://… pnpm --filter @viewer/server dev   # a real PostgreS
 | Variable | Default | Meaning |
 |---|---|---|
 | `DATABASE_URL` | none | PostgreSQL connection. Without it the server uses embedded PGlite in `DATA_DIR`. |
-| `DATA_DIR` | `./data` | PGlite data folder. |
+| `DATA_DIR` | `./data` | PGlite database in `DATA_DIR/db`, files in `DATA_DIR/storage`. |
+| `STORAGE_DIR` | `DATA_DIR/storage` | Uploads in progress, unpacked ingests and published model files. |
+| `CLAMDSCAN` | none | Path to `clamdscan`. Without it uploads are not scanned and each report says so. |
+| `FBX2GLTF` | none | Path to the FBX2glTF program. Without it FBX uploads fail with a clear reason. |
+| `WORKERS` | `1` | `0` runs the API without the conversion worker. |
 | `SEED_SAMPLES` | `1` | `0` starts with an empty library (classification levels are always seeded once). |
 | `HOST`, `PORT` | `127.0.0.1`, `8787` | Listen address. |
 
@@ -29,12 +33,26 @@ The OpenAPI description is at `/api/openapi.json`.
 | POST | `/api/models/:id/versions` | New version becomes current; older ones are kept |
 | GET | `/api/audit?from=&to=&action=&target=&limit=` | Audit events, newest first |
 | GET | `/api/audit.csv` | CSV export (the export itself is audited) |
+| POST | `/api/ingests` | Starts an upload: the files and the new model (or `modelId` for a new version). Returns one tus URL per file |
+| HEAD / PATCH | `/api/tus/:id` | tus 1.0 resumable upload: HEAD gives the offset, PATCH appends from it |
+| POST | `/api/ingests/:id/submit` | Queues the check, scan, conversion and publish |
+| GET | `/api/ingests/:id` | Upload progress, state, the check report and the model it became |
+| GET | `/files/:model/:ingest/…` | Published model files, immutable, with ETag and range requests |
 | GET | `/api/audit/verify` | Recomputes the hash chain and names the first changed row |
 
 ## Audit (WP 3.8, NFR-11)
 
 Every view and change is stored with time, IP and workstation, in the same transaction as the change. The desktop app sends the Windows computer name in `X-Workstation`; for browsers the server looks up the IP's DNS name (decision D-5). Each row holds the SHA-256 of the previous row's hash and its own content, so a changed or deleted row breaks the chain at that point.
 
+## Uploads and ingest (WP 3.2–3.4, 3.7)
+
+1. The client names the files; each is sent with tus, so a dropped connection resumes from the last byte the server has.
+2. On submit a job joins the PostgreSQL queue. A worker leases it and renews the lease while it works; if the worker dies, the lease runs out and the job is taken again. Failures retry with backoff (10 s, 20 s, 40 s); a damaged file or a missing converter fails at once.
+3. The job unpacks zips without trusting them: each name must stay inside the upload, sizes are counted as they inflate, and an entry that expands over 1000 times is stopped as a zip bomb.
+4. It checks the files with the same loaders the browser uses (`@viewer/core/loaders`), so the report is the one the upload wizard shows. Every problem is listed.
+5. ClamAV scans the files when `CLAMDSCAN` is set. FBX is converted to GLB with FBX2glTF.
+6. Files are published under `files/<model>/<ingest>/`. The model or version, its report and the audit row are written in one transaction.
+
 ## Not yet
 
-Uploads (tus), validation and antivirus, the conversion workers (FBX2glTF, tiling) and thumbnails follow in WP 3.2–3.5; admin password and quotas in WP 3.9.
+Tiling large meshes and thumbnails follow in WP 3.5. The admin password and quotas come in WP 3.9.

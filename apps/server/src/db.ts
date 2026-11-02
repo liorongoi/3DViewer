@@ -1,5 +1,11 @@
-import { readdir, readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
+import m001 from "./migrations/001_init.sql?raw";
+import m002 from "./migrations/002_ingest.sql?raw";
+
+/** Migrations in order. Bundled into the build, so the server is one file plus node_modules. */
+export const MIGRATIONS: [string, string][] = [
+  ["001_init.sql", m001],
+  ["002_ingest.sql", m002],
+];
 
 export interface Queryable {
   query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
@@ -54,15 +60,13 @@ export async function openPostgres(url: string): Promise<Db> {
   };
 }
 
-/** Applies the SQL files in migrations/ in name order, each once. */
+/** Applies each migration once, in order. */
 export async function migrate(db: Db): Promise<string[]> {
   await db.exec("CREATE TABLE IF NOT EXISTS schema_migrations (id text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())");
   const done = new Set((await db.query<{ id: string }>("SELECT id FROM schema_migrations")).map((r) => r.id));
-  const dir = fileURLToPath(new URL("./migrations/", import.meta.url));
   const applied: string[] = [];
-  for (const f of (await readdir(dir)).filter((x) => x.endsWith(".sql")).sort()) {
+  for (const [f, sql] of MIGRATIONS) {
     if (done.has(f)) continue;
-    const sql = await readFile(dir + f, "utf8");
     await db.tx(async (q) => {
       for (const stmt of sql.split(/;\s*$/m).map((s) => s.trim()).filter((s) => s && !/^(--[^\n]*\n?)+$/.test(s))) await q.query(stmt);
       await q.query("INSERT INTO schema_migrations (id) VALUES ($1)", [f]);

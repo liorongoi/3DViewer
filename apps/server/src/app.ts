@@ -4,6 +4,8 @@ import swagger from "@fastify/swagger";
 import { UPDATE_STATUSES } from "@viewer/shared/model";
 import { audit, auditCsv, verifyAudit, type AuditRow } from "./audit.ts";
 import type { Db } from "./db.ts";
+import { registerIngest } from "./ingest.ts";
+import { registerFiles, type Storage } from "./storage.ts";
 import { addVersion, createModel, getModel, listModels, listVersions, updateModel, type LibraryFilter, type ModelPatch, type NewModel } from "./library.ts";
 
 export interface AppOptions {
@@ -11,6 +13,8 @@ export interface AppOptions {
   /** Reverse DNS for the audit host column (decision D-5). Off in tests. */
   reverseDns?: boolean;
   logger?: boolean;
+  /** Where uploads and published files live. Without it the upload routes are off. */
+  storage?: Storage;
 }
 
 const FORMATS = ["glb", "gltf", "fbx", "3dtiles"];
@@ -203,6 +207,11 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     return "﻿" + auditCsv((await auditRows(req.query)).reverse());
   });
   app.get("/api/audit/verify", { schema: { tags: ["audit"] } }, async () => verifyAudit(db));
+
+  if (opts.storage) {
+    registerFiles(app, opts.storage);
+    registerIngest(app, db, opts.storage, who);
+  }
 
   app.get("/api/openapi.json", { schema: { hide: true } }, async () => app.swagger());
 

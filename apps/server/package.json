@@ -4,19 +4,24 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node src/main.ts",
-    "typecheck": "tsc -p . --noEmit",
+    "build": "vite build --ssr src/main.ts --outDir dist --emptyOutDir",
+    "start": "node dist/main.js",
+    "dev": "vite build --ssr src/main.ts --outDir dist --emptyOutDir && node dist/main.js",
+    "typecheck": "tsc -p .",
     "test": "vitest run"
   },
   "dependencies": {
     "@electric-sql/pglite": "0.5.14",
     "@fastify/swagger": "9.9.3",
+    "@viewer/core": "workspace:*",
     "@viewer/shared": "workspace:*",
     "fastify": "5.12.7",
+    "fflate": "0.8.2",
     "pg": "8.23.1"
   },
   "devDependencies": {
     "@types/node": "26.6.6",
-    "@types/pg": "8.23.1"
+    "@types/pg": "8.23.1",
+    "vite": "8.3.5"
   }
 }
