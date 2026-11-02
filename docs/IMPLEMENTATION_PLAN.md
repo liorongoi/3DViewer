@@ -59,6 +59,8 @@ These requirements are new (not in the SRS). They get their own IDs and are trac
 - WP 0.6 Windows workstation run: moved to WP 6.7.
 - WP 0.8 test data kit: public data in [DATA_SOURCES](./DATA_SOURCES.md) is used until the internal transfer is arranged.
 
+**Phase 1 progress, 2 Nov 2026.** WP 1.1: a test adds a made-up format from one plugin with no change elsewhere. WP 1.4: lighting presets Overcast, Clear noon and Studio neutral beside the sky-and-sun light (sky light as spherical harmonics computed in code, plus sun strength and shadow darkness per preset); pre-filtered KTX2 specular maps are still to do. WP 1.5: tile detail (screen-space error) follows the quality preset, and a tiles memory budget (1–8 GB) is in Settings.
+
 **Phase 3 progress, 2 Nov 2026.** WP 3.2 tus uploads with resume, WP 3.3 unpack guards (zip slip, zip bomb, counts and sizes measured while inflating), the shared loader check, a ClamAV hook; WP 3.4 a PostgreSQL job queue with leases (plain SQL, `FOR UPDATE SKIP LOCKED`, instead of pg-boss), FBX→GLB with FBX2glTF, original kept; WP 3.7 file delivery with range, ETag and immutable caching for development (Caddy in production). The official glTF and 3D Tiles validators, tiling and the 1.5 GB resume test (AC-07) are still to do.
 
 **Phase 0 progress, 2 Nov 2026.**

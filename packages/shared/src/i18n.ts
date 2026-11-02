@@ -117,6 +117,9 @@ export const en = {
     light: "Light",
     quality: "Quality",
     qualities: { low: "Low", balanced: "Balanced", high: "High", ultra: "Ultra" },
+    lighting: "Lighting",
+    environments: { atmosphere: "Sky and sun", overcast: "Overcast", "clear-noon": "Clear noon", studio: "Studio neutral" },
+    memory: "Tiles memory",
   },
   upload: {
     title: "Upload a model",
@@ -300,6 +303,9 @@ export const he: Shape<typeof en> = {
     light: "בהירה",
     quality: "איכות",
     qualities: { low: "נמוכה", balanced: "מאוזנת", high: "גבוהה", ultra: "מרבית" },
+    lighting: "תאורה",
+    environments: { atmosphere: "שמיים ושמש", overcast: "מעונן", "clear-noon": "צהריים בהירים", studio: "סטודיו ניטרלי" },
+    memory: "זיכרון אריחים",
   },
   upload: {
     title: "העלאת מודל",

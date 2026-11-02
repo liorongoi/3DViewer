@@ -30,6 +30,8 @@ export function useAppEffects(): void {
   const tool = useApp((s) => s.tool);
   const quality = useApp((s) => s.quality);
   const adaptive = useApp((s) => s.adaptiveResolution);
+  const environment = useApp((s) => s.environment);
+  const memoryGb = useApp((s) => s.memoryGb);
   const unit = useApp((s) => s.unit);
   const theme = useApp((s) => s.theme);
   const models = useFilteredModels();
@@ -44,7 +46,9 @@ export function useAppEffects(): void {
     engine.setQuality(quality);
     engine.adaptiveResolution = adaptive;
     engine.measure.setUnit(unit);
-  }, [engine, quality, unit, adaptive]);
+    engine.setEnvironment(environment);
+    engine.setMemoryBudget(memoryGb * 1024 ** 3);
+  }, [engine, quality, unit, adaptive, environment, memoryGb]);
 
   // A share link opens its model at the shared camera, view mode and layer visibility (WP 4.6).
   useEffect(() => {

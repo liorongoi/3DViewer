@@ -115,3 +115,35 @@ describe("loaders", () => {
     expect(report.items[0]!.detail).toContain("txt");
   });
 });
+
+describe("loader plugins (WP 1.1)", () => {
+  it("opens a new format from one plugin, with no change elsewhere", async () => {
+    const { registerLoader, loaders, prepareFiles } = await import("./index");
+    // A made-up ".tri" text format: three numbers per line, converted to a GLB in the browser.
+    registerLoader({
+      id: "tri-text",
+      format: "glb",
+      main: (set) => set.files.find((f) => f.path.endsWith(".tri")) ?? null,
+      async check(main, set) {
+        const lines = new TextDecoder().decode(await main.bytes()).trim().split("\n");
+        const bad = lines.findIndex((l) => l.trim().split(/\s+/).length !== 3);
+        return {
+          items: [bad < 0 ? { id: "format", severity: "ok", title: "TRI text" } : { id: "format", severity: "error", title: `Line ${bad + 1} does not have three numbers` }],
+          stats: { files: set.files.length, bytes: set.bytes, triangles: Math.floor(lines.length / 3) },
+          nodes: ["tri"],
+          georef: null,
+        };
+      },
+      prepare: async (_main, _set, url) => url(glb(triangle), "model/gltf-binary"),
+    });
+    expect(loaders()[0]!.id).toBe("tri-text");
+    const { report, files } = await checkFiles([fromBytes("shape.tri", enc("0 0 0\n1 0 0\n0 1 0"))]);
+    expect(report).toMatchObject({ ok: true, loader: "tri-text", mainFile: "shape.tri", stats: { triangles: 1 } });
+    const prepared = await prepareFiles(files, report);
+    expect(prepared.kind).toBe("glb");
+    expect(prepared.url).toMatch(/^blob:/);
+    prepared.release();
+    const broken = await checkFiles([fromBytes("shape.tri", enc("0 0 0\n1 0"))]);
+    expect(broken.report.items[0]!.title).toBe("Line 2 does not have three numbers");
+  });
+});

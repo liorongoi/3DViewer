@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { CoordinateSystem, LengthUnit, Quality, ViewMode } from "@viewer/core";
+import type { CoordinateSystem, EnvironmentId, LengthUnit, Quality, ViewMode } from "@viewer/core";
 import type { ModelSummary, UpdateStatus } from "@viewer/shared";
 import { readPref, writePref } from "./prefs";
 
@@ -25,6 +25,10 @@ interface AppState {
   coordSystem: CoordinateSystem;
   unit: LengthUnit;
   quality: Quality;
+  /** Lighting environment (WP 1.4). */
+  environment: EnvironmentId;
+  /** GPU memory for 3D Tiles, in GB (WP 1.5). */
+  memoryGb: number;
   viewMode: ViewMode;
   tool: Tool;
   shadows: boolean;
@@ -51,7 +55,7 @@ interface AppState {
   addUpload: (m: ModelSummary) => void;
   setClassification: (modelId: string, classificationId: string) => void;
   set: (patch: Partial<AppState>) => void;
-  setPref: <K extends "theme" | "lang" | "coordSystem" | "unit" | "quality" | "fadeTools" | "adaptiveResolution">(k: K, v: AppState[K]) => void;
+  setPref: <K extends "theme" | "lang" | "coordSystem" | "unit" | "quality" | "environment" | "memoryGb" | "fadeTools" | "adaptiveResolution">(k: K, v: AppState[K]) => void;
   setFilters: (patch: Partial<Filters>) => void;
 }
 
@@ -64,6 +68,8 @@ export const useApp = create<AppState>((set) => ({
   coordSystem: readPref<CoordinateSystem>("coordSystem", "wgs84"),
   unit: readPref<LengthUnit>("unit", "m"),
   quality: readPref<Quality>("quality", "high"),
+  environment: readPref<EnvironmentId>("environment", "atmosphere"),
+  memoryGb: Number(readPref<string>("memoryGb", "2")) || 2,
   viewMode: "shaded",
   tool: "none",
   shadows: true,

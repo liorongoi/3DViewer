@@ -2,6 +2,7 @@ import {
   BoundingSphere,
   Cartesian2,
   Cartesian3,
+  ImageBasedLighting,
   Cartographic,
   Cesium3DTileset,
   type Cesium3DTile,
@@ -43,6 +44,7 @@ import { FlyByTour, FlyMode, captureViewpoint, type Viewpoint } from "./fly";
 import { signal } from "../signal";
 import { effectiveVisibility, layersFromGltf, type Layer } from "../layers/layers";
 import { BASE_MAPS, TERRAINS, makeBaseLayers } from "./basemaps";
+import { ENVIRONMENTS, environmentSh, type EnvironmentId } from "./environments";
 import { createLayeredTerrain, type DemSource, type LayerableTerrain } from "./terrain";
 import { SightlineTool } from "./sightline";
 import { Viewshed } from "./viewshed";
@@ -84,6 +86,9 @@ const STATUS_COLOURS: Record<UpdateStatus, string> = {
  * The only class in the product that talks to CesiumJS. The UI drives it through
  * plain methods and reads per-frame state from signals (plan section 2.3).
  */
+/** Screen-space error per quality preset: lower draws finer tiles (WP 1.5). */
+const SSE: Record<Quality, number> = { low: 24, balanced: 16, high: 8, ultra: 4 };
+
 export class ViewerEngine {
   readonly widget: CesiumWidget;
   readonly camera: CameraController;
@@ -113,6 +118,10 @@ export class ViewerEngine {
   readonly viewpoints = signal<Viewpoint[]>([]);
   readonly baseMapId = signal("bundled");
   readonly terrainId = signal("none");
+  /** Lighting environment for models and tilesets (WP 1.4). */
+  readonly environment = signal<EnvironmentId>("atmosphere");
+  /** GPU memory for 3D Tiles, shared by every open tileset (WP 1.5, NFR-04). */
+  private memoryBudget = 2 * 1024 ** 3;
   /** Vertical shift applied to a 3D Tiles dataset to meet the terrain, metres. */
   readonly groundOffset = signal(0);
   private userDems: DemSource[] = [];
@@ -225,9 +234,10 @@ export class ViewerEngine {
     try {
       if (summary.source.kind === "3dtiles") {
         const tileset = await Cesium3DTileset.fromUrl(summary.source.url, {
-          maximumScreenSpaceError: 8,
-          cacheBytes: 2 * 1024 ** 3,
-          maximumCacheOverflowBytes: 1024 ** 3,
+          maximumScreenSpaceError: SSE[this.quality],
+          cacheBytes: this.memoryBudget,
+          maximumCacheOverflowBytes: this.memoryBudget / 2,
+          imageBasedLighting: this.makeIbl(),
           shadows: ShadowMode.ENABLED,
         });
         if (this.current.get()?.id !== summary.id) return tileset.destroy();
@@ -253,6 +263,7 @@ export class ViewerEngine {
           scale: place.scale ?? 1,
           shadows: ShadowMode.ENABLED,
           enableDebugWireframe: true,
+          imageBasedLighting: this.makeIbl(),
           gltfCallback: (g) => {
             gltfJson = g;
           },
@@ -571,6 +582,34 @@ export class ViewerEngine {
     this.camera.maxPolarDeg = on ? 100 : 179;
   }
 
+  private makeIbl(): ImageBasedLighting {
+    const sh = environmentSh(this.environment.get());
+    const ibl = new ImageBasedLighting();
+    if (sh) ibl.sphericalHarmonicCoefficients = sh.map(([r, g, b]) => new Cartesian3(r, g, b));
+    return ibl;
+  }
+
+  /** Switches the light that models and tilesets receive from their surroundings. */
+  setEnvironment(id: EnvironmentId): void {
+    if (this.environment.get() === id && (this.model ?? this.tileset)) return;
+    this.environment.set(id);
+    const def = ENVIRONMENTS.find((e) => e.id === id)!;
+    const scene = this.widget.scene;
+    (scene.light as { intensity: number }).intensity = def.sun;
+    scene.shadowMap.darkness = def.shadow;
+    if (this.model) this.model.imageBasedLighting = this.makeIbl();
+    if (this.tileset) this.tileset.imageBasedLighting = this.makeIbl();
+  }
+
+  /** Caps the GPU memory 3D Tiles may hold. Tiles over the cap are unloaded, farthest first. */
+  setMemoryBudget(bytes: number): void {
+    this.memoryBudget = Math.max(256 * 1024 ** 2, bytes);
+    if (this.tileset) {
+      this.tileset.cacheBytes = this.memoryBudget;
+      this.tileset.maximumCacheOverflowBytes = this.memoryBudget / 2;
+    }
+  }
+
   setQuality(q: Quality): void {
     this.quality = q;
     const scene = this.widget.scene;
@@ -580,6 +619,7 @@ export class ViewerEngine {
     scene.shadowMap.size = { low: 1024, balanced: 2048, high: 4096, ultra: 4096 }[q];
     this.viewshed.mapSize = { low: 1024, balanced: 2048, high: 2048, ultra: 4096 }[q];
     scene.postProcessStages.ambientOcclusion.enabled = q === "ultra";
+    if (this.tileset) this.tileset.maximumScreenSpaceError = SSE[q];
   }
 
   /** Cheaper rendering while the camera moves; full quality fades back when it stops (UI spec 1.1 #8). */
