@@ -53,6 +53,12 @@ These requirements are new (not in the SRS). They get their own IDs and are trac
 - VWR-ANL-03: GPU viewshed (point-light depth cube), drag to move, Shift+drag for height, live update; buildings, lidar and terrain all block the view.
 - VWR-LOD-01: LOD inspector for 3D Tiles (colour by depth, detail slider, freeze, bounding boxes, tiles per depth, memory).
 
+**Phase 0 progress, 2 Nov 2026.**
+- WP 0.1: CI runs type-check, unit tests and build on every push (GitHub Actions; the internal CI repeats the same steps).
+- WP 0.4: first FBX bake-off on public files, see [FBX_BAKEOFF](./spikes/FBX_BAKEOFF.md). FBX2glTF is cleanest but needs FBX SDK licence approval; three.js is the MIT fallback. Round 2 needs 10 real producer files.
+- WP 0.6: Electron shell with `viewer-file://` range streaming and sandboxing, see [DESKTOP_SHELL](./spikes/DESKTOP_SHELL.md). Round 2 runs on the reference Windows workstation.
+- WP 0.7: design direction approved (A + C, fading tools).
+
 **Air-gap note.** The SRS network is internal only. Online sources are used for development and demonstrations. Each online layer has an internal equivalent configured by the admin (WP 3.9), so no feature depends on the internet.
 
 ---
