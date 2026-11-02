@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { SAMPLE_LIBRARY } from "@viewer/shared";
+import { findModel } from "./state/library";
 import { useEngine } from "./engine";
 import { useApp } from "./state/store";
 import { useFilteredModels } from "./components/Library";
@@ -9,7 +9,7 @@ export function useOpenModel() {
   const set = useApp((s) => s.set);
   return {
     open: (id: string) => {
-      const m = SAMPLE_LIBRARY.find((x) => x.id === id);
+      const m = findModel(id);
       if (!m || !engine) return;
       set({ modelId: id, route: "viewer", tool: "none" });
       void engine.open(m);

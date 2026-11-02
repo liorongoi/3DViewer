@@ -39,11 +39,35 @@ Timings are on the cloud build machine (one core, no GPU); the A4000 workstation
 
 ## Recommendation for G0 (to confirm in round 2)
 
-- **Primary:** FBX2glTF, **if legal approves the FBX SDK licence**.
+- **Primary:** FBX2glTF. **Chosen by the product owner on 2 Nov 2026**, accepting the Autodesk FBX SDK licence terms; the EULA goes to security review with the dependency list (WP 0.2).
 - **Fallback, and the desktop converter in any case:** three.js FBXLoader + GLTFExporter with our clean-up pass. No native binary, so it also removes a sandboxing concern in the EXE (WP 5.2).
 - **Not chosen:** Assimp.
 - **Still to test:** ufbx (MIT, C, known for broad FBX coverage) with a small glTF writer, and Blender headless (GPL; acceptable only as a separate server tool).
 
-## Round 2 (needs the product owner)
+## Round 2 (public files, 2 Nov 2026)
 
-Ten real producer FBX files, ideally including: embedded and external textures, multiple UV sets, very large scenes (≥ 1 GB), unit scale other than centimetres, Y-up and Z-up, instancing, and files exported from 3ds Max, Maya, SketchUp, Revit and Blender. For each we will compare materials, textures, hierarchy names (they become the layer tree), scale, orientation and conversion time, and fill the material mapping table v1.
+The product owner has no producer FBX files, so round 2 used 17 public files: 12 from the Assimp test suite (each file keeps the licence noted in that repository) and 5 from the three.js examples (MIT). Together they cover binary and ASCII FBX 6/7, hierarchies with and without names, unit and axis settings, Phong and 3ds Max PBR materials (metal/rough and spec/gloss), embedded textures, external textures that are missing, skinning and animation, a 30k-triangle scan, curves only, and one damaged file. The same script was used, with the Khronos validator.
+
+| File | Feature | FBX2glTF | Assimp | three.js |
+|---|---|---|---|---|
+| box.FBX (ASCII, 600 KB) | embedded texture | **0 errors** | 0 errors | fails (texture) |
+| box.fbx | simple | **0** | 0 | fails |
+| cubes_with_names / cubes_nonames | hierarchy, names | **0** | 0 | 0 |
+| close_to_identity_transforms | near-identity transforms | **0** | 0 | 0 |
+| global_settings | unit scale, axes | **0** | 0 | 0 |
+| phong_cube, vCube | Phong material | **0** | 0 | 0 |
+| maxPbrMaterial_metalRough | 3ds Max PBR | **0** | 3 (out of range) | 2 (out of range) |
+| maxPbrMaterial_specGloss | 3ds Max PBR | **0** | 4 | 2 |
+| spider (1.4k tris) | external textures, missing | **0** (converts without the texture) | 4 (I/O error) | fails (texture) |
+| huesitos | bones, animation | **0** | 194 (weights) | 0 |
+| Samba Dancing (55k tris) | skin, animation | **0**, 2.7 s | 191, 15.7 s | 3 |
+| mixamo (49k tris) | skin, animation | **0**, 2.2 s | 191, 8.9 s | 3 |
+| stanford-bunny (30k tris, ASCII) | large mesh | **0**, 0.6 s | 0, 3.5 s | 0 |
+| nurbs | curves only | 1 (empty) | 1 (empty) | 0 (curves as lines) |
+| transparentTest | damaged header | fails | fails | fails |
+
+**Result.** FBX2glTF converted 15 of 17 files with zero validator errors; the other two have no mesh or a damaged header, and every converter failed on those. Assimp produced errors on 6 files and three.js failed on 3 (textures in Node) with errors on 4 more. This confirms the choice of FBX2glTF.
+
+**What the pipeline adds (WP 3.3, 3.4):** the upload check reads the texture names inside the FBX and lists missing ones before conversion (spider.fbx needs SpiderTex.jpg); a damaged FBX gets a named reason ("the FBX header is damaged"), not a converter log; NURBS-only files are rejected with "no meshes" (curves are out of scope).
+
+Still worth a later run when real producer files exist: files of 1 GB and more, multiple UV sets, instancing, and exports from SketchUp and Revit.

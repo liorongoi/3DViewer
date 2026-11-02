@@ -55,8 +55,9 @@ These requirements are new (not in the SRS). They get their own IDs and are trac
 
 **Phase 0 progress, 2 Nov 2026.**
 - WP 0.1: CI runs type-check, unit tests and build on every push (GitHub Actions; the internal CI repeats the same steps).
-- WP 0.4: first FBX bake-off on public files, see [FBX_BAKEOFF](./spikes/FBX_BAKEOFF.md). FBX2glTF is cleanest but needs FBX SDK licence approval; three.js is the MIT fallback. Round 2 needs 10 real producer files.
-- WP 0.6: Electron shell with `viewer-file://` range streaming and sandboxing, see [DESKTOP_SHELL](./spikes/DESKTOP_SHELL.md). Round 2 runs on the reference Windows workstation.
+- WP 0.4: first FBX bake-off on public files, see [FBX_BAKEOFF](./spikes/FBX_BAKEOFF.md). FBX2glTF is cleanest. **Decision, 2 Nov 2026: the product owner chose FBX2glTF (Autodesk FBX SDK) as the converter on the server and in the desktop app, accepting the Autodesk licence terms; security review still sees the EULA (R-01).** three.js stays as the fallback. Round 2 on 17 public FBX files: FBX2glTF converted 15 with zero validator errors (the other two have no mesh or a damaged header, and fail in every converter).
+- WP 1.1 / 1.2 (early): format plugins (`packages/core/src/loaders`) read GLB, glTF with separate files, 3D Tiles 1.0 / 1.1 folders and zips; the upload check lists every problem by name (missing files, damaged tiles, unsupported extensions, size). The upload wizard publishes to the session library and opens the model; FBX is recognised and waits for the server converter.
+- WP 0.6: Electron shell with `viewer-file://` range streaming and sandboxing, see [DESKTOP_SHELL](./spikes/DESKTOP_SHELL.md). The Windows workstation run moves to WP 6.7 at the end of the project (product owner, 2 Nov 2026); nothing earlier waits for it.
 - WP 0.7: design direction approved (A + C, fading tools).
 
 **Air-gap note.** The SRS network is internal only. Online sources are used for development and demonstrations. Each online layer has an internal equivalent configured by the admin (WP 3.9), so no feature depends on the internet.
@@ -510,7 +511,7 @@ Phase 5 builds and tests the installer **pipeline**. The release installers them
 | 6.4 Security | Pen test, outbound capture, TLS config review, SBOM + licence report, accreditation package | NFR-12–14, C-2 | AC-10 passes; accreditation package delivered |
 | 6.5 Usability | 5 first-time users: open, navigate, measure, no training | NFR-15 | ≥ 4 of 5 in ≤ 5 min |
 | 6.6 User manual & documentation | Written **once, after feature freeze** (product-owner rule, 2 Nov 2026) so it is not rewritten every sprint: user manual for consumers and producers (Hebrew and English, with screenshots from the final build), admin install guide, runbook | NFR-15, NFR-20 | Manual reviewed by a consumer, a producer and an admin rep; screenshots match the release build |
-| 6.7 Acceptance | Run AC-01 to AC-10 in web and EXE on the reference workstation inside the internal network | All | Signed acceptance report |
+| 6.7 Acceptance | Run AC-01 to AC-10 in web and EXE on the reference workstation inside the internal network; this is also the first run on the Windows workstation (shell, `viewer-file://` with a 50 GB tileset, frame rate) | All | Signed acceptance report |
 | 6.8 Release installers | Final signed EXE installer and offline server bundle built from the frozen release, **after the manual is done**, with the manual included in both | NFR-20, C-1 | Installers install cleanly offline; the manual opens from the Help menu |
 
 ---

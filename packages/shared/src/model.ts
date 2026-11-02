@@ -26,6 +26,8 @@ export interface ModelSource {
   groundFit?: "street" | "surface" | "none";
   /** Cut the terrain away under the model's footprint, for meshes that carry their own ground. */
   clipTerrain?: boolean;
+  /** The tileset is in local coordinates and is placed by the model's placement, like a GLB. */
+  localFrame?: boolean;
   /** Licence and origin, shown in Properties. */
   attribution?: string;
 }

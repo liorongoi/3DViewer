@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { CoordinateSystem, LengthUnit, Quality, ViewMode } from "@viewer/core";
-import type { UpdateStatus } from "@viewer/shared";
+import type { ModelSummary, UpdateStatus } from "@viewer/shared";
 import { readPref, writePref } from "./prefs";
 
 export type Route = "home" | "viewer";
@@ -43,6 +43,9 @@ interface AppState {
   filters: Filters;
   /** Classification chosen by the user per model id (overrides the library value). */
   classOverrides: Record<string, string>;
+  /** Models uploaded in this browser session (kept in memory until the server stores them, Phase 3). */
+  uploads: ModelSummary[];
+  addUpload: (m: ModelSummary) => void;
   setClassification: (modelId: string, classificationId: string) => void;
   set: (patch: Partial<AppState>) => void;
   setPref: <K extends "theme" | "lang" | "coordSystem" | "unit" | "quality" | "fadeTools">(k: K, v: AppState[K]) => void;
@@ -81,6 +84,8 @@ export const useApp = create<AppState>((set) => ({
       return {};
     }
   })(),
+  uploads: [],
+  addUpload: (m) => set((s) => ({ uploads: [m, ...s.uploads.filter((x) => x.id !== m.id)] })),
   setClassification: (modelId, classificationId) =>
     set((s) => {
       const classOverrides = { ...s.classOverrides, [modelId]: classificationId };

@@ -14,3 +14,5 @@ export { Viewshed, type ViewshedState } from "./engine/viewshed";
 export { UserLayers, type UserLayer, type UserLayerSource, type PickedFeature } from "./engine/user-layers";
 export type { WmtsLayerInfo, WmsLayerInfo } from "./engine/ogc";
 export { LodInspector, type LodStats, type LodSettings } from "./engine/lod-inspector";
+export { checkFiles, prepareFiles, fromBytes, fmtBytes, type CheckReport, type CheckItem, type LocalFile, type Prepared } from "./loaders";
+export { converterForEpsg, type CrsConverter } from "./geo/crs";

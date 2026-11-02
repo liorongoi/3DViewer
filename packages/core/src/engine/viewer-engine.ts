@@ -10,6 +10,7 @@ import {
   Color,
   CustomShader,
   HeadingPitchRange,
+  HeadingPitchRoll,
   ImageryLayer,
   Ion,
   JulianDate,
@@ -227,7 +228,12 @@ export class ViewerEngine {
         this.tileset = tileset;
         this.lod.attach(tileset);
         this.layers.set([{ id: "tileset", name: summary.name, children: [], visible: true }]);
-        void this.fitTilesetToGround(tileset, summary);
+        if (summary.source.localFrame && summary.placement) {
+          // A tileset in local coordinates: placed like a model, from the upload's Place step.
+          this.modelBaseHeight = await this.placementHeight(summary.placement);
+          this.groundOffset.set(0);
+          tileset.modelMatrix = placeMatrix(summary.placement, this.modelBaseHeight);
+        } else void this.fitTilesetToGround(tileset, summary);
       } else {
         const place = summary.placement ?? { ...summary.centre, height: 0 };
         const height = await this.placementHeight(place);
@@ -236,7 +242,7 @@ export class ViewerEngine {
         let gltfJson: unknown = null;
         const model = await Model.fromGltfAsync({
           url: summary.source.url,
-          modelMatrix: Transforms.eastNorthUpToFixedFrame(Cartesian3.fromDegrees(place.lon, place.lat, height)),
+          modelMatrix: placeMatrix(place, height),
           scale: place.scale ?? 1,
           shadows: ShadowMode.ENABLED,
           enableDebugWireframe: true,
@@ -448,6 +454,16 @@ export class ViewerEngine {
     return tp.availability ? sampleTerrainMostDetailed(tp, points) : sampleTerrain(tp, level, points);
   }
 
+  /** The point on the globe at the centre of the view, used as the default place for uploads. */
+  viewCentre(): { lat: number; lon: number } | null {
+    const scene = this.widget.scene;
+    const c = new Cartesian2(scene.canvas.clientWidth / 2, scene.canvas.clientHeight / 2);
+    const p = scene.camera.pickEllipsoid(c);
+    if (!p) return null;
+    const g = Cartographic.fromCartesian(p);
+    return { lat: CMath.toDegrees(g.latitude), lon: CMath.toDegrees(g.longitude) };
+  }
+
   /** Model height from its placement: terrain height + aboveGround when terrain is on. */
   private async placementHeight(place: NonNullable<ModelSummary["placement"]>): Promise<number> {
     const tp = this.widget.scene.terrainProvider;
@@ -463,8 +479,8 @@ export class ViewerEngine {
   /** Put the open model back on the ground: automatic fit, offset reset to zero. */
   async placeOnGround(): Promise<void> {
     const m = this.current.get();
-    if (this.tileset && m) await this.fitTilesetToGround(this.tileset, m);
-    else if (this.model && m?.placement) {
+    if (this.tileset && m && !m.source.localFrame) await this.fitTilesetToGround(this.tileset, m);
+    else if ((this.model || this.tileset) && m?.placement) {
       this.modelBaseHeight = await this.placementHeight(m.placement);
       this.setGroundOffset(0);
     }
@@ -529,8 +545,9 @@ export class ViewerEngine {
   setGroundOffset(metres: number): void {
     this.groundOffset.set(metres);
     const m = this.current.get();
-    if (this.model && m?.placement) {
-      this.model.modelMatrix = Transforms.eastNorthUpToFixedFrame(Cartesian3.fromDegrees(m.placement.lon, m.placement.lat, this.modelBaseHeight + metres));
+    const placed = this.model ?? (m?.source.localFrame ? this.tileset : null);
+    if (placed && m?.placement) {
+      placed.modelMatrix = placeMatrix(m.placement, this.modelBaseHeight + metres);
       this.widget.scene.requestRender();
       return;
     }
@@ -809,6 +826,10 @@ export class ViewerEngine {
     this.widget.render();
     return this.widget.canvas.toDataURL("image/png");
   }
+}
+
+function placeMatrix(p: NonNullable<ModelSummary["placement"]>, height: number): Matrix4 {
+  return Transforms.headingPitchRollToFixedFrame(Cartesian3.fromDegrees(p.lon, p.lat, height), new HeadingPitchRoll(CMath.toRadians(p.headingDeg ?? 0), 0, 0));
 }
 
 function friendlyReason(err: Error): string {
