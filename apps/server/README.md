@@ -55,8 +55,10 @@ Every view and change is stored with time, IP and workstation, in the same trans
 3. The job unpacks zips without trusting them: each name must stay inside the upload, sizes are counted as they inflate, and an entry that expands over 1000 times is stopped as a zip bomb.
 4. It checks the files with the same loaders the browser uses (`@viewer/core/loaders`), so the report is the one the upload wizard shows. Every problem is listed.
 5. ClamAV scans the files when `CLAMDSCAN` is set. FBX is converted to GLB with FBX2glTF.
-6. Files are published under `files/<model>/<ingest>/`. The model or version, its report and the audit row are written in one transaction.
+6. The official glTF or 3D Tiles validator checks what will be published (see `STRICT_VALIDATION`).
+7. A model over 1.5 M triangles or 300 MB is tiled into 3D Tiles 1.1 (`src/tiler.ts`) so it streams; the upload is kept under `original/`.
+8. Files are published under `files/<model>/<ingest>/`. The model or version, its report and the audit row are written in one transaction.
 
 ## Not yet
 
-Tiling large meshes and thumbnails follow in WP 3.5. The admin password and quotas come in WP 3.9.
+The admin password and quotas come in WP 3.9.
