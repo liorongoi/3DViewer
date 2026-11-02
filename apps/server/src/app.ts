@@ -2,6 +2,7 @@ import { promises as dns } from "node:dns";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import swagger from "@fastify/swagger";
 import { UPDATE_STATUSES } from "@viewer/shared/model";
+import { registerAdmin } from "./admin.ts";
 import { audit, auditCsv, verifyAudit, type AuditRow } from "./audit.ts";
 import type { Db } from "./db.ts";
 import { registerIngest } from "./ingest.ts";
@@ -58,8 +59,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
         .header("access-control-expose-headers", "upload-offset, upload-length, tus-resumable, etag, content-range, accept-ranges");
       if (req.method === "OPTIONS") {
         reply
-          .header("access-control-allow-methods", "GET, HEAD, POST, PATCH, OPTIONS")
-          .header("access-control-allow-headers", "content-type, upload-offset, upload-length, tus-resumable, x-workstation, range, if-none-match")
+          .header("access-control-allow-methods", "GET, HEAD, POST, PATCH, PUT, DELETE, OPTIONS")
+          .header("access-control-allow-headers", "authorization, content-type, upload-offset, upload-length, tus-resumable, x-workstation, range, if-none-match")
           .header("access-control-max-age", "600");
         return reply.status(204).send();
       }
@@ -209,6 +210,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     },
   );
 
+  const admin = registerAdmin(app, db, { storage: opts.storage, who, thumbnails: opts.thumbnails });
+
+  // The audit log says who opened what, so reading it is for the administrator (admin page, WP 3.9).
   const auditQuery = {
     type: "object",
     properties: { from: { type: "string", format: "date-time" }, to: { type: "string", format: "date-time" }, action: str, target: str, limit: { type: "integer", minimum: 1, maximum: 100000, default: 1000 } },
@@ -226,15 +230,15 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     return db.query<AuditRow>(`SELECT * FROM audit_events${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY seq DESC LIMIT $${p.length}`, p);
   };
 
-  app.get<{ Querystring: AuditQ }>("/api/audit", { schema: { tags: ["audit"], querystring: auditQuery } }, async (req) =>
+  app.get<{ Querystring: AuditQ }>("/api/audit", { onRequest: admin, schema: { tags: ["audit"], querystring: auditQuery } }, async (req) =>
     (await auditRows(req.query)).map((r) => ({ ...r, seq: Number(r.seq), at: new Date(r.at).toISOString() })),
   );
-  app.get<{ Querystring: AuditQ }>("/api/audit.csv", { schema: { tags: ["audit"], querystring: auditQuery } }, async (req, reply) => {
+  app.get<{ Querystring: AuditQ }>("/api/audit.csv", { onRequest: admin, schema: { tags: ["audit"], querystring: auditQuery } }, async (req, reply) => {
     await audit(db, { ...(await who(req)), action: "audit.export", detail: { ...req.query } });
     reply.header("content-type", "text/csv; charset=utf-8").header("content-disposition", 'attachment; filename="viewer-audit.csv"');
     return "﻿" + auditCsv((await auditRows(req.query)).reverse());
   });
-  app.get("/api/audit/verify", { schema: { tags: ["audit"] } }, async () => verifyAudit(db));
+  app.get("/api/audit/verify", { onRequest: admin, schema: { tags: ["audit"] } }, async () => verifyAudit(db));
 
   if (opts.storage) {
     registerFiles(app, opts.storage);

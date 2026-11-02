@@ -5,7 +5,7 @@ import type { ClassificationLevel, ModelSummary } from "./model";
 export const SAMPLE_CLASSIFICATIONS: ClassificationLevel[] = [
   { id: "unclassified", label: "UNCLASSIFIED · FOR PROTOTYPE USE", color: "#2E7D4F", textColor: "#FFFFFF", order: 0 },
   { id: "restricted", label: "RESTRICTED", color: "#1F5FAD", textColor: "#FFFFFF", order: 1 },
-  { id: "confidential", label: "CONFIDENTIAL", color: "#C26A00", textColor: "#FFFFFF", order: 2 },
+  { id: "confidential", label: "CONFIDENTIAL", color: "#A85C00", textColor: "#FFFFFF", order: 2 },
   { id: "secret", label: "SECRET", color: "#B3261E", textColor: "#FFFFFF", order: 3 },
 ];
 

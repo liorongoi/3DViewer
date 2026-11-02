@@ -8,6 +8,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Unzip, UnzipInflate } from "fflate";
 import { checkFiles, LIMITS, type CheckItem, type CheckReport, type LocalFile } from "@viewer/core/loaders";
 import { UPDATE_STATUSES, type ModelSummary } from "@viewer/shared/model";
+import { quotaError } from "./admin.ts";
 import { audit } from "./audit.ts";
 import type { Db, Queryable } from "./db.ts";
 import { enqueue, PermanentError, type Handler } from "./jobs.ts";
@@ -153,6 +154,8 @@ export function registerIngest(
         total += f.size;
       }
       if (total > LIMITS.tileset) return reply.status(413).send({ error: "The upload is over 50 GB." });
+      const full = await quotaError(db, total);
+      if (full) return reply.status(507).send({ error: full });
 
       const w = await who(req);
       const id = `i-${crypto.randomUUID()}`;
