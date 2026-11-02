@@ -5,6 +5,8 @@ export interface LocalFile {
   path: string;
   size: number;
   bytes(): Promise<Uint8Array>;
+  /** Reads part of the file without loading all of it (uploads in chunks). */
+  slice?(start: number, end: number): Promise<Uint8Array>;
 }
 
 export function fromBytes(path: string, data: Uint8Array): LocalFile {

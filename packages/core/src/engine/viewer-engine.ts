@@ -1,7 +1,9 @@
 import {
+  Axis,
   BoundingSphere,
   Cartesian2,
   Cartesian3,
+  ImageBasedLighting,
   Cartographic,
   Cesium3DTileset,
   type Cesium3DTile,
@@ -43,6 +45,7 @@ import { FlyByTour, FlyMode, captureViewpoint, type Viewpoint } from "./fly";
 import { signal } from "../signal";
 import { effectiveVisibility, layersFromGltf, type Layer } from "../layers/layers";
 import { BASE_MAPS, TERRAINS, makeBaseLayers } from "./basemaps";
+import { ENVIRONMENTS, environmentSh, type EnvironmentId } from "./environments";
 import { createLayeredTerrain, type DemSource, type LayerableTerrain } from "./terrain";
 import { SightlineTool } from "./sightline";
 import { Viewshed } from "./viewshed";
@@ -84,6 +87,22 @@ const STATUS_COLOURS: Record<UpdateStatus, string> = {
  * The only class in the product that talks to CesiumJS. The UI drives it through
  * plain methods and reads per-frame state from signals (plan section 2.3).
  */
+/**
+ * Camera heading and pitch (degrees) that look at a target from direction `dir` (east, north, up).
+ * Level views tilt down 5° so the ground stays readable; straight up or down stops just short of 90°.
+ */
+export function cubeView([e, n, u]: [number, number, number]): { heading: number; pitch: number } {
+  const flat = Math.hypot(e, n);
+  const heading = flat < 1e-9 ? 0 : ((Math.atan2(-e, -n) * 180) / Math.PI + 360) % 360;
+  let pitch = (-Math.atan2(u, flat) * 180) / Math.PI;
+  if (Math.abs(u) < 1e-9) pitch = -5;
+  pitch = Math.max(-89.9, Math.min(89.9, pitch));
+  return { heading: Math.abs(heading) < 1e-9 ? 0 : heading, pitch };
+}
+
+/** Screen-space error per quality preset: lower draws finer tiles (WP 1.5). */
+const SSE: Record<Quality, number> = { low: 24, balanced: 16, high: 8, ultra: 4 };
+
 export class ViewerEngine {
   readonly widget: CesiumWidget;
   readonly camera: CameraController;
@@ -113,6 +132,10 @@ export class ViewerEngine {
   readonly viewpoints = signal<Viewpoint[]>([]);
   readonly baseMapId = signal("bundled");
   readonly terrainId = signal("none");
+  /** Lighting environment for models and tilesets (WP 1.4). */
+  readonly environment = signal<EnvironmentId>("atmosphere");
+  /** GPU memory for 3D Tiles, shared by every open tileset (WP 1.5, NFR-04). */
+  private memoryBudget = 2 * 1024 ** 3;
   /** Vertical shift applied to a 3D Tiles dataset to meet the terrain, metres. */
   readonly groundOffset = signal(0);
   private userDems: DemSource[] = [];
@@ -225,9 +248,10 @@ export class ViewerEngine {
     try {
       if (summary.source.kind === "3dtiles") {
         const tileset = await Cesium3DTileset.fromUrl(summary.source.url, {
-          maximumScreenSpaceError: 8,
-          cacheBytes: 2 * 1024 ** 3,
-          maximumCacheOverflowBytes: 1024 ** 3,
+          maximumScreenSpaceError: SSE[this.quality],
+          cacheBytes: this.memoryBudget,
+          maximumCacheOverflowBytes: this.memoryBudget / 2,
+          imageBasedLighting: this.makeIbl(),
           shadows: ShadowMode.ENABLED,
         });
         if (this.current.get()?.id !== summary.id) return tileset.destroy();
@@ -251,8 +275,10 @@ export class ViewerEngine {
           url: summary.source.url,
           modelMatrix: placeMatrix(place, height),
           scale: place.scale ?? 1,
+          upAxis: place.upAxis === "z" ? Axis.Z : Axis.Y,
           shadows: ShadowMode.ENABLED,
           enableDebugWireframe: true,
+          imageBasedLighting: this.makeIbl(),
           gltfCallback: (g) => {
             gltfJson = g;
           },
@@ -331,6 +357,13 @@ export class ViewerEngine {
   async focusLayer(_layerId: string): Promise<void> {
     // Per-node bounds need runtime node data; for now focus fits the whole model.
     await this.home(0.8);
+  }
+
+  /** Looks at the model from a direction in east, north, up: a face, edge or corner of the view cube (NAV-05). */
+  async viewFrom(dir: [number, number, number]): Promise<void> {
+    const bs = this.boundingSphere() ?? new BoundingSphere(this.camera.pivot, 200);
+    const { heading, pitch } = cubeView(dir);
+    await this.flySphere(bs, CMath.toRadians(heading), CMath.toRadians(pitch), 0.8);
   }
 
   async preset(view: PresetView): Promise<void> {
@@ -571,6 +604,34 @@ export class ViewerEngine {
     this.camera.maxPolarDeg = on ? 100 : 179;
   }
 
+  private makeIbl(): ImageBasedLighting {
+    const sh = environmentSh(this.environment.get());
+    const ibl = new ImageBasedLighting();
+    if (sh) ibl.sphericalHarmonicCoefficients = sh.map(([r, g, b]) => new Cartesian3(r, g, b));
+    return ibl;
+  }
+
+  /** Switches the light that models and tilesets receive from their surroundings. */
+  setEnvironment(id: EnvironmentId): void {
+    if (this.environment.get() === id && (this.model ?? this.tileset)) return;
+    this.environment.set(id);
+    const def = ENVIRONMENTS.find((e) => e.id === id)!;
+    const scene = this.widget.scene;
+    (scene.light as { intensity: number }).intensity = def.sun;
+    scene.shadowMap.darkness = def.shadow;
+    if (this.model) this.model.imageBasedLighting = this.makeIbl();
+    if (this.tileset) this.tileset.imageBasedLighting = this.makeIbl();
+  }
+
+  /** Caps the GPU memory 3D Tiles may hold. Tiles over the cap are unloaded, farthest first. */
+  setMemoryBudget(bytes: number): void {
+    this.memoryBudget = Math.max(256 * 1024 ** 2, bytes);
+    if (this.tileset) {
+      this.tileset.cacheBytes = this.memoryBudget;
+      this.tileset.maximumCacheOverflowBytes = this.memoryBudget / 2;
+    }
+  }
+
   setQuality(q: Quality): void {
     this.quality = q;
     const scene = this.widget.scene;
@@ -580,6 +641,7 @@ export class ViewerEngine {
     scene.shadowMap.size = { low: 1024, balanced: 2048, high: 4096, ultra: 4096 }[q];
     this.viewshed.mapSize = { low: 1024, balanced: 2048, high: 2048, ultra: 4096 }[q];
     scene.postProcessStages.ambientOcclusion.enabled = q === "ultra";
+    if (this.tileset) this.tileset.maximumScreenSpaceError = SSE[q];
   }
 
   /** Cheaper rendering while the camera moves; full quality fades back when it stops (UI spec 1.1 #8). */

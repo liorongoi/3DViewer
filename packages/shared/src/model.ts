@@ -58,6 +58,8 @@ export interface ModelSummary {
     aboveGround?: number;
     headingDeg?: number;
     scale?: number;
+    /** The file's up axis. glTF is y-up; many CAD and FBX exports are z-up and would lie on their side. */
+    upAxis?: "y" | "z";
   };
   thumbnail?: string;
   sizeBytes: number;

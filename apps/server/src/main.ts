@@ -12,7 +12,8 @@ const applied = await migrate(db);
 const seeded = await seed(db, { samples: process.env.SEED_SAMPLES !== "0" });
 const storage = new Storage(process.env.STORAGE_DIR ?? `${dataDir}/storage`);
 await storage.init();
-const app = await buildApp({ db, storage, reverseDns: true, logger: true });
+const corsOrigins = (process.env.CORS_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+const app = await buildApp({ db, storage, corsOrigins, reverseDns: true, logger: true });
 app.log.info({ db: db.kind, migrations: applied, seeded, storage: storage.root }, "database ready");
 
 // WORKERS=0 runs the API alone, for a site that runs the workers on another machine.

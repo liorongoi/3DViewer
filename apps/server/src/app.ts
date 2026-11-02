@@ -15,6 +15,8 @@ export interface AppOptions {
   logger?: boolean;
   /** Where uploads and published files live. Without it the upload routes are off. */
   storage?: Storage;
+  /** Origins allowed to call the API from another origin (the desktop app, a separate web host). "*" allows any. */
+  corsOrigins?: string[];
 }
 
 const FORMATS = ["glb", "gltf", "fbx", "3dtiles"];
@@ -29,7 +31,7 @@ const source = {
 const placement = {
   type: "object",
   required: ["lat", "lon", "height"],
-  properties: { lat: { type: "number" }, lon: { type: "number" }, height: { type: "number" }, aboveGround: { type: "number" }, headingDeg: { type: "number" }, scale: { type: "number", exclusiveMinimum: 0 } },
+  properties: { lat: { type: "number" }, lon: { type: "number" }, height: { type: "number" }, aboveGround: { type: "number" }, headingDeg: { type: "number" }, scale: { type: "number", exclusiveMinimum: 0 }, upAxis: { enum: ["y", "z"] } },
   additionalProperties: false,
 } as const;
 const idParam = { type: "object", required: ["id"], properties: { id: { type: "string", maxLength: 200 } } } as const;
@@ -41,6 +43,25 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   await app.register(swagger, {
     openapi: { info: { title: "VIEWER library API", version: "0.1.0", description: "Library, versions and audit for the 3D Intelligence Model Viewer." } },
   });
+
+  const cors = opts.corsOrigins ?? [];
+  if (cors.length) {
+    app.addHook("onRequest", async (req, reply) => {
+      const origin = req.headers.origin;
+      if (!origin || !(cors.includes("*") || cors.includes(origin))) return;
+      reply
+        .header("access-control-allow-origin", origin)
+        .header("vary", "origin")
+        .header("access-control-expose-headers", "upload-offset, upload-length, tus-resumable, etag, content-range, accept-ranges");
+      if (req.method === "OPTIONS") {
+        reply
+          .header("access-control-allow-methods", "GET, HEAD, POST, PATCH, OPTIONS")
+          .header("access-control-allow-headers", "content-type, upload-offset, upload-length, tus-resumable, x-workstation, range, if-none-match")
+          .header("access-control-max-age", "600");
+        return reply.status(204).send();
+      }
+    });
+  }
 
   const hostCache = new Map<string, string>();
   const hostOf = async (req: FastifyRequest): Promise<string> => {

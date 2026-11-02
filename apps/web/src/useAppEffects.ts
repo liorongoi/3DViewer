@@ -1,5 +1,6 @@
 import { useEffect } from "react";
-import { findModel } from "./state/library";
+import { findModel, refreshLibrary } from "./state/library";
+import { findServer, recordView } from "./server/api";
 import { readShare } from "./share";
 import { setVisible } from "@viewer/core";
 import { useEngine } from "./engine";
@@ -14,6 +15,8 @@ export function useOpenModel() {
       const m = findModel(id);
       if (!m || !engine) return;
       set({ modelId: id, route: "viewer", tool: "none" });
+      const srv = useApp.getState().server;
+      if (srv && !m.id.startsWith("upload-")) recordView(srv, m.id);
       void engine.open(m);
     },
     close: () => {
@@ -30,6 +33,8 @@ export function useAppEffects(): void {
   const tool = useApp((s) => s.tool);
   const quality = useApp((s) => s.quality);
   const adaptive = useApp((s) => s.adaptiveResolution);
+  const environment = useApp((s) => s.environment);
+  const memoryGb = useApp((s) => s.memoryGb);
   const unit = useApp((s) => s.unit);
   const theme = useApp((s) => s.theme);
   const models = useFilteredModels();
@@ -44,11 +49,29 @@ export function useAppEffects(): void {
     engine.setQuality(quality);
     engine.adaptiveResolution = adaptive;
     engine.measure.setUnit(unit);
-  }, [engine, quality, unit, adaptive]);
+    engine.setEnvironment(environment);
+    engine.setMemoryBudget(memoryGb * 1024 ** 3);
+  }, [engine, quality, unit, adaptive, environment, memoryGb]);
+
+  // Look for the VIEWER server once; without one the app keeps the bundled sample library.
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      const server = await findServer();
+      if (!live) return;
+      useApp.setState({ server });
+      if (server) await refreshLibrary().catch(() => useApp.setState({ server: null }));
+      if (live) useApp.setState({ libraryReady: true });
+    })();
+    return () => {
+      live = false;
+    };
+  }, []);
+  const libraryReady = useApp((s) => s.libraryReady);
 
   // A share link opens its model at the shared camera, view mode and layer visibility (WP 4.6).
   useEffect(() => {
-    if (!engine) return;
+    if (!engine || !libraryReady) return;
     const apply = async () => {
       const st = readShare();
       if (!st) return;
@@ -64,7 +87,7 @@ export function useAppEffects(): void {
     void apply();
     window.addEventListener("hashchange", apply);
     return () => window.removeEventListener("hashchange", apply);
-  }, [engine]);
+  }, [engine, libraryReady]);
 
   useEffect(() => {
     if (!engine) return;

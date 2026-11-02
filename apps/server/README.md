@@ -14,6 +14,7 @@ DATABASE_URL=postgres://… pnpm --filter @viewer/server dev   # a real PostgreS
 | `STORAGE_DIR` | `DATA_DIR/storage` | Uploads in progress, unpacked ingests and published model files. |
 | `CLAMDSCAN` | none | Path to `clamdscan`. Without it uploads are not scanned and each report says so. |
 | `FBX2GLTF` | none | Path to the FBX2glTF program. Without it FBX uploads fail with a clear reason. |
+| `CORS_ORIGINS` | none | Comma-separated origins allowed to call the API from elsewhere (the desktop app, a separate web host); `*` allows any. |
 | `WORKERS` | `1` | `0` runs the API without the conversion worker. |
 | `SEED_SAMPLES` | `1` | `0` starts with an empty library (classification levels are always seeded once). |
 | `HOST`, `PORT` | `127.0.0.1`, `8787` | Listen address. |

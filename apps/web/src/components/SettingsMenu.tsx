@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import type { Quality } from "@viewer/core";
+import { ENVIRONMENTS, type EnvironmentId, type Quality } from "@viewer/core";
 import { useEngine } from "../engine";
 import { applyLanguage } from "../i18n";
 import { useApp } from "../state/store";
@@ -52,6 +52,31 @@ export function SettingsMenu({ onClose: _onClose }: { onClose: () => void }) {
             engine?.setQuality(v);
           }}
           options={(["low", "balanced", "high", "ultra"] as Quality[]).map((q) => ({ value: q, label: t(`settings.qualities.${q}`) }))}
+        />
+      </div>
+      <div className={row}>
+        <span className="text-fg2">{t("settings.lighting")}</span>
+        <select
+          aria-label={t("settings.lighting")}
+          data-testid="environment"
+          className="h-7 rounded-md border border-line bg-bg2 px-2 text-[12px] text-fg1"
+          value={s.environment}
+          onChange={(e) => s.setPref("environment", e.target.value as EnvironmentId)}
+        >
+          {ENVIRONMENTS.map((env) => (
+            <option key={env.id} value={env.id}>
+              {t(`settings.environments.${env.id}`)}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className={row}>
+        <span className="text-fg2">{t("settings.memory")}</span>
+        <Segmented
+          label={t("settings.memory")}
+          value={String(s.memoryGb)}
+          onChange={(v: string) => s.setPref("memoryGb", Number(v))}
+          options={["1", "2", "4", "8"].map((g) => ({ value: g, label: `${g} GB` }))}
         />
       </div>
       <div className="my-2 h-px bg-line" />

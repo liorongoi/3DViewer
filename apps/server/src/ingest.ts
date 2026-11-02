@@ -115,7 +115,7 @@ export function registerIngest(
             placement: {
               type: "object",
               required: ["lat", "lon", "height"],
-              properties: { lat: { type: "number" }, lon: { type: "number" }, height: { type: "number" }, aboveGround: { type: "number" }, headingDeg: { type: "number" }, scale: { type: "number", exclusiveMinimum: 0 } },
+              properties: { lat: { type: "number" }, lon: { type: "number" }, height: { type: "number" }, aboveGround: { type: "number" }, headingDeg: { type: "number" }, scale: { type: "number", exclusiveMinimum: 0 }, upAxis: { enum: ["y", "z"] } },
               additionalProperties: false,
             },
             centre: latlon,
