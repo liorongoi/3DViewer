@@ -483,32 +483,9 @@ export class ViewerEngine {
     if (this.terrainId.get() === "none") return;
     if (summary.source.groundFit === "surface") return this.fitSurfaceToGround(tileset);
     if (summary.source.groundFit !== "street") return;
-    // Each child tile's bounding box bottom is the base of the buildings in it.
-    const bases: { at: Cartographic; base: number }[] = [];
-    const corners = new Array(8).fill(0).map(() => new Cartesian3());
-    const visit = (tile: Cesium3DTile, depth: number) => {
-      const obb = (tile as unknown as { boundingVolume?: { boundingVolume?: OrientedBoundingBox } }).boundingVolume?.boundingVolume;
-      if (depth > 0 && obb instanceof OrientedBoundingBox) {
-        obb.computeCorners(corners);
-        let base = Infinity;
-        for (const c of corners) base = Math.min(base, Cartographic.fromCartesian(c).height);
-        bases.push({ at: Cartographic.fromCartesian(obb.center), base });
-      }
-      if (depth < 2) for (const c of tile.children) visit(c, depth + 1);
-    };
-    visit(tileset.root, 0);
-    if (bases.length < 5) return;
-    const ground = await this.sampleGround(bases.map((b) => Cartographic.clone(b.at)));
-    const pairs = bases
-      .map((b, k) => ({ g: ground[k]?.height ?? NaN, base: b.base }))
-      .filter((p) => Number.isFinite(p.g) && Number.isFinite(p.base));
-    const median = (v: number[]) => [...v].sort((x, y) => x - y)[Math.floor(v.length / 2)]!;
-    // Drop samples where the terrain is an outlier (rivers and bad cells in global DEMs).
-    const gMed = median(pairs.map((p) => p.g));
-    const good = pairs.filter((p) => Math.abs(p.g - gMed) < 40);
-    if (good.length < 5) return;
-    const offset = median(good.map((p) => p.g - p.base));
-    if (this.tileset === tileset && Math.abs(offset) > 0.5) this.setGroundOffset(offset);
+    // Cities: the lowest surfaces the camera can hit are streets and squares. Tile bounding
+    // boxes are no help here: they reach far below the streets, which lifted Lyon ~80 m.
+    return this.fitSurfaceToGround(tileset, 0.1, 1);
   }
 
   /**
@@ -516,7 +493,7 @@ export class ViewerEngine {
    * dataset's own surface (globe hidden) and the terrain on a grid, and move the dataset so
    * its lower surfaces (bare ground, not tree tops or roofs) meet the terrain.
    */
-  private async fitSurfaceToGround(tileset: Cesium3DTileset): Promise<void> {
+  private async fitSurfaceToGround(tileset: Cesium3DTileset, quantile = 0.5, minOffset = 8): Promise<void> {
     const scene = this.widget.scene;
     const bs = tileset.boundingSphere;
     const c = Cartographic.fromCartesian(bs.center);
@@ -524,7 +501,7 @@ export class ViewerEngine {
     const dLat = r / 6371000;
     const dLon = dLat / Math.cos(c.latitude);
     const pts: Cartographic[] = [];
-    for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) pts.push(new Cartographic(c.longitude + (dLon * i) / 2, c.latitude + (dLat * j) / 2));
+    for (let i = -4; i <= 4; i++) for (let j = -4; j <= 4; j++) pts.push(new Cartographic(c.longitude + (dLon * i) / 4, c.latitude + (dLat * j) / 4));
     const globeShown = scene.globe.show;
     scene.globe.show = false;
     let surf: (Cartographic | undefined)[] = [];
@@ -536,14 +513,16 @@ export class ViewerEngine {
     const ground = await this.sampleGround(pts.map((p) => Cartographic.clone(p)));
     const diffs = surf
       .map((s, k) => (s && Number.isFinite(s.height) ? s.height - (ground[k]?.height ?? NaN) : NaN))
-      .filter((d) => Number.isFinite(d))
+      // A sample that misses the dataset can hit the far side of the globe: drop those.
+      .filter((d) => Number.isFinite(d) && Math.abs(d) < 500)
       .sort((a, b) => a - b);
     if (diffs.length < 5 || this.tileset !== tileset) return;
     // Lidar heights are usually better than a 30 m terrain model, which smooths valleys and
     // ridges by metres. So only a clear, consistent gap is corrected: that is a height-datum
     // mismatch (ellipsoid vs geoid is 20–50 m in Europe and the Middle East).
-    const offset = -diffs[Math.floor(diffs.length / 2)]!;
-    if (Math.abs(offset) > 8) this.setGroundOffset(offset);
+    // Cities use a low quantile (streets, not roofs) and any gap over 1 m.
+    const offset = -diffs[Math.floor(diffs.length * quantile)]!;
+    if (Math.abs(offset) > minOffset) this.setGroundOffset(offset);
   }
 
   /** Shift the open 3D Tiles dataset up or down along the local vertical. */
