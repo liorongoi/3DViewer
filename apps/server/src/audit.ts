@@ -64,15 +64,17 @@ export async function audit(db: Db | Queryable, e: AuditInput): Promise<void> {
 }
 
 /** Recomputes the chain. Returns the first broken sequence number, if any. */
-export async function verifyAudit(db: Queryable): Promise<{ ok: boolean; count: number; brokenAt?: string }> {
+export async function verifyAudit(db: Queryable): Promise<{ ok: boolean; count: number; brokenAt?: string; firstSeq?: number }> {
   const rows = await db.query<Omit<AuditRow, "at"> & { at: Date | string }>("SELECT * FROM audit_events ORDER BY seq");
-  let prev = GENESIS;
+  // Entries over a year old may have been purged (the database refuses younger ones), so the
+  // chain is checked from the oldest entry kept; `firstSeq` says where that is.
+  let prev = rows[0] && Number(rows[0].seq) > 1 ? rows[0].prev_hash : GENESIS;
   for (const r of rows) {
     const at = r.at instanceof Date ? r.at.toISOString() : new Date(r.at).toISOString();
     if (r.prev_hash !== prev || hashEvent(prev, { ...r, at }) !== r.hash) return { ok: false, count: rows.length, brokenAt: String(r.seq) };
     prev = r.hash;
   }
-  return { ok: true, count: rows.length };
+  return { ok: true, count: rows.length, ...(rows[0] && Number(rows[0].seq) > 1 ? { firstSeq: Number(rows[0].seq) } : {}) };
 }
 
 const csvCell = (v: unknown) => {

@@ -1,5 +1,6 @@
 import { ensureAdminPassword } from "./admin.ts";
 import { buildApp } from "./app.ts";
+import { AuditForwarder } from "./audit-forward.ts";
 import { migrate, openPglite, openPostgres } from "./db.ts";
 import { ingestHandler } from "./ingest.ts";
 import { Worker, type Handler } from "./jobs.ts";
@@ -40,12 +41,17 @@ if (adminPassword === "kept" && process.env.ADMIN_PASSWORD && process.env.ADMIN_
 if (!process.env.CLAMDSCAN) app.log.warn("CLAMDSCAN is not set: uploads are not scanned for viruses");
 if (!process.env.FBX2GLTF) app.log.warn("FBX2GLTF is not set: FBX uploads will fail");
 if (!renderer) app.log.warn("THUMBNAIL_WEB_URL is not set: library cards use a format icon instead of a thumbnail");
+// AUDIT_SYSLOG=udp://siem:514, tcp://siem:514 or tls://siem:6514 sends the audit log to the SIEM as CEF (WP 3.8).
+const forwarder = process.env.AUDIT_SYSLOG
+  ? new AuditForwarder(db, process.env.AUDIT_SYSLOG, { onError: (e) => app.log.warn({ err: e }, "audit log could not reach the SIEM; it will retry") })
+  : null;
 await app.listen({ host: process.env.HOST ?? "127.0.0.1", port: Number(process.env.PORT ?? 8787) });
 worker?.start();
+forwarder?.start();
 
 for (const sig of ["SIGINT", "SIGTERM"] as const)
   process.on(sig, () => {
-    void (worker?.stop() ?? Promise.resolve())
+    void Promise.all([worker?.stop(), forwarder?.stop()])
       .then(() => renderer?.close?.())
       .then(() => app.close())
       .then(() => db.close())
