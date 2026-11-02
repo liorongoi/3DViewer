@@ -53,7 +53,7 @@ export function AdminPanel() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-6">
-      <div role="dialog" aria-label="Administration" className="glass flex h-[min(760px,92vh)] w-[min(1040px,96vw)] flex-col rounded-[16px]">
+      <div role="dialog" aria-label="Administration" className="flex h-[min(760px,92vh)] border border-line bg-s1solid shadow-2xl w-[min(1040px,96vw)] flex-col rounded-[16px]">
         <header className="flex h-14 items-center gap-3 border-b border-line px-5">
           <ShieldCheck size={18} className="text-accent" />
           <h2 className="flex-1 text-[15px] font-semibold">Administration</h2>

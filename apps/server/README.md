@@ -18,6 +18,8 @@ DATABASE_URL=postgres://… pnpm --filter @viewer/server dev   # a real PostgreS
 | `THUMBNAIL_WEB_URL` | none | Address of the web app the thumbnail renderer opens (for example `http://localhost:5173`). Without it no thumbnails are made and library cards show a plain tile. |
 | `CHROMIUM` | Playwright's own | Path to a Chromium for thumbnails. Needs the optional `playwright-core` package. |
 | `STRICT_VALIDATION` | `0` | `1` makes errors from the official glTF and 3D Tiles validators block publishing. By default they are listed in the report as warnings, because many real tilesets break a rule and still load (Lyon's has 72 misaligned tiles). |
+| `ADMIN_PASSWORD` | none | Sets the admin password on first start (12 characters or more), stored as an argon2id hash. Later starts keep the stored one. Without a password the admin page stays closed. |
+| `ADMIN_PASSWORD_RESET` | `0` | `1` replaces the stored admin password with `ADMIN_PASSWORD` and signs everyone out, for a lost password. Remove it after the restart. |
 | `WORKERS` | `1` | `0` runs the API without the conversion worker. |
 | `SEED_SAMPLES` | `1` | `0` starts with an empty library (classification levels are always seeded once). |
 | `HOST`, `PORT` | `127.0.0.1`, `8787` | Listen address. |
@@ -62,3 +64,18 @@ Every view and change is stored with time, IP and workstation, in the same trans
 ## Not yet
 
 The admin password and quotas come in WP 3.9.
+
+## Admin (WP 3.9)
+
+There are no user accounts. One admin password opens the admin page (Settings, Administration) and the admin API for 8 hours. Five wrong passwords in a row from one address lock it out for 30 seconds, doubling up to 15 minutes. Every sign-in and every miss is in the audit log.
+
+| Route | What it does |
+|---|---|
+| `GET /api/admin/status` | Whether a password is set and whether this request is signed in. |
+| `POST /api/admin/login`, `/logout`, `/password` | Sign in (returns a bearer token), sign out, change the password. |
+| `PUT` / `DELETE /api/admin/classifications/:id` | Add or change a level (text must have 4.5:1 contrast on the band), remove an unused one. Changing a band re-renders its models' thumbnails. |
+| `DELETE /api/admin/models/:id` | Deletes a model, every version and its files for good. The body must give the model's name as `confirm`. |
+| `GET` / `PUT /api/admin/storage` | Usage, disk space and the quota. Uploads past the quota get 507 with a message. |
+| `GET /api/basemaps`, `PUT /api/admin/basemaps` | This site's base map and terrain sources (XYZ, TMS, WMTS, Terrarium, quantized-mesh), the defaults the viewer opens with, and whether to hide the internet sources. |
+| `GET /api/audit`, `/api/audit.csv`, `/api/audit/verify` | The audit log, now admin only. |
+

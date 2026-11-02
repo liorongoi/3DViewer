@@ -5,7 +5,7 @@ import { applyLanguage } from "../i18n";
 import { useApp } from "../state/store";
 import { Segmented } from "./primitives";
 
-export function SettingsMenu({ onClose: _onClose }: { onClose: () => void }) {
+export function SettingsMenu({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
   const engine = useEngine();
   const s = useApp();
@@ -87,7 +87,10 @@ export function SettingsMenu({ onClose: _onClose }: { onClose: () => void }) {
       <Toggle label={t("viewer.imagery")} value={s.imagery} onChange={(v) => { s.set({ imagery: v }); engine?.setBaseImagery(v); }} />
       <Toggle label={`${t("viewer.baseMap")} (globe)`} value={s.globe} onChange={(v) => { s.set({ globe: v }); engine?.setGlobe(v); }} />
       {s.server && (
-        <button type="button" className="btn-secondary mt-2 w-full justify-center" onClick={() => s.set({ adminOpen: true })}>
+        <button type="button" className="btn-secondary mt-2 w-full justify-center" onClick={() => {
+          onClose();
+          s.set({ adminOpen: true });
+        }}>
           Administration…
         </button>
       )}
