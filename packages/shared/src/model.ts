@@ -37,7 +37,7 @@ export interface ModelSummary {
   /** Footprint centre for the globe view. */
   centre: { lat: number; lon: number };
   /** Optional georeference for models that carry none (e.g. plain GLB samples). */
-  placement?: { lat: number; lon: number; height: number; headingDeg?: number };
+  placement?: { lat: number; lon: number; height: number; headingDeg?: number; scale?: number };
   thumbnail?: string;
   sizeBytes: number;
 }

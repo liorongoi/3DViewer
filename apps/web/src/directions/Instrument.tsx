@@ -33,7 +33,7 @@ export function InstrumentDirection() {
   if (route === "home") {
     return (
       <div className={view === "grid" ? "fixed inset-x-0 top-5 bottom-5 z-20 overflow-auto bg-canvas scrollbar-thin" : "pointer-events-none fixed inset-x-0 top-5 bottom-5 z-20"}>
-        <div className={view === "grid" ? "mx-auto max-w-[1440px] px-8 py-6" : "pointer-events-auto mx-auto mt-3 w-fit"}>
+        <div className={view === "grid" ? "mx-auto max-w-[1440px] px-8 pb-6 pt-16" : "pointer-events-auto mx-auto mt-14 w-fit"}>
           <header className={view === "grid" ? "mb-5 flex flex-wrap items-center gap-4" : "glass flex items-center gap-3 rounded-[14px] p-2"}>
             <div className="flex items-center gap-2">
               <span className="grid h-8 w-8 place-items-center rounded-[9px] bg-accent text-accent-on font-bold">V</span>
@@ -75,10 +75,10 @@ export function InstrumentDirection() {
   if (fullscreen) return <FullscreenHint />;
   return (
     <>
-      <div className="pointer-events-none fixed inset-x-3 top-7 z-20 flex justify-center">
+      <div className="pointer-events-none fixed inset-x-3 top-16 z-20 flex justify-center">
         <ModelHeader onBack={close} backLabel={t("library.title")} className="pointer-events-auto" />
       </div>
-      <div className="pointer-events-none fixed start-3 top-[84px] bottom-7 z-20 flex flex-col gap-2">
+      <div className="pointer-events-none fixed start-3 top-[124px] bottom-7 z-20 flex flex-col gap-2">
         {leftOpen ? (
           <LayersPanel className="pointer-events-auto min-h-0" onClose={() => set({ leftOpen: false })} />
         ) : (

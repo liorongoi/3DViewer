@@ -27,17 +27,19 @@ const path = require("path");
       e.widget.scene.skyBox.show = false;
       e.widget.scene.backgroundColor = C.Color.fromCssColorString("#2A2E35");
       await e.open(model, { fly: false });
+      // Let 3D Tiles refine, then read the bounding sphere (it is final only after a few frames).
+      for (let i = 0; i < 40; i++) { e.widget.render(); await new Promise((r) => setTimeout(r, 50)); }
       const bs = e.boundingSphere();
       if (!bs) return null;
-      // Let 3D Tiles refine.
-      for (let i = 0; i < 40; i++) { e.widget.render(); await new Promise((r) => setTimeout(r, 50)); }
+      e.widget.camera.frustum.near = Math.max(0.01, bs.radius * 0.02);
+      const range = bs.radius * ({ "m-tiles-city": 1.5, "m-tiles-lod": 2.4 }[model.id] ?? 2.9);
       const W = 320, H = 180, N = 24;
       const sprite = document.createElement("canvas");
       sprite.width = W * N; sprite.height = H;
       const ctx = sprite.getContext("2d");
       for (let i = 0; i < N; i++) {
         const heading = C.Math.toRadians(30 + (360 / N) * i);
-        e.widget.camera.lookAt(bs.center, new C.HeadingPitchRange(heading, C.Math.toRadians(-22), bs.radius * 2.6));
+        e.widget.camera.lookAt(bs.center, new C.HeadingPitchRange(heading, C.Math.toRadians(-22), range));
         for (let k = 0; k < 3; k++) e.widget.render();
         ctx.drawImage(e.widget.canvas, i * W, 0, W, H);
       }

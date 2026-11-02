@@ -63,7 +63,7 @@ export const SAMPLE_LIBRARY: ModelSummary[] = [
     sourceFormat: "gltf",
     source: { kind: "glb", url: `${SAMPLES}/khronos/BoomBox.glb` },
     centre: { lat: 32.794, lon: 34.9896 },
-    placement: { lat: 32.794, lon: 34.9896, height: 300 },
+    placement: { lat: 32.794, lon: 34.9896, height: 300, scale: 80 },
     sizeBytes: 11000000,
   },
   {

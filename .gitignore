@@ -8,3 +8,4 @@ playwright-report/
 .DS_Store
 apps/web/public/cesium/
 apps/web/public/samples/
+apps/web/dist-preview

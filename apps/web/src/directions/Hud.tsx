@@ -92,7 +92,7 @@ export function HudDirection() {
 
       {/* model identity: a whisper at the top */}
       {model && (
-        <div className={cx("fixed inset-x-0 top-7 z-20 flex justify-center pointer-events-none", fade)}>
+        <div className={cx("fixed inset-x-0 top-16 z-20 flex justify-center pointer-events-none", fade)}>
           <div className="pointer-events-auto flex items-center gap-2 rounded-full bg-black/40 ps-1 pe-3 py-1 backdrop-blur-md">
             <button type="button" onClick={close} className="grid h-7 w-7 place-items-center rounded-full text-white/70 hover:bg-white/10 hover:text-white" aria-label="Back to Earth">
               <Globe size={15} />

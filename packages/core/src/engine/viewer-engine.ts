@@ -194,6 +194,7 @@ export class ViewerEngine {
         const model = await Model.fromGltfAsync({
           url: summary.source.url,
           modelMatrix: Transforms.eastNorthUpToFixedFrame(Cartesian3.fromDegrees(place.lon, place.lat, place.height)),
+          scale: place.scale ?? 1,
           shadows: ShadowMode.ENABLED,
           enableDebugWireframe: true,
           gltfCallback: (g) => {

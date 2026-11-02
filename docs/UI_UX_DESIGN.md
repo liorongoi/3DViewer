@@ -78,6 +78,31 @@ Reference screen: 1920 × 1080 (smallest supported, Q-09). All sizes in CSS pixe
 
 ---
 
+## 2A. Three layout directions (prototype, for the product owner to choose)
+
+The product owner asked to keep the visualization space at the maximum, to consider a Google Earth style, and to see all the options before deciding. The prototype therefore runs **three layout directions on the same engine, tools and design tokens**. A switcher at the top of the prototype changes direction live; the chosen direction becomes the Release 1 layout and the other two are removed. Every SRS function is reachable in all three.
+
+| | A. Earth workspace | B. Night Instrument | C. Minimal HUD |
+|---|---|---|---|
+| Home | The globe, with every model pinned where it is in the world, coloured by status. A search drawer on the left lists and filters models. | A library page: card grid with turntable thumbnails and filters, or the same library on the globe. | The globe with one spotlight search in the middle. |
+| Opening a model | Fly in from the globe. The model header and Layers float on the left. | Click a card. Floating header at top, Layers left, Measurements right. | Pick from the spotlight. A small pill at the top names the model and its status. |
+| Tools | Centred dock at the bottom, panels as floating glass that never resize the canvas. | Same dock and floating panels. | A thin icon rail on one edge. The dock and the rail fade out after 2.5 s without movement and return on any mouse move or key. |
+| Canvas share at 1920 × 1080, panels closed | About 96 % (only the classification banners are fixed). | About 96 % in the viewer, 0 % on the library page. | About 96 %, close to 100 % while the chrome is faded. |
+| Best for | Operators who think in places: "what do we have around here?" | Users who think in projects and versions, and producers checking status. | Briefings and demonstrations, large screens, users who mostly look. |
+| Risk | The globe is busy at country zoom when there are thousands of models (needs clustering). | One extra step from home to the 3D view. | Hidden controls are less discoverable for first-time users (mitigated by the hint line, ? overlay and Ctrl+K). |
+
+The fixed top bar and status bar in section 2 apply to direction B only. Directions A and C replace them with floating elements, so the canvas runs edge to edge between the classification banners. In every direction, **F** hides everything except the banners and the hint line.
+
+### 2A.1 Fly-by (all directions)
+
+Added at the product owner's request. Three ways to fly, all in the **Fly-by** tab of the right panel and in the command palette:
+
+1. **Orbit tour.** The camera circles the model's bounding sphere once in 40 s at a pleasant oblique angle. Any mouse or key input stops it.
+2. **Viewpoint tour.** Save viewpoints while you explore (camera position, heading, pitch); play them back as a smooth loop with eased flights between them. Viewpoints are saved with the model's measurements.
+3. **Fly mode (G).** Free flight: W A S D to move, Q E for down and up, drag to look, Shift for speed. Speed scales with height above the surface, so the same keys work over a city and inside a room. Esc returns to normal navigation.
+
+---
+
 ## 3. Screens
 
 ### 3.1 Library
