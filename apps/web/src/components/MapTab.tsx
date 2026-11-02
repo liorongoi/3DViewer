@@ -354,6 +354,7 @@ function UserLayerRow({ l, first, last }: { l: UserLayer; first: boolean; last: 
           <span className="block truncate font-medium">{l.name}</span>
           <span className="block truncate text-[11px] text-fg3">
             {l.source.toUpperCase()} · {l.asBase ? "base map · " : ""}
+            {l.asTerrain ? "terrain · " : ""}
             {l.info}
           </span>
         </button>
@@ -375,6 +376,17 @@ function UserLayerRow({ l, first, last }: { l: UserLayer; first: boolean; last: 
             {l.kind === "imagery" && (
               <button type="button" className="btn-ghost h-7" onClick={() => u?.setAsBase(l.id, !l.asBase)}>
                 {l.asBase ? "Put back on top" : "Use as base map"}
+              </button>
+            )}
+            {l.elevation && (
+              <button
+                type="button"
+                className={cx("btn-ghost h-7", l.asTerrain && "text-accent")}
+                aria-pressed={!!l.asTerrain}
+                title="Shape the 3D ground with this file's heights inside its footprint"
+                onClick={() => void u?.setAsTerrain(l.id, !l.asTerrain)}
+              >
+                {l.asTerrain ? "Stop using as terrain" : "Use as terrain"}
               </button>
             )}
             <button type="button" className="btn-ghost h-7" disabled={first || l.asBase} onClick={() => u?.move(l.id, 1)}>

@@ -27,6 +27,7 @@ import {
 import shp from "shpjs";
 import { signal } from "../signal";
 import { GeoTiffImageryProvider } from "./geotiff-imagery";
+import type { DemSource } from "./terrain";
 import { readWms, readWmts, type WmtsLayerInfo } from "./ogc";
 
 /**
@@ -51,11 +52,15 @@ export interface UserLayer {
   info: string;
   color: string;
   bounds?: [number, number, number, number];
+  /** A single-band elevation GeoTIFF: can also shape the terrain. */
+  elevation?: boolean;
+  /** Its heights replace the terrain inside its footprint. */
+  asTerrain?: boolean;
 }
 
 const PALETTE = ["#FFB547", "#5AC8FA", "#F05BDC", "#7BE495", "#FF7A59", "#B49CFF"];
 
-type Handle = { ds?: DataSource; layer?: ImageryLayer };
+type Handle = { ds?: DataSource; layer?: ImageryLayer; dem?: GeoTiffImageryProvider };
 
 /** A clicked vector feature and its attributes (VWR-GEO-02 attribute pop-up). */
 export interface PickedFeature {
@@ -81,6 +86,8 @@ export class UserLayers {
     private readonly widget: CesiumWidget,
     /** Hide or show the built-in base map when a user layer becomes the base. */
     private readonly setBuiltInBase: (shown: boolean) => void,
+    /** Rebuild the terrain with these DEMs layered over the chosen terrain. */
+    private readonly setDems: (dems: DemSource[]) => Promise<void> = async () => {},
   ) {}
 
   // ---------- adding ----------
@@ -179,9 +186,11 @@ export class UserLayers {
         kind: "imagery",
         color: "#FFFFFF",
         bounds: i.bounds,
+        elevation: p.isElevation,
+        asTerrain: false,
         info: `${i.width.toLocaleString()} × ${i.height.toLocaleString()} px · ${i.bands} band${i.bands > 1 ? "s" : ""} · ${fmtRes(i.resolution, i.crs)} · ${i.crs}`,
       },
-      { layer },
+      { layer, dem: p.isElevation ? p : undefined },
     );
   }
 
@@ -280,15 +289,32 @@ export class UserLayers {
     this.list.set(list);
   }
 
+  /** Use an elevation GeoTIFF as terrain (on) or only as a picture (off). */
+  async setAsTerrain(id: string, on: boolean): Promise<void> {
+    this.patch(id, { asTerrain: on });
+    await this.applyDems();
+  }
+
+  private applyDems(): Promise<void> {
+    const dems = this.list
+      .get()
+      .filter((l) => l.asTerrain)
+      .map((l) => this.handles.get(l.id)?.dem)
+      .filter((d): d is GeoTiffImageryProvider => !!d);
+    return this.setDems(dems);
+  }
+
   remove(id: string): void {
     if (this.picked.get()?.layerId === id) this.clearPick();
     const h = this.handles.get(id);
     const wasBase = this.list.get().find((l) => l.id === id)?.asBase;
+    const wasTerrain = this.list.get().find((l) => l.id === id)?.asTerrain;
     if (h?.ds) this.widget.dataSources.remove(h.ds, true);
     if (h?.layer) this.widget.imageryLayers.remove(h.layer, true);
     this.handles.delete(id);
     this.list.set(this.list.get().filter((l) => l.id !== id));
     if (wasBase) this.setBuiltInBase(true);
+    if (wasTerrain) void this.applyDems();
   }
 
   zoomTo(id: string): void {

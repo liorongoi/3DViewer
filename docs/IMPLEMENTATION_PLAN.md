@@ -47,9 +47,9 @@ These requirements are new (not in the SRS). They get their own IDs and are trac
 
 **Prototype status, 2 Nov 2026.** Working in the clickable prototype ahead of their phases, so the product owner can correct them early:
 - VWR-GEO-01: base map picker (offline Sentinel-2, bundled world, Esri, EOX, OSM) and terrain picker (offline mirror, AWS Terrain Tiles online). Models and 3D Tiles are seated on the terrain automatically, with a height slider.
-- VWR-GEO-02: shapefile (.shp set or .zip, any .prj), GeoJSON and KML, draped on terrain. *Still to do:* attribute pop-ups.
-- VWR-GEO-03: GeoTIFF / COG (EPSG 4326, 3857, UTM, ITM 2039, Lambert-93 and others) read tile by tile and reprojected; WMTS, WMS and XYZ from a capabilities address; any imagery can be the base map; single-band elevation drawn as shaded relief. *Still to do:* GeoTIFF elevation as terrain.
-- VWR-ANL-01/02: many line-of-sight pairs with an interactive profile chart, earth curvature and refraction.
+- VWR-GEO-02: shapefile (.shp set or .zip, any .prj), GeoJSON and KML, draped on terrain. Click a feature to see its attributes.
+- VWR-GEO-03: GeoTIFF / COG (EPSG 4326, 3857, UTM, ITM 2039, Lambert-93 and others) read tile by tile and reprojected; WMTS, WMS and XYZ from a capabilities address; any imagery can be the base map; single-band elevation drawn as shaded relief, and usable as terrain: inside its footprint its heights replace the chosen terrain, outside the chosen terrain stays.
+- VWR-ANL-01/02: many line-of-sight pairs with an interactive profile chart, earth curvature and refraction; CSV export of the pairs and of each profile.
 - VWR-ANL-03: GPU viewshed (point-light depth cube), drag to move, Shift+drag for height, live update; buildings, lidar and terrain all block the view.
 - VWR-LOD-01: LOD inspector for 3D Tiles (colour by depth, detail slider, freeze, bounding boxes, tiles per depth, memory).
 

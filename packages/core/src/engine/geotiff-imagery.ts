@@ -282,6 +282,80 @@ export class GeoTiffImageryProvider {
     return canvas;
   }
 
+  /** True for a single-band elevation file (DEM / DSM). */
+  get isElevation(): boolean {
+    return this.elevation;
+  }
+
+  /**
+   * Heights on an n × n lon/lat grid over rect, north row first, bilinear from the overview
+   * closest to the grid spacing; NaN outside the file or on no-data (DemSource for terrain).
+   */
+  async heightGrid(rect: Rectangle, n: number): Promise<Float32Array | null> {
+    if (!this.elevation || !Rectangle.intersection(rect, this.rectangle)) return null;
+    const gx = new Float64Array(n * n);
+    const gy = new Float64Array(n * n);
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
+    for (let r = 0; r < n; r++) {
+      const lat = CMath.toDegrees(rect.north - ((rect.north - rect.south) * r) / (n - 1));
+      for (let c = 0; c < n; c++) {
+        const lon = CMath.toDegrees(rect.west + ((rect.east - rect.west) * c) / (n - 1));
+        const [sx, sy] = this.crs.fromLonLat(lon, lat);
+        const px = (sx - this.origin[0]) / this.res[0];
+        const py = (sy - this.origin[1]) / this.res[1];
+        gx[r * n + c] = px;
+        gy[r * n + c] = py;
+        if (Number.isFinite(px) && Number.isFinite(py)) {
+          minX = Math.min(minX, px);
+          maxX = Math.max(maxX, px);
+          minY = Math.min(minY, py);
+          maxY = Math.max(maxY, py);
+        }
+      }
+    }
+    const W = this.info.width;
+    const H = this.info.height;
+    const out = new Float32Array(n * n).fill(NaN);
+    if (maxX < 0 || maxY < 0 || minX >= W || minY >= H) return out;
+    const want = Math.max(maxX - minX, maxY - minY) / n;
+    let lv = this.levels[0]!;
+    for (const l of this.levels) if (l.scale <= want * 1.2) lv = l;
+    const s = lv.scale;
+    const lw = lv.image.getWidth();
+    const lh = lv.image.getHeight();
+    const lx0 = Math.max(0, Math.floor(Math.max(0, minX) / s) - 1);
+    const ly0 = Math.max(0, Math.floor(Math.max(0, minY) / s) - 1);
+    const lx1 = Math.min(lw, Math.ceil(Math.min(W, maxX + 1) / s) + 1);
+    const ly1 = Math.min(lh, Math.ceil(Math.min(H, maxY + 1) / s) + 1);
+    if (lx1 <= lx0 || ly1 <= ly0) return out;
+    const [band] = (await lv.image.readRasters({ window: [lx0, ly0, lx1, ly1], samples: [0], interleave: false })) as unknown as ArrayLike<number>[];
+    const bw = lx1 - lx0;
+    const bh = ly1 - ly0;
+    const nd = this.noData;
+    const at = (x: number, y: number) => {
+      const v = band![Math.max(0, Math.min(bh - 1, y)) * bw + Math.max(0, Math.min(bw - 1, x))]!;
+      return (nd !== null && v === nd) || v < -1e4 ? NaN : v;
+    };
+    for (let i = 0; i < n * n; i++) {
+      const sx = gx[i]!;
+      const sy = gy[i]!;
+      if (!(sx >= 0 && sy >= 0 && sx < W && sy < H)) continue;
+      // Pixel centres: value of pixel k sits at k + 0.5.
+      const fx = sx / s - 0.5 - lx0;
+      const fy = sy / s - 0.5 - ly0;
+      const x0 = Math.floor(fx);
+      const y0 = Math.floor(fy);
+      const tx = fx - x0;
+      const ty = fy - y0;
+      const h = (at(x0, y0) * (1 - tx) + at(x0 + 1, y0) * tx) * (1 - ty) + (at(x0, y0 + 1) * (1 - tx) + at(x0 + 1, y0 + 1) * tx) * ty;
+      out[i] = Number.isFinite(h) ? h : at(Math.round(fx), Math.round(fy));
+    }
+    return out;
+  }
+
   /** Cesium's ImageryLayer takes any object with the ImageryProvider shape. */
   asProvider(): ImageryProvider {
     return this as unknown as ImageryProvider;

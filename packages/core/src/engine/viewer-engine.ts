@@ -42,6 +42,7 @@ import { FlyByTour, FlyMode, captureViewpoint, type Viewpoint } from "./fly";
 import { signal } from "../signal";
 import { effectiveVisibility, layersFromGltf, type Layer } from "../layers/layers";
 import { BASE_MAPS, TERRAINS, makeBaseLayers } from "./basemaps";
+import { createLayeredTerrain, type DemSource, type LayerableTerrain } from "./terrain";
 import { SightlineTool } from "./sightline";
 import { Viewshed } from "./viewshed";
 import { UserLayers } from "./user-layers";
@@ -106,6 +107,7 @@ export class ViewerEngine {
   readonly terrainId = signal("none");
   /** Vertical shift applied to a 3D Tiles dataset to meet the terrain, metres. */
   readonly groundOffset = signal(0);
+  private userDems: DemSource[] = [];
 
   private model: Model | null = null;
   private tileset: Cesium3DTileset | null = null;
@@ -183,7 +185,14 @@ export class ViewerEngine {
     this.sight = new SightlineTool(scene, this.widget.entities, (pts) => this.sampleGround(pts));
     this.viewshed = new Viewshed(scene, this.widget.entities);
     this.lod = new LodInspector(scene);
-    this.userLayers = new UserLayers(this.widget, (shown) => this.setBaseImagery(shown));
+    this.userLayers = new UserLayers(
+      this.widget,
+      (shown) => this.setBaseImagery(shown),
+      async (dems) => {
+        this.userDems = dems;
+        await this.setTerrain(this.terrainId.get());
+      },
+    );
 
     this.bindPointer();
     scene.postRender.addEventListener(() => this.afterFrame());
@@ -420,7 +429,11 @@ export class ViewerEngine {
   async setTerrain(id: string): Promise<void> {
     const def = TERRAINS.find((t) => t.id === id);
     if (!def) return;
-    this.widget.scene.terrainProvider = await def.create();
+    const base = await def.create();
+    // The user's elevation GeoTIFFs replace the chosen terrain inside their footprints.
+    this.widget.scene.terrainProvider = this.userDems.length
+      ? createLayeredTerrain("tileHeights" in base ? (base as LayerableTerrain) : null, this.userDems)
+      : base;
     this.terrainId.set(id);
     await this.placeOnGround();
   }
