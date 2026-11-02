@@ -11,7 +11,7 @@
 
 VIEWER is built as **one TypeScript rendering core on CesiumJS**, shipped two ways: a **web portal** and a **Windows EXE (Electron)** that wraps the exact same web build. All heavy format work (FBX conversion, compression, tiling to 3D Tiles, thumbnails) happens **once on an on-prem server at upload time**, so both clients only ever stream optimised glTF/GLB and OGC 3D Tiles. Everything runs inside the air-gapped internal network: no CDN, no cloud, no telemetry, no licence server.
 
-Release 1 is planned as **7 phases over 27 weeks** (plus a 4-week pilot) with two parallel streams (client and server), a team of about 7, and a formal gate at the end of each phase tied to the SRS acceptance scenarios (AC-01 to AC-10).
+Release 1 is planned as **7 phases over 29 weeks** (plus a 4-week pilot) with two parallel streams (client and server), a team of about 7, and a formal gate at the end of each phase tied to the SRS acceptance scenarios (AC-01 to AC-10).
 
 | | |
 |---|---|
@@ -19,7 +19,7 @@ Release 1 is planned as **7 phases over 27 weeks** (plus a 4-week pilot) with tw
 | Acceptance scenarios planned | 10 / 10 |
 | Formats | FBX, glTF, GLB, **OGC 3D Tiles 1.0 and 1.1** (b3dm, i3dm, pnts, cmpt, glTF/GLB content, implicit tiling) |
 | Clients | Web portal (Chrome / Edge) and Windows 10/11 EXE, identical features |
-| Calendar | 27 weeks to acceptance, then a 4-week pilot |
+| Calendar | 29 weeks to acceptance, then a 4-week pilot (was 27; +2 weeks for the geospatial scope added on 2 Nov 2026, see 0.2) |
 
 ### 0.1 3D Tiles
 
@@ -29,6 +29,23 @@ Release 1 is planned as **7 phases over 27 weeks** (plus a 4-week pilot) with tw
 2. **Uploading** 3D Tiles datasets up to 50 GB as a folder or ZIP, validated with the official `3d-tiles-validator` (Phase 3, WP 3.2 and 3.3).
 3. **Producing** 3D Tiles on the server from very large FBX/glTF meshes, so 2 GB models stream inside the 10 GB VRAM cap (Phase 3, WP 3.4).
 4. **Opening local tilesets offline** in the EXE through a custom file protocol with HTTP range support (Phase 5, WP 5.3).
+
+### 0.2 Scope added by the product owner on 2 Nov 2026
+
+These requirements are new (not in the SRS). They get their own IDs and are traced like the others.
+
+| ID | Requirement | Where in the plan |
+|---|---|---|
+| VWR-GEO-01 | Online base map and terrain, so the ground and relief around every model is shown. On the internal network the same layers come from internal servers (same protocols). | WP 1.6, 1.9 |
+| VWR-GEO-02 | Load the user's own vector layers: **Shapefile** (.zip or .shp + .dbf + .prj), also GeoJSON and KML. Draped on terrain and models, with attribute pop-ups. | WP 1.9 |
+| VWR-GEO-03 | Load the user's own base maps: **GeoTIFF** (including Cloud-Optimised GeoTIFF, any CRS, reprojected on the fly) and **WMTS** services (plus WMS and XYZ). GeoTIFF elevation can be used as terrain. | WP 1.9 |
+| VWR-ANL-01 | **Line of sight** between two points, for many pairs at once. Each pair shows visible parts in green and blocked parts in red, with the first obstruction marked. Observer and target heights above ground are editable. | WP 2.8 |
+| VWR-ANL-02 | **Height profile** for each pair: terrain and model surface along the line, the sight line, obstructions, distance and heights. | WP 2.8 |
+| VWR-ANL-03 | **360° visibility (viewshed)** from an observer point. The observer can be dragged horizontally and raised or lowered, and the visible / hidden map updates live. Radius and observer height are editable. | WP 2.9 |
+| VWR-LOD-01 | **Level of detail** made visible and controllable: per-tile LOD colouring, detail slider (screen-space error), freeze LOD, tile statistics. | WP 1.5, 2.10 |
+| VWR-DAT-01 | Public georeferenced test data in every supported format, showing the full path from file to globe. | WP 0.8, [DATA_SOURCES](./DATA_SOURCES.md) |
+
+**Air-gap note.** The SRS network is internal only. Online sources are used for development and demonstrations. Each online layer has an internal equivalent configured by the admin (WP 3.9), so no feature depends on the internet.
 
 ---
 
@@ -362,13 +379,13 @@ gantt
   P0 Foundations & spikes          :p0, 2026-11-16, 3w
   section Client stream
   P1 Viewer core                    :p1, after p0, 6w
-  P2 Layers & measurement           :p2, after p1, 5w
-  P4 Library & producer UX          :p4, 2027-02-15, 6w
+  P2 Layers, measurement & analysis :p2, after p1, 8w
+  P4 Library & producer UX          :p4, 2027-03-01, 6w
   section Server stream
   P3 Server, pipeline, library API  :p3, 2026-12-21, 10w
   section Delivery
-  P5 Desktop EXE & offline install  :p5, 2027-03-15, 5w
-  P6 Hardening & acceptance         :p6, 2027-04-12, 6w
+  P5 Desktop EXE & offline install  :p5, 2027-03-29, 5w
+  P6 Hardening & acceptance         :p6, 2027-04-26, 6w
   Pilot                             :pilot, after p6, 4w
 ```
 
@@ -376,12 +393,12 @@ gantt
 |---|---|---|
 | P0 Foundations & de-risking | 1–3 | G0: engine, FBX converter, tiler and shell decisions signed; design direction approved |
 | P1 Viewer core | 4–9 | G1: AC-03, AC-04 pass on glTF/GLB and 3D Tiles (web) |
-| P2 Layers & measurement | 10–14 | G2: AC-05, AC-06 pass (web) |
+| P2 Layers, measurement & analysis | 10–17 | G2: AC-05, AC-06 pass (web); line of sight, profile and viewshed checked against reference DEM results |
 | P3 Server, pipeline, API | 6–15 | G3: AC-02, AC-07, AC-09 pass at API level |
-| P4 Library & producer UX | 14–19 | G4: AC-01 (web), AC-07, AC-08 end to end |
-| P5 Desktop EXE & offline | 18–22 | G5: AC-01 in EXE incl. offline; AC-10 dry run |
-| P6 Hardening & acceptance | 22–27 | G6: all AC-01 to AC-10 pass in both clients; NFRs measured |
-| Pilot | 28–31 | Go-live decision |
+| P4 Library & producer UX | 16–21 | G4: AC-01 (web), AC-07, AC-08 end to end |
+| P5 Desktop EXE & offline | 20–24 | G5: AC-01 in EXE incl. offline; AC-10 dry run |
+| P6 Hardening & acceptance | 24–29 | G6: all AC-01 to AC-10 pass in both clients; NFRs measured |
+| Pilot | 30–33 | Go-live decision |
 
 Calendar assumes no holiday gaps; add the organisation's holidays when the start date is fixed.
 
@@ -410,12 +427,13 @@ Each work package (WP) lists its tasks, what it depends on, and how we know it i
 | 1.2 Loaders | glTF (+ external .bin/images), GLB, 3D Tiles 1.0/1.1 (b3dm, i3dm, pnts, cmpt, glTF content, implicit tiling, `EXT_structural_metadata`); Draco, meshopt, KTX2; friendly errors | FMT-02, 03, 04, 05 | All Khronos + 3D Tiles samples open; corrupt files show a named reason without crash |
 | 1.3 Georeference | Transform resolution chain (4.1); CRS list with proj4; placement on globe | FMT-08 | Test models land within 10 cm of surveyed positions |
 | 1.4 Rendering | PBR + IBL (3 bundled HDRs pre-filtered to KTX2 cubemaps: Overcast, Clear noon, Studio neutral); sun with soft shadows (toggle); PBR Neutral tonemap; MSAA 4× + FXAA; SSAO; view modes: Shaded, Shaded + edges, Wireframe, Unlit | RND-01, 03, 04, 05 | AC-03 visual sign-off by 2 reviewers |
-| 1.5 3D Tiles performance | SSE policy, skip-LOD, global VRAM budget manager, adaptive resolution, quality presets, perf HUD (Shift+P) | RND-06, NFR-02, 03, 04 | 3D Tiles first view ≤ 3 s; ≥ 60 fps average on A4000; no crash at budget |
-| 1.6 Base maps | Terrain (quantized-mesh) + imagery (XYZ/TMS/WMTS/MBTiles via Martin) providers from admin config; layer toggles and source picker; footprint clipping polygon; works with no base map | RND-08, 09, 10, 11 | No terrain poke-through on 3 test sites; viewer works with base map off |
+| 1.5 3D Tiles performance | SSE policy, skip-LOD, global VRAM budget manager, adaptive resolution, quality presets, perf HUD (Shift+P); LOD inspector hooks (tile depth, SSE, loaded/visible counts) | RND-06, NFR-02, 03, 04, LOD-01 | 3D Tiles first view ≤ 3 s; ≥ 60 fps average on A4000; no crash at budget |
+| 1.6 Base maps & terrain | Terrain (quantized-mesh, or heightmap tiles such as Terrarium) + imagery (XYZ/TMS/WMTS/MBTiles via Martin) providers from admin config; **online presets for demos** (AWS Terrain Tiles, Esri World Imagery, OpenStreetMap, Sentinel-2 cloudless) and internal equivalents; model sits on terrain (footprint clipping or terrain lowering); source picker; works with no base map | RND-08, 09, 10, 11, GEO-01 | No terrain poke-through on 3 test sites; viewer works with base map off; online and internal sources switch without restart |
 | 1.7 Navigation | Cursor-anchored zoom (wheel, pinch, +/−), orbit around double-click pivot (left-drag), pan (right/middle-drag, arrows), view cube with 26 hot-spots, compass + north arrow, Home, Focus selection, eased fly-to; `?` help overlay | NAV-01–05, 07 | AC-04 passes with mouse, keyboard and touchpad |
 | 1.8 App shell | Design system components; top bar, dock, collapsible side panels; command palette; dark/light themes; i18next with Hebrew/English and RTL from day one | NFR-16, 17 (foundations) | Shell renders in both languages and themes; contrast tests pass |
+| 1.9 User data layers | Data panel: add **Shapefile** (shpjs in a worker, .prj via proj4), GeoJSON, KML; **GeoTIFF / COG** imagery and elevation (geotiff.js, reprojection to Web Mercator or geographic tiles in a worker); **WMTS** from a GetCapabilities URL with layer / style / matrix-set picker, plus WMS and XYZ; order, opacity, show/hide, zoom-to; layers saved with the view | GEO-02, 03 | 10 reference shapefiles (points, lines, polygons, 3 CRSs) land within 1 m; a 2 GB COG streams without loading fully; 3 public WMTS services load from capabilities |
 
-#### Phase 2 — Layers & measurement (weeks 10–14)
+#### Phase 2 — Layers, measurement & analysis (weeks 10–17)
 
 | WP | Tasks | Requirements | Done when |
 |---|---|---|---|
@@ -426,6 +444,9 @@ Each work package (WP) lists its tasks, what it depends on, and how we know it i
 | 2.5 Measurement UI | Live in-canvas label with 3D / horizontal / vertical triangle; sidebar cards with rename, hide, delete, copy; units toggle | MSR-04, 05 | AC-06 passes |
 | 2.6 Coordinates | Cursor + point coordinates in WGS84 or UTM (zone auto-detected or chosen), remembered per workstation, copy | MSR-08 | Values match proj reference to 1 mm |
 | 2.7 Accuracy harness | Automated test comparing measurements to survey data in both clients | NFR-07, 18 | Web vs EXE identical to 1 mm |
+| 2.8 Line of sight & profile | Pair tool: click observer then target, repeat for many pairs; per-pair heights above ground; sight line coloured visible / blocked with first obstruction; profile chart (terrain + model surface sampled with `sampleHeightMostDetailed`, earth curvature and refraction k = 0.13 optional); pair list with rename, hide, delete, export CSV | ANL-01, 02 | Results match a GDAL reference on the test DEM to 1 sample; 20 pairs stay interactive |
+| 2.9 Viewshed 360° | GPU viewshed: depth cube rendered from the observer (6 faces, or a point-light shadow map), compared per pixel in a post-process stage, so terrain and 3D models both block; visible / hidden overlay with radius ring; drag handle moves the observer on the ground, a vertical handle and slider change height; updates every frame while dragging; CPU fallback on a DSM grid for export | ANL-03 | Visible area matches GDAL `gdal_viewshed` on the test DEM within 2%; ≥ 30 fps while dragging on the A4000 |
+| 2.10 LOD inspector | Panel: colour tiles by LOD depth, detail slider (maximum screen-space error), freeze LOD to inspect, show bounding volumes, counts of loaded / visible tiles and memory | LOD-01 | Inspector values match Cesium statistics; slider changes refinement live |
 
 #### Phase 3 — Server, pipeline and library API (weeks 6–15, parallel)
 
@@ -441,7 +462,7 @@ Each work package (WP) lists its tasks, what it depends on, and how we know it i
 | 3.8 Audit | Hash-chained append-only log, retention ≥ 1 year, CSV export, syslog/CEF | NFR-11 | Every action in AC-08 appears with IP, host, time |
 | 3.9 Admin | Password (argon2id), classification list (name + colour + text colour), permanent delete, storage quotas, base map sources | ADM-01, 02, RND-11 | AC-09 passes |
 
-#### Phase 4 — Library and producer experience (weeks 14–19)
+#### Phase 4 — Library and producer experience (weeks 16–21)
 
 | WP | Tasks | Requirements | Done when |
 |---|---|---|---|
@@ -452,7 +473,7 @@ Each work package (WP) lists its tasks, what it depends on, and how we know it i
 | 4.5 Classification everywhere | Top bar banner, card ribbon, thumbnail, screenshots and exports (burned in, not overlay) | UPL-10 | Screenshot export shows banner in 100% of tests |
 | 4.6 Share view | Copyable link encoding model, version, camera, layer state, measurements | SRS 5.1 top bar | Link restores the same view on another workstation |
 
-#### Phase 5 — Desktop EXE and offline install (weeks 18–22)
+#### Phase 5 — Desktop EXE and offline install (weeks 20–24)
 
 Phase 5 builds and tests the installer **pipeline**. The release installers themselves are produced in WP 6.8, after the user manual.
 
@@ -465,7 +486,7 @@ Phase 5 builds and tests the installer **pipeline**. The release installers them
 | 5.5 Installer (pipeline) | electron-builder NSIS per-user (no admin), org code-signing certificate, server URL pre-configurable via MSI/registry/JSON | 2.3 | Installs on a locked-down Windows 10 and 11 image |
 | 5.6 Server bundle (pipeline) | Offline images tarball, `install.sh`, systemd, backup/restore scripts; base map package installer | NFR-20, RND-11 | Clean install ≤ 2 h by someone following the guide |
 
-#### Phase 6 — Hardening and acceptance (weeks 22–27)
+#### Phase 6 — Hardening and acceptance (weeks 24–29)
 
 | WP | Tasks | Requirements | Done when |
 |---|---|---|---|

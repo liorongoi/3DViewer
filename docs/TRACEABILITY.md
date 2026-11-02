@@ -96,3 +96,16 @@ Every requirement in the SRS mapped to the work package (WP) that builds it and 
 | C-3 FBX proprietary | WP 0.4 bake-off without Autodesk SDK |
 | C-4 EXE = web features | Same build (AD-01/02); parity checklist in 5.1 |
 | AC-01 … AC-10 | Gates G1–G6 (plan 5.2); final run in WP 6.7 |
+
+## Added by the product owner, 2 Nov 2026
+
+| ID | Type | Requirement | Work packages | Verification |
+|---|---|---|---|---|
+| VWR-GEO-01 | T | Online base map and terrain around models; internal equivalents | 1.6, 1.9, 3.9 | Terrain under 3 test models, no poke-through; online / internal switch |
+| VWR-GEO-02 | T | User vector layers: Shapefile, GeoJSON, KML | 1.9 | 10 reference shapefiles within 1 m |
+| VWR-GEO-03 | T | User base maps: GeoTIFF / COG, WMTS, WMS, XYZ | 1.9 | 2 GB COG streams; 3 public WMTS load from capabilities |
+| VWR-ANL-01 | T | Line of sight for many point pairs | 2.8 | Matches GDAL reference on test DEM |
+| VWR-ANL-02 | T | Height profile per pair | 2.8 | Profile heights within 1 sample of reference |
+| VWR-ANL-03 | T | 360° viewshed, observer moved horizontally and vertically, live update | 2.9 | Within 2% of `gdal_viewshed`; ≥ 30 fps while dragging |
+| VWR-LOD-01 | T | LOD inspector and detail control | 1.5, 2.10 | Values match Cesium statistics |
+| VWR-DAT-01 | T | Public georeferenced test data in every format | 0.8 | Kit in DATA_SOURCES opens end to end |
