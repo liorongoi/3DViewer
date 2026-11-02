@@ -30,6 +30,10 @@ interface Place {
   height: string;
   heading: string;
   scale: string;
+  /** The file's up axis: y for glTF, z for many CAD and FBX exports. */
+  upAxis: "y" | "z";
+  /** Metres per file unit. */
+  unit: number;
 }
 
 /**
@@ -47,7 +51,7 @@ export function UploadWizard() {
   const [files, setFiles] = useState<LocalFile[]>([]);
   const [checking, setChecking] = useState(false);
   const [checked, setChecked] = useState<{ report: CheckReport; files: LocalFile[] } | null>(null);
-  const [place, setPlace] = useState<Place>({ fromFile: true, fitGround: true, crs: 4326, x: "", y: "", onTerrain: true, height: "0", heading: "0", scale: "1" });
+  const [place, setPlace] = useState<Place>({ fromFile: true, fitGround: true, crs: 4326, x: "", y: "", onTerrain: true, height: "0", heading: "0", scale: "1", upAxis: "y", unit: 1 });
   const [meta, setMeta] = useState({ name: "", project: "", operation: "", entity: "", status: "draft" as UpdateStatus, description: "" });
   const [cls, setCls] = useState("");
   const [publishing, setPublishing] = useState(false);
@@ -122,7 +126,7 @@ export function UploadWizard() {
           status: meta.status,
           classificationId: cls,
         },
-        placement: useFile ? undefined : { lat, lon, height, aboveGround: place.onTerrain ? 0 : undefined, headingDeg: parseFloat(place.heading) || 0, scale: parseFloat(place.scale) || 1 },
+        placement: useFile ? undefined : { lat, lon, height, aboveGround: place.onTerrain ? 0 : undefined, headingDeg: parseFloat(place.heading) || 0, scale: (parseFloat(place.scale) || 1) * place.unit, upAxis: place.upAxis === "z" ? "z" : undefined },
         groundFit: r.format === "3dtiles" && useFile ? (place.fitGround ? "street" : "none") : undefined,
       },
       setProgress,
@@ -170,7 +174,7 @@ export function UploadWizard() {
         centre: { lat, lon },
         placement: useFile
           ? undefined
-          : { lat, lon, height, aboveGround: place.onTerrain ? 0 : undefined, headingDeg: parseFloat(place.heading) || 0, scale: parseFloat(place.scale) || 1 },
+          : { lat, lon, height, aboveGround: place.onTerrain ? 0 : undefined, headingDeg: parseFloat(place.heading) || 0, scale: (parseFloat(place.scale) || 1) * place.unit, upAxis: place.upAxis === "z" ? "z" : undefined },
         sizeBytes: report.stats.bytes,
       };
       addUpload(m);
@@ -333,6 +337,24 @@ export function UploadWizard() {
                     <Field label="Heading (° from north)"><input className="input num" value={place.heading} onChange={(e) => setPlace({ ...place, heading: e.target.value })} dir="ltr" /></Field>
                     <Field label="Scale"><input className="input num" value={place.scale} onChange={(e) => setPlace({ ...place, scale: e.target.value })} dir="ltr" /></Field>
                   </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Up axis in the file">
+                      <select className="input" data-testid="up-axis" value={place.upAxis} onChange={(e) => setPlace({ ...place, upAxis: e.target.value as "y" | "z" })}>
+                        <option value="y">Y up (glTF standard)</option>
+                        <option value="z">Z up (CAD, many FBX exports)</option>
+                      </select>
+                    </Field>
+                    <Field label="File units">
+                      <select className="input" data-testid="file-units" value={place.unit} onChange={(e) => setPlace({ ...place, unit: Number(e.target.value) })}>
+                        {UNITS.map(([label, f]) => (
+                          <option key={label} value={f}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+                  <SizeReadout size={report?.stats.size} place={place} fbx={report?.format === "fbx"} />
                 </>
               )}
               <p className="text-[12px] text-fg3">After publishing, you can raise or lower the model in Properties.</p>
@@ -433,6 +455,29 @@ export function UploadWizard() {
         </footer>
       </div>
     </div>
+  );
+}
+
+const UNITS: [string, number][] = [
+  ["Metres", 1],
+  ["Centimetres", 0.01],
+  ["Millimetres", 0.001],
+  ["Feet", 0.3048],
+  ["Inches", 0.0254],
+];
+
+/** The model's size as it will stand on the ground, so a wrong unit or up axis shows before publishing. */
+function SizeReadout({ size, place, fbx }: { size?: [number, number, number]; place: Place; fbx: boolean }) {
+  if (!size) return <p className="text-[12px] text-fg3">{fbx ? "The size shows once the server has converted the FBX; check it in the viewer." : "The file does not state its size."}</p>;
+  const k = (parseFloat(place.scale) || 1) * place.unit;
+  // glTF y-up: x east-west, z north-south, y height. Z-up files: y north-south, z height.
+  const [w, d, h] = place.upAxis === "z" ? [size[0], size[1], size[2]] : [size[0], size[2], size[1]];
+  const f = (v: number) => (v * k >= 100 ? (v * k).toFixed(0) : (v * k).toPrecision(3));
+  const odd = Math.max(w, d, h) * k > 2000 || Math.max(w, d, h) * k < 0.05;
+  return (
+    <p className={cx("text-[12px]", odd ? "text-[var(--status-production)]" : "text-fg2")} data-testid="model-size">
+      Size as placed: {f(w)} × {f(d)} m, {f(h)} m high.{odd ? " That looks wrong for a real object: check the units and the up axis." : ""}
+    </p>
   );
 }
 

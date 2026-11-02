@@ -18,7 +18,16 @@ export interface CheckReport {
   items: CheckItem[];
   /** False when any item is an error. */
   ok: boolean;
-  stats: { files: number; bytes: number; triangles?: number; textures?: number; tiles?: number; contents?: number };
+  stats: {
+    files: number;
+    bytes: number;
+    triangles?: number;
+    textures?: number;
+    tiles?: number;
+    contents?: number;
+    /** Extent along the file's x, y, z, in file units (metres for glTF). */
+    size?: [number, number, number];
+  };
   /** Node names for the Layers step. */
   nodes: string[];
   /** Position found in the file, if any. */

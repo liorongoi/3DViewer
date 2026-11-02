@@ -1,4 +1,5 @@
 import {
+  Axis,
   BoundingSphere,
   Cartesian2,
   Cartesian3,
@@ -274,6 +275,7 @@ export class ViewerEngine {
           url: summary.source.url,
           modelMatrix: placeMatrix(place, height),
           scale: place.scale ?? 1,
+          upAxis: place.upAxis === "z" ? Axis.Z : Axis.Y,
           shadows: ShadowMode.ENABLED,
           enableDebugWireframe: true,
           imageBasedLighting: this.makeIbl(),

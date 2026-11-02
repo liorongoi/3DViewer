@@ -147,3 +147,22 @@ describe("loader plugins (WP 1.1)", () => {
     expect(broken.report.items[0]!.title).toBe("Line 2 does not have three numbers");
   });
 });
+
+describe("model size", () => {
+  it("measures the scene through node transforms", async () => {
+    const { gltfSize } = await import("./gltf");
+    const g = {
+      scenes: [{ nodes: [0] }],
+      // Scaled ×100 (centimetres to… a mistake), then rotated 90° about X: y becomes z.
+      nodes: [{ scale: [100, 100, 100], children: [1] }, { rotation: [Math.SQRT1_2, 0, 0, Math.SQRT1_2], mesh: 0 }],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+      accessors: [{ count: 3, min: [0, 0, 0], max: [2, 1, 0.5] }],
+    };
+    const s = gltfSize(g)!;
+    expect(s[0]).toBeCloseTo(200);
+    expect(s[1]).toBeCloseTo(50);
+    expect(s[2]).toBeCloseTo(100);
+    const { report } = await checkFiles([fromBytes("tri.glb", glb({ ...triangle, accessors: [{ count: 3, min: [0, 0, 0], max: [4, 3, 0] }] }))]);
+    expect(report.stats.size).toEqual([4, 3, 0]);
+  });
+});

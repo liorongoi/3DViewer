@@ -39,11 +39,11 @@ interface Gltf {
   extensionsUsed?: string[];
   buffers?: { uri?: string; byteLength?: number }[];
   bufferViews?: { buffer?: number; byteOffset?: number; byteLength?: number }[];
-  accessors?: { count?: number }[];
+  accessors?: { count?: number; min?: number[]; max?: number[] }[];
   images?: { uri?: string; bufferView?: number }[];
   textures?: unknown[];
   meshes?: { primitives?: { mode?: number; indices?: number; attributes?: Record<string, number> }[] }[];
-  nodes?: { name?: string; mesh?: number; children?: number[] }[];
+  nodes?: { name?: string; mesh?: number; children?: number[]; matrix?: number[]; translation?: number[]; rotation?: number[]; scale?: number[] }[];
   scenes?: { nodes?: number[] }[];
   scene?: number;
 }
@@ -99,6 +99,58 @@ function nodeNames(g: Gltf): string[] {
   };
   for (const r of roots) walk(r, 0);
   return names;
+}
+
+type M4 = number[];
+const mul = (a: M4, b: M4): M4 => {
+  const o = new Array(16).fill(0);
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++) o[c * 4 + r] += a[k * 4 + r]! * b[c * 4 + k]!;
+  return o;
+};
+function local(n: NonNullable<Gltf["nodes"]>[number]): M4 {
+  if (n.matrix?.length === 16) return n.matrix;
+  const [x, y, z, w] = n.rotation ?? [0, 0, 0, 1];
+  const [sx, sy, sz] = n.scale ?? [1, 1, 1];
+  const [tx, ty, tz] = n.translation ?? [0, 0, 0];
+  // Column-major T · R · S, as glTF defines it.
+  return [
+    (1 - 2 * (y! * y! + z! * z!)) * sx!, 2 * (x! * y! + z! * w!) * sx!, 2 * (x! * z! - y! * w!) * sx!, 0,
+    2 * (x! * y! - z! * w!) * sy!, (1 - 2 * (x! * x! + z! * z!)) * sy!, 2 * (y! * z! + x! * w!) * sy!, 0,
+    2 * (x! * z! + y! * w!) * sz!, 2 * (y! * z! - x! * w!) * sz!, (1 - 2 * (x! * x! + y! * y!)) * sz!, 0,
+    tx!, ty!, tz!, 1,
+  ];
+}
+
+/**
+ * The model's extent in its own units along x, y, z (glTF is metres and y-up), from the
+ * POSITION bounds of every mesh in the scene, placed by the node transforms. Null when
+ * the file does not carry bounds.
+ */
+export function gltfSize(g: Gltf): [number, number, number] | null {
+  const nodes = g.nodes ?? [];
+  const roots = g.scenes?.[g.scene ?? 0]?.nodes ?? nodes.map((_, i) => i);
+  const lo = [Infinity, Infinity, Infinity];
+  const hi = [-Infinity, -Infinity, -Infinity];
+  const walk = (i: number, parent: M4, depth: number) => {
+    const n = nodes[i];
+    if (!n || depth > 64) return;
+    const m = mul(parent, local(n));
+    for (const p of g.meshes?.[n.mesh ?? -1]?.primitives ?? []) {
+      const a = g.accessors?.[p.attributes?.POSITION ?? -1];
+      if (!a?.min || !a.max || a.min.length < 3) continue;
+      for (let c = 0; c < 8; c++) {
+        const v = [0, 1, 2].map((k) => ((c >> k) & 1 ? a.max![k]! : a.min![k]!));
+        for (let r = 0; r < 3; r++) {
+          const w = m[r]! * v[0]! + m[4 + r]! * v[1]! + m[8 + r]! * v[2]! + m[12 + r]!;
+          lo[r] = Math.min(lo[r]!, w);
+          hi[r] = Math.max(hi[r]!, w);
+        }
+      }
+    }
+    for (const ch of n.children ?? []) walk(ch, m, depth + 1);
+  };
+  for (const r of roots) walk(r, [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], 0);
+  return Number.isFinite(lo[0]) ? [hi[0]! - lo[0]!, hi[1]! - lo[1]!, hi[2]! - lo[2]!] : null;
 }
 
 function triangles(g: Gltf): number {
@@ -183,7 +235,7 @@ export const gltfLoader: LoaderPlugin = {
       items.unshift({ id: "format", severity: "ok", title: `glTF 2.0 ${ext(main.path) === "glb" ? "binary (GLB)" : "with separate files"}` });
     return {
       items,
-      stats: { files: files.files.length, bytes: files.bytes, triangles: triangles(g), textures: g.textures?.length ?? 0 },
+      stats: { files: files.files.length, bytes: files.bytes, triangles: triangles(g), textures: g.textures?.length ?? 0, size: gltfSize(g) ?? undefined },
       nodes: nodeNames(g),
       georef: null,
     };

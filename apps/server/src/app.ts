@@ -31,7 +31,7 @@ const source = {
 const placement = {
   type: "object",
   required: ["lat", "lon", "height"],
-  properties: { lat: { type: "number" }, lon: { type: "number" }, height: { type: "number" }, aboveGround: { type: "number" }, headingDeg: { type: "number" }, scale: { type: "number", exclusiveMinimum: 0 } },
+  properties: { lat: { type: "number" }, lon: { type: "number" }, height: { type: "number" }, aboveGround: { type: "number" }, headingDeg: { type: "number" }, scale: { type: "number", exclusiveMinimum: 0 }, upAxis: { enum: ["y", "z"] } },
   additionalProperties: false,
 } as const;
 const idParam = { type: "object", required: ["id"], properties: { id: { type: "string", maxLength: 200 } } } as const;
