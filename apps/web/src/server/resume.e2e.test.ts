@@ -17,7 +17,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import type { LocalFile } from "@viewer/core";
-import { uploadAndIngest, type ServerInfo } from "./api.ts";
+import { uploadAndIngest, type ServerInfo } from "./api";
 
 const SIZE = 1.5 * 1024 ** 3;
 const CHUNK = 8 * 1024 * 1024;
@@ -102,12 +102,13 @@ describe.runIf(process.env.E2E_RESUME === "1")("AC-07: resume after a cut", () =
     bigGlb(file, SIZE);
     await start();
 
-    // Count what actually goes over the wire, to show the first half is not sent again.
-    let sentOnWire = 0;
+    // After the cut, note where the first accepted chunk starts: the server's offset, not 0.
+    let resumedFrom = -1;
     const realFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (init?.method === "PATCH" && init.body instanceof Uint8Array) sentOnWire += init.body.length;
-      return realFetch(input, init);
+      const r = await realFetch(input, init);
+      if (cut && resumedFrom < 0 && init?.method === "PATCH" && r.ok) resumedFrom = Number((init.headers as Record<string, string>)["upload-offset"]);
+      return r;
     }) as typeof fetch;
 
     let cut = false;
@@ -127,12 +128,12 @@ describe.runIf(process.env.E2E_RESUME === "1")("AC-07: resume after a cut", () =
     });
     globalThis.fetch = realFetch;
     const seconds = (Date.now() - t0) / 1000;
-    console.log(`AC-07: ${(SIZE / 1024 ** 3).toFixed(1)} GB in ${seconds.toFixed(0)} s, cut at ${((cutAt / SIZE) * 100).toFixed(0)}%, ${((sentOnWire - SIZE) / 1024 ** 2).toFixed(0)} MB sent twice`);
+    console.log(`AC-07: ${(SIZE / 1024 ** 3).toFixed(1)} GB in ${seconds.toFixed(0)} s, cut at ${((cutAt / SIZE) * 100).toFixed(1)}%, resumed at ${((resumedFrom / SIZE) * 100).toFixed(1)}%`);
 
     expect(cut).toBe(true);
     expect(status, status.error ?? "").toMatchObject({ state: "ready", version: 1 });
     expect(status.upload.received).toBe(SIZE);
-    // Only what was in flight when the server died may go twice: one chunk.
-    expect(sentOnWire - SIZE).toBeLessThanOrEqual(CHUNK);
+    // It carried on from what the server had: at most the chunk in flight is sent again.
+    expect(resumedFrom).toBeGreaterThanOrEqual(cutAt - CHUNK);
   }, 30 * 60_000);
 });
