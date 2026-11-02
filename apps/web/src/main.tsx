@@ -10,8 +10,14 @@ import { App } from "./App";
 const renderOnly = new URLSearchParams(location.search).has("render-only");
 // "?test" also exposes Cesium and the samples to the browser tests, with the full UI.
 if (renderOnly || new URLSearchParams(location.search).has("test")) {
-  void Promise.all([import("cesium"), import("@viewer/shared")]).then(([Cesium, shared]) => {
-    Object.assign(window, { Cesium, __samples: shared.SAMPLE_LIBRARY });
+  void Promise.all([import("cesium"), import("@viewer/shared"), import("./thumbnail")]).then(([Cesium, shared, thumb]) => {
+    Object.assign(window, {
+      Cesium,
+      __samples: shared.SAMPLE_LIBRARY,
+      // Called by the server's thumbnail worker and scripts/render-thumbnails.cjs.
+      __renderTurntable: (model: never, level: never) =>
+        thumb.renderTurntable((window as unknown as { viewerEngine: Parameters<typeof thumb.renderTurntable>[0] }).viewerEngine, model, level),
+    });
   });
 }
 

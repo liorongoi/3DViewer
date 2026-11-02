@@ -41,6 +41,8 @@ export interface IngestOptions {
   clamdscan?: string;
   /** FBX2glTF binary. Unset: FBX uploads fail with a clear reason. */
   fbx2gltf?: string;
+  /** Queue a thumbnail render after each publish (WP 3.5). */
+  thumbnails?: boolean;
 }
 
 const MAX_FILES = 100_000;
@@ -463,6 +465,7 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
           await audit(q, { ...actor, action: "model.create", target: modelId, detail: { name: req.model!.name, classificationId: req.model!.classificationId, status: req.model!.status, ingest: ingestId } });
         }
         await q.query("UPDATE versions SET report = $3 WHERE model_id = $1 AND version = $2", [modelId, version, JSON.stringify(report)]);
+        if (opts.thumbnails) await enqueue(q, "thumbnail", { modelId, version });
         await q.query("UPDATE ingests SET state = 'ready', model_id = $2, version = $3, report = $4, error = NULL, updated_at = now() WHERE id = $1", [ingestId, modelId, version, JSON.stringify(report)]);
       });
       await cleanup();

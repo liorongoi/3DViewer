@@ -142,6 +142,8 @@ export function ModelCard({ m, onOpen, dense }: { m: ModelSummary; onOpen: () =>
   const cls = useClassOf()(m);
   const [thumbOk, setThumbOk] = useState(true);
   const [frame, setFrame] = useState<number | null>(null);
+  // The server's turntable when it has one; the bundled samples otherwise.
+  const thumb = m.thumbnail ?? `samples/thumbs/${m.id}.webp`;
   const Icon = m.sourceFormat === "3dtiles" ? Boxes : m.sourceFormat === "fbx" ? FileBox : Box;
   return (
     <button
@@ -165,12 +167,12 @@ export function ModelCard({ m, onOpen, dense }: { m: ModelSummary; onOpen: () =>
             aria-label={m.name}
             className="absolute inset-0 bg-no-repeat"
             style={{
-              backgroundImage: `url(samples/thumbs/${m.id}.webp)`,
+              backgroundImage: `url("${thumb}")`,
               backgroundSize: "2400% 100%",
               backgroundPosition: `${((frame ?? 0) / 23) * 100}% 0`,
             }}
           >
-            <img src={`samples/thumbs/${m.id}.webp`} alt="" className="hidden" onError={() => setThumbOk(false)} />
+            <img src={thumb} alt="" className="hidden" onError={() => setThumbOk(false)} />
           </div>
         ) : (
           <div className="absolute inset-0 grid place-items-center text-fg3">

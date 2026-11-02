@@ -10,6 +10,7 @@ import { ingestHandler, type IngestOptions } from "./ingest.ts";
 import { enqueue, PermanentError, Worker } from "./jobs.ts";
 import { seed } from "./seed.ts";
 import { Storage } from "./storage.ts";
+import { thumbnailHandler, type Renderer } from "./thumbnails.ts";
 
 let db: Db;
 let app: FastifyInstance;
@@ -244,6 +245,41 @@ describe("ingest job", () => {
       expect((await app.inject(`/files/${r.modelId}/${r.id}/original/plant.fbx`)).statusCode).toBe(200);
     } finally {
       delete opts.fbx2gltf;
+    }
+  });
+});
+
+describe("thumbnails (WP 3.5)", () => {
+  it("renders a turntable after publishing, and again when the classification changes", async () => {
+    const seen: { name: string; version: number; level: string | null; url: string }[] = [];
+    const renderer: Renderer = {
+      render: async (m, level) => {
+        seen.push({ name: m.name, version: m.version, level: level?.label ?? null, url: m.source.url });
+        return new TextEncoder().encode("RIFF....WEBP");
+      },
+    };
+    opts.thumbnails = true;
+    const thumbApp = await buildApp({ db, storage, thumbnails: true });
+    try {
+      const w = new Worker(db, { ingest: ingestHandler(db, storage, opts), thumbnail: thumbnailHandler(db, storage, renderer) });
+      const ing = await upload([{ path: "tower.glb", data: glb(triangle) }]);
+      expect((await app.inject({ method: "POST", url: `/api/ingests/${ing.id}/submit` })).statusCode).toBe(202);
+      while (await w.runOnce());
+      const r = (await app.inject(`/api/ingests/${ing.id}`)).json();
+      const m = (await app.inject(`/api/models/${r.modelId}`)).json();
+      expect(m.thumbnail).toBe(`files/${r.modelId}/thumbs/v1.webp`);
+      expect(seen[0]).toMatchObject({ name: "Water tower", version: 1, level: "RESTRICTED", url: `files/${r.modelId}/${ing.id}/tower.glb` });
+      const file = await app.inject(`/${m.thumbnail}`);
+      expect(file.statusCode).toBe(200);
+      expect(file.headers["content-type"]).toBe("image/webp");
+
+      // The band on the picture names the level, so a new level means a new picture.
+      await thumbApp.inject({ method: "PATCH", url: `/api/models/${r.modelId}`, payload: { classificationId: "secret" } });
+      while (await w.runOnce());
+      expect(seen.at(-1)).toMatchObject({ version: 1, level: "SECRET" });
+    } finally {
+      delete opts.thumbnails;
+      await thumbApp.close();
     }
   });
 });

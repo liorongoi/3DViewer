@@ -39,7 +39,8 @@ async function call<T>(srv: ServerInfo, path: string, init?: RequestInit): Promi
 
 /** Published file URLs are relative to the server ("files/…"); the engine needs them absolute. */
 function absolute(srv: ServerInfo, m: ModelSummary): ModelSummary {
-  return /^[a-z]+:/i.test(m.source.url) ? m : { ...m, source: { ...m.source, url: `${srv.base}/${m.source.url}` } };
+  const abs = (u: string) => (/^[a-z]+:/i.test(u) ? u : `${srv.base}/${u}`);
+  return { ...m, source: { ...m.source, url: abs(m.source.url) }, ...(m.thumbnail ? { thumbnail: abs(m.thumbnail) } : {}) };
 }
 
 export async function listModels(srv: ServerInfo): Promise<ModelSummary[]> {

@@ -1,7 +1,8 @@
 import { buildApp } from "./app.ts";
 import { migrate, openPglite, openPostgres } from "./db.ts";
 import { ingestHandler } from "./ingest.ts";
-import { Worker } from "./jobs.ts";
+import { Worker, type Handler } from "./jobs.ts";
+import { chromiumRenderer, thumbnailHandler } from "./thumbnails.ts";
 import { seed } from "./seed.ts";
 import { Storage } from "./storage.ts";
 
@@ -13,22 +14,34 @@ const seeded = await seed(db, { samples: process.env.SEED_SAMPLES !== "0" });
 const storage = new Storage(process.env.STORAGE_DIR ?? `${dataDir}/storage`);
 await storage.init();
 const corsOrigins = (process.env.CORS_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-const app = await buildApp({ db, storage, corsOrigins, reverseDns: true, logger: true });
+// THUMBNAIL_WEB_URL: where the web app is served, on the same origin as /files (WP 3.5).
+const renderer = process.env.THUMBNAIL_WEB_URL ? chromiumRenderer({ webUrl: process.env.THUMBNAIL_WEB_URL, executablePath: process.env.CHROMIUM }) : null;
+const thumbnails = !!renderer;
+const app = await buildApp({ db, storage, corsOrigins, thumbnails, reverseDns: true, logger: true });
 app.log.info({ db: db.kind, migrations: applied, seeded, storage: storage.root }, "database ready");
 
 // WORKERS=0 runs the API alone, for a site that runs the workers on another machine.
 const worker =
   process.env.WORKERS === "0"
     ? null
-    : new Worker(db, { ingest: ingestHandler(db, storage, { clamdscan: process.env.CLAMDSCAN, fbx2gltf: process.env.FBX2GLTF }) }, { onError: (e, job) => app.log.warn({ err: e, job: job.id }, "job failed") });
+    : new Worker(
+        db,
+        {
+          ingest: ingestHandler(db, storage, { clamdscan: process.env.CLAMDSCAN, fbx2gltf: process.env.FBX2GLTF, thumbnails }),
+          ...(renderer ? { thumbnail: thumbnailHandler(db, storage, renderer) } : {}),
+        } as Record<string, Handler>,
+        { onError: (e, job) => app.log.warn({ err: e, job: job.id }, "job failed") },
+      );
 if (!process.env.CLAMDSCAN) app.log.warn("CLAMDSCAN is not set: uploads are not scanned for viruses");
 if (!process.env.FBX2GLTF) app.log.warn("FBX2GLTF is not set: FBX uploads will fail");
+if (!renderer) app.log.warn("THUMBNAIL_WEB_URL is not set: library cards use a format icon instead of a thumbnail");
 await app.listen({ host: process.env.HOST ?? "127.0.0.1", port: Number(process.env.PORT ?? 8787) });
 worker?.start();
 
 for (const sig of ["SIGINT", "SIGTERM"] as const)
   process.on(sig, () => {
     void (worker?.stop() ?? Promise.resolve())
+      .then(() => renderer?.close?.())
       .then(() => app.close())
       .then(() => db.close())
       .then(() => process.exit(0));

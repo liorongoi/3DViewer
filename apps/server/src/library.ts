@@ -21,10 +21,11 @@ interface ModelRow {
   source: ModelSummary["source"];
   placement: ModelSummary["placement"] | null;
   size_bytes: number | string;
+  thumbnail: string | null;
 }
 
 const SELECT = `
-  SELECT m.*, v.source, v.placement, v.size_bytes,
+  SELECT m.*, v.source, v.placement, v.size_bytes, v.thumbnail,
          (SELECT count(*) FROM versions x WHERE x.model_id = m.id) AS versions
   FROM models m JOIN versions v ON v.model_id = m.id AND v.version = m.current_version
   WHERE m.deleted_at IS NULL`;
@@ -49,6 +50,7 @@ export function toSummary(r: ModelRow): ModelSummary {
     centre: { lat: r.centre_lat, lon: r.centre_lon },
     ...(r.placement ? { placement: r.placement } : {}),
     sizeBytes: Number(r.size_bytes),
+    ...(r.thumbnail ? { thumbnail: r.thumbnail } : {}),
   };
 }
 
