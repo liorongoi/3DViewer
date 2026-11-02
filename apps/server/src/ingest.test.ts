@@ -135,7 +135,7 @@ describe("resumable upload (tus)", () => {
     expect(await readdir(storage.uploads)).toEqual([]);
     expect(await readdir(storage.ingests)).toEqual([]);
 
-    const actions = (await app.inject(`/api/audit?target=${done.modelId}`)).json().map((r: { action: string }) => r.action);
+    const actions = (await db.query<{ action: string }>("SELECT action FROM audit_events WHERE target = $1", [done.modelId])).map((r) => r.action);
     expect(actions).toEqual(expect.arrayContaining(["model.create", "model.view"]));
   });
 
@@ -172,8 +172,8 @@ describe("ingest job", () => {
     expect(refs.detail).toContain("textures/wall.png");
     const published = await readdir(storage.files, { recursive: true });
     expect(published.some((f) => f.includes(ing.id))).toBe(false);
-    const rejects = (await app.inject("/api/audit?action=ingest.reject")).json();
-    expect(rejects[0].detail.ingest).toBe(ing.id);
+    const rejects = await db.query<{ detail: { ingest: string } }>("SELECT detail FROM audit_events WHERE action = 'ingest.reject' ORDER BY seq DESC");
+    expect(rejects[0]!.detail.ingest).toBe(ing.id);
   });
 
   it("unpacks a zip with the tileset in a folder", async () => {

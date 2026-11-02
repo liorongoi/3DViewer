@@ -1,5 +1,5 @@
 import type { CheckReport, LocalFile } from "@viewer/core";
-import type { ModelSummary } from "@viewer/shared";
+import type { BaseMapConfig, ClassificationLevel, ModelSummary } from "@viewer/shared";
 
 /**
  * The VIEWER server (Phase 3). The web app finds it at VITE_API_URL, or on its own origin.
@@ -29,7 +29,7 @@ export async function findServer(timeoutMs = 2500): Promise<ServerInfo | null> {
   }
 }
 
-async function call<T>(srv: ServerInfo, path: string, init?: RequestInit): Promise<T> {
+export async function call<T>(srv: ServerInfo, path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = init?.body ? { "content-type": "application/json" } : {};
   const r = await fetch(`${srv.base}${path}`, { ...init, headers: { ...headers, ...((init?.headers as Record<string, string>) ?? {}) } });
   const body = r.status === 204 ? null : await r.json().catch(() => null);
@@ -45,6 +45,16 @@ function absolute(srv: ServerInfo, m: ModelSummary): ModelSummary {
 
 export async function listModels(srv: ServerInfo): Promise<ModelSummary[]> {
   return (await call<ModelSummary[]>(srv, "/api/models")).map((m) => absolute(srv, m));
+}
+
+/** The admin's classification levels, lowest first. */
+export function listLevels(srv: ServerInfo): Promise<ClassificationLevel[]> {
+  return call<ClassificationLevel[]>(srv, "/api/classifications");
+}
+
+/** This site's base map sources (WP 3.9). */
+export function getBaseMaps(srv: ServerInfo): Promise<BaseMapConfig> {
+  return call<BaseMapConfig>(srv, "/api/basemaps");
 }
 
 /** Reading a model records a view in the audit log (NFR-11). */

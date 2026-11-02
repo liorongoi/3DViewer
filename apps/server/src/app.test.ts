@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
+import { ensureAdminPassword } from "./admin.ts";
+import { audit } from "./audit.ts";
 import { buildApp } from "./app.ts";
 import { MIGRATIONS, migrate, openPglite, openPostgres, type Db } from "./db.ts";
 import { seed } from "./seed.ts";
@@ -15,6 +17,7 @@ beforeAll(async () => {
   expect(await migrate(db)).toEqual(MIGRATIONS.map(([f]) => f));
   expect(await migrate(db)).toEqual([]);
   await seed(db, { samples: true });
+  await ensureAdminPassword(db, "correct horse battery");
   app = await buildApp({ db });
 });
 afterAll(async () => {
@@ -85,29 +88,43 @@ describe("library API", () => {
 });
 
 describe("audit log", () => {
+  // Reading the log is for the administrator.
+  let auth: Record<string, string> = {};
+  const read = (url: string) => app.inject({ url, headers: auth });
+  beforeAll(async () => {
+    expect((await app.inject("/api/audit")).statusCode).toBe(401);
+    const { token } = (await app.inject({ method: "POST", url: "/api/admin/login", payload: { password: "correct horse battery" } })).json();
+    auth = { authorization: `Bearer ${token}` };
+  });
+
   it("records every action with IP, workstation and time, chained by hash", async () => {
-    const rows = (await app.inject("/api/audit")).json();
+    const rows = (await read("/api/audit")).json();
     const actions = rows.map((r: { action: string }) => r.action).reverse();
-    expect(actions).toEqual(["system.seed", "model.create", "model.update", "version.create", "model.view"]);
+    expect(actions).toEqual(["system.seed", "admin.password.set", "model.create", "model.update", "version.create", "model.view", "admin.login"]);
     const upd = rows.find((r: { action: string }) => r.action === "model.update");
     expect(upd).toMatchObject({ host: "ANALYST-07", ip: "127.0.0.1", detail: { changes: { status: ["draft", "current"], classificationId: ["restricted", "secret"] } } });
-    expect((await app.inject("/api/audit/verify")).json()).toEqual({ ok: true, count: 5 });
+    expect((await read("/api/audit/verify")).json()).toEqual({ ok: true, count: 7 });
   });
 
   it("exports CSV and logs the export", async () => {
-    const res = await app.inject("/api/audit.csv?action=model.update");
+    const res = await read("/api/audit.csv?action=model.update");
     expect(res.headers["content-type"]).toMatch(/text\/csv/);
     const lines = res.body.replace(/^﻿/, "").trim().split("\n");
     expect(lines[0]).toBe("seq,at,ip,host,action,target,detail,hash");
     expect(lines).toHaveLength(2);
-    const last = (await app.inject("/api/audit?limit=1")).json()[0];
+    const last = (await read("/api/audit?limit=1")).json()[0];
     expect(last.action).toBe("audit.export");
+  });
+
+  it("an entry with an empty detail field still checks", async () => {
+    await audit(db, { ip: "", host: "test", action: "test.undefined", detail: { kept: 1, dropped: undefined, list: [1, null] } });
+    expect((await read("/api/audit/verify")).json().ok).toBe(true);
   });
 
   it("detects a changed row", async () => {
     await db.query("UPDATE audit_events SET host = 'someone-else' WHERE action = 'model.update'");
-    const v = (await app.inject("/api/audit/verify")).json();
+    const v = (await read("/api/audit/verify")).json();
     expect(v.ok).toBe(false);
-    expect(Number(v.brokenAt)).toBe(3);
+    expect(Number(v.brokenAt)).toBe(4);
   });
 });

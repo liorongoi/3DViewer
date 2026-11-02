@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { useClassOf } from "../state/classification";
+import { useClassOf, useLevels } from "../state/classification";
 import { useTranslation } from "react-i18next";
 import { ecefToGeodetic, formatCoordinate, formatLength, type Measurement } from "@viewer/core";
-import { SAMPLE_CLASSIFICATIONS } from "@viewer/shared";
 import { useEngine, useSignal } from "../engine";
 import { useApp } from "../state/store";
 import { Bookmark, Copy, Eye, EyeOff, Info, Orbit, Play, Route, Ruler, StopCircle, Trash2, Video, X } from "./icons";
@@ -184,6 +183,7 @@ function MeasurementCard({ m, unit, locale }: { m: Measurement; unit: "m" | "ft"
 }
 
 function PropertiesTab() {
+  const levels = useLevels();
   const { t } = useTranslation();
   const engine = useEngine();
   const model = useSignal(engine?.current, null);
@@ -217,7 +217,7 @@ function PropertiesTab() {
           className="h-8 rounded-[6px] border border-line bg-s1solid px-2 text-[12px] font-semibold"
           aria-label="Classification of this model"
         >
-          {SAMPLE_CLASSIFICATIONS.map((c) => (
+          {levels.map((c) => (
             <option key={c.id} value={c.id}>
               {c.label.replace(/ · .*$/, "")}
             </option>

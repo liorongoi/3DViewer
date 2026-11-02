@@ -45,7 +45,9 @@ export async function audit(db: Db | Queryable, e: AuditInput): Promise<void> {
     await q.query("SELECT pg_advisory_xact_lock(8221)");
     const [last] = await q.query<{ hash: string }>("SELECT hash FROM audit_events ORDER BY seq DESC LIMIT 1");
     const prev = last?.hash ?? GENESIS;
-    const row = { at: new Date().toISOString(), ip: e.ip, host: e.host, action: e.action, target: e.target ?? "", detail: e.detail ?? {} };
+    // Hash exactly what is stored: a JSON round trip drops undefined fields, as the database does.
+    const detail = JSON.parse(JSON.stringify(e.detail ?? {})) as Record<string, unknown>;
+    const row = { at: new Date().toISOString(), ip: e.ip, host: e.host, action: e.action, target: e.target ?? "", detail };
     await q.query("INSERT INTO audit_events (at, ip, host, action, target, detail, prev_hash, hash) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)", [
       row.at,
       row.ip,

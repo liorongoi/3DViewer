@@ -1,3 +1,4 @@
+import { ensureAdminPassword } from "./admin.ts";
 import { buildApp } from "./app.ts";
 import { migrate, openPglite, openPostgres } from "./db.ts";
 import { ingestHandler } from "./ingest.ts";
@@ -11,6 +12,8 @@ const dataDir = process.env.DATA_DIR ?? "./data";
 const db = process.env.DATABASE_URL ? await openPostgres(process.env.DATABASE_URL) : await openPglite(`${dataDir}/db`);
 const applied = await migrate(db);
 const seeded = await seed(db, { samples: process.env.SEED_SAMPLES !== "0" });
+// ADMIN_PASSWORD sets the admin password on first start; ADMIN_PASSWORD_RESET=1 replaces a stored one.
+const adminPassword = await ensureAdminPassword(db, process.env.ADMIN_PASSWORD, process.env.ADMIN_PASSWORD_RESET === "1");
 const storage = new Storage(process.env.STORAGE_DIR ?? `${dataDir}/storage`);
 await storage.init();
 const corsOrigins = (process.env.CORS_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -32,6 +35,8 @@ const worker =
         } as Record<string, Handler>,
         { onError: (e, job) => app.log.warn({ err: e, job: job.id }, "job failed") },
       );
+if (adminPassword === "missing") app.log.warn("No admin password: set ADMIN_PASSWORD and restart to open the admin page");
+if (adminPassword === "kept" && process.env.ADMIN_PASSWORD && process.env.ADMIN_PASSWORD_RESET !== "1") app.log.info("ADMIN_PASSWORD is ignored: a password is already stored (ADMIN_PASSWORD_RESET=1 replaces it)");
 if (!process.env.CLAMDSCAN) app.log.warn("CLAMDSCAN is not set: uploads are not scanned for viruses");
 if (!process.env.FBX2GLTF) app.log.warn("FBX2GLTF is not set: FBX uploads will fail");
 if (!renderer) app.log.warn("THUMBNAIL_WEB_URL is not set: library cards use a format icon instead of a thumbnail");

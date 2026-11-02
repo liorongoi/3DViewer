@@ -201,17 +201,7 @@ export class UserLayers {
 
   addWmts(l: WmtsLayerInfo): UserLayer {
     if (l.crs === "other") throw new Error(`The tile matrix set "${l.matrixSet}" is not Web Mercator or WGS 84, which the viewer needs.`);
-    const provider = new WebMapTileServiceImageryProvider({
-      url: l.template ?? l.kvpUrl,
-      layer: l.id,
-      style: l.style,
-      format: l.format,
-      tileMatrixSetID: l.matrixSet,
-      tileMatrixLabels: l.matrixLabels.length ? l.matrixLabels : undefined,
-      tilingScheme: l.crs === "3857" ? new WebMercatorTilingScheme() : new GeographicTilingScheme(),
-      maximumLevel: l.matrixLabels.length ? l.matrixLabels.length - 1 : undefined,
-      rectangle: l.bounds ? Rectangle.fromDegrees(...l.bounds) : undefined,
-    });
+    const provider = wmtsProvider(l);
     const layer = this.widget.imageryLayers.addImageryProvider(provider);
     return this.push({ name: l.title, source: "wmts", kind: "imagery", color: "#FFFFFF", bounds: l.bounds, info: `WMTS · ${l.matrixSet}` }, { layer });
   }
@@ -524,4 +514,20 @@ function prjName(wkt: string): string {
 function fmtRes(r: number, crs: string): string {
   if (crs === "EPSG:4326") return `${(r * 3600).toFixed(2)}″ / px`;
   return r >= 1 ? `${r.toFixed(r < 10 ? 1 : 0)} m / px` : `${(r * 100).toFixed(0)} cm / px`;
+}
+
+/** A Cesium provider for a layer read from WMTS capabilities. */
+export function wmtsProvider(l: WmtsLayerInfo): WebMapTileServiceImageryProvider {
+  if (l.crs === "other") throw new Error(`The tile matrix set "${l.matrixSet}" is not Web Mercator or WGS 84, which the viewer needs.`);
+  return new WebMapTileServiceImageryProvider({
+    url: l.template ?? l.kvpUrl,
+    layer: l.id,
+    style: l.style,
+    format: l.format,
+    tileMatrixSetID: l.matrixSet,
+    tileMatrixLabels: l.matrixLabels.length ? l.matrixLabels : undefined,
+    tilingScheme: l.crs === "3857" ? new WebMercatorTilingScheme() : new GeographicTilingScheme(),
+    maximumLevel: l.matrixLabels.length ? l.matrixLabels.length - 1 : undefined,
+    rectangle: l.bounds ? Rectangle.fromDegrees(...l.bounds) : undefined,
+  });
 }

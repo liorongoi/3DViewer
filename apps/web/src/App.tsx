@@ -6,8 +6,9 @@ import { ClassificationBanner } from "./components/ClassificationBanner";
 import { CommandPalette } from "./components/CommandPalette";
 import { HelpOverlay } from "./components/HelpOverlay";
 import { UploadWizard } from "./components/UploadWizard";
+import { AdminPanel } from "./components/AdminPanel";
 import { useFilteredModels } from "./components/Library";
-import { UNCLASSIFIED, useClassOf } from "./state/classification";
+import { useClassOf, useLowestLevel } from "./state/classification";
 import { Workspace } from "./layout/Workspace";
 
 export function App() {
@@ -21,7 +22,8 @@ export function App() {
   // The globe, terrain and base map alone are unclassified; an open model raises the
   // banner to its own classification, as the user set it (UPL-10).
   const classOf = useClassOf();
-  const level = route === "viewer" && current ? classOf(current) : UNCLASSIFIED;
+  const lowest = useLowestLevel();
+  const level = route === "viewer" && current ? classOf(current) : lowest;
   void visible;
 
   return (
@@ -32,6 +34,7 @@ export function App() {
       <CommandPalette onOpenModel={open} />
       <HelpOverlay />
       <UploadWizard />
+      <AdminPanel />
       <noscript>{SAMPLE_LIBRARY.length}</noscript>
     </>
   );

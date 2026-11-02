@@ -1,12 +1,14 @@
 import m001 from "./migrations/001_init.sql?raw";
 import m002 from "./migrations/002_ingest.sql?raw";
 import m003 from "./migrations/003_thumbnails.sql?raw";
+import m004 from "./migrations/004_admin.sql?raw";
 
 /** Migrations in order. Bundled into the build, so the server is one file plus node_modules. */
 export const MIGRATIONS: [string, string][] = [
   ["001_init.sql", m001],
   ["002_ingest.sql", m002],
   ["003_thumbnails.sql", m003],
+  ["004_admin.sql", m004],
 ];
 
 export interface Queryable {

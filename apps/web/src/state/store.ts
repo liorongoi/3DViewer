@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { CoordinateSystem, EnvironmentId, LengthUnit, Quality, ViewMode } from "@viewer/core";
-import type { ModelSummary, UpdateStatus } from "@viewer/shared";
+import { SAMPLE_CLASSIFICATIONS, type ClassificationLevel, type ModelSummary, type UpdateStatus } from "@viewer/shared";
 import { readPref, writePref } from "./prefs";
 
 export type Route = "home" | "viewer";
@@ -42,6 +42,8 @@ interface AppState {
   paletteOpen: boolean;
   helpOpen: boolean;
   uploadOpen: boolean;
+  /** The admin page (WP 3.9). */
+  adminOpen: boolean;
   /** Performance overlay (Shift+P). */
   perfOpen: boolean;
   adaptiveResolution: boolean;
@@ -58,6 +60,8 @@ interface AppState {
   serverModels: ModelSummary[];
   /** True once the server lookup has finished, with or without a server. */
   libraryReady: boolean;
+  /** Classification levels, lowest first: the admin's from the server, or the prototype set. */
+  levels: ClassificationLevel[];
   addUpload: (m: ModelSummary) => void;
   setClassification: (modelId: string, classificationId: string) => void;
   set: (patch: Partial<AppState>) => void;
@@ -89,6 +93,7 @@ export const useApp = create<AppState>((set) => ({
   paletteOpen: false,
   helpOpen: false,
   uploadOpen: false,
+  adminOpen: false,
   perfOpen: false,
   adaptiveResolution: readPref<string>("adaptiveResolution", "true") === "true",
   fullscreen: false,
@@ -105,6 +110,7 @@ export const useApp = create<AppState>((set) => ({
   server: null,
   serverModels: [],
   libraryReady: false,
+  levels: SAMPLE_CLASSIFICATIONS,
   addUpload: (m) => set((s) => ({ uploads: [m, ...s.uploads.filter((x) => x.id !== m.id)] })),
   setClassification: (modelId, classificationId) =>
     set((s) => {

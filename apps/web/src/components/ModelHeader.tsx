@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useClassOf } from "../state/classification";
 import { useTranslation } from "react-i18next";
-import { SAMPLE_CLASSIFICATIONS } from "@viewer/shared";
 import { useEngine, useSignal } from "../engine";
 import { useApp } from "../state/store";
 import { Camera, ChevronDown, ChevronLeft, Command, Share2 } from "./icons";

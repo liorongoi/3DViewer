@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { BASE_MAPS, TERRAINS, type UserLayer, type WmtsLayerInfo, type WmsLayerInfo } from "@viewer/core";
+import { catalogue, type UserLayer, type WmtsLayerInfo, type WmsLayerInfo } from "@viewer/core";
 import { useEngine, useSignal } from "../engine";
 import { ChevronDown, Eye, EyeOff, Focus, Globe, Map, Mountain, Trash2, Upload, X } from "./icons";
 import { IconButton, Segmented, cx } from "./primitives";
@@ -59,17 +59,18 @@ function Choice({ checked, label, note, onSelect, disabled }: { checked: boolean
 function BasePicker() {
   const engine = useEngine();
   const id = useSignal(engine?.baseMapId, "bundled");
+  const { baseMaps } = useSignal(catalogue, catalogue.get());
   const users = useSignal(engine?.userLayers.list, []);
   const userBase = users.find((u) => u.asBase);
   return (
     <Section title="Base map" icon={Map}>
       <div role="radiogroup" aria-label="Base map">
-        {BASE_MAPS.map((b) => (
+        {baseMaps.map((b) => (
           <Choice
             key={b.id}
             checked={!userBase && id === b.id}
             label={b.label.replace(/ \((online|offline)\)$/, "")}
-            note={b.online ? (NO_ONLINE ? "not in preview" : "online") : "offline"}
+            note={b.site ? "site" : b.online ? (NO_ONLINE ? "not in preview" : "online") : "offline"}
             disabled={NO_ONLINE && b.online}
             onSelect={() => {
               if (userBase) engine?.userLayers.setAsBase(userBase.id, false);
@@ -86,16 +87,17 @@ function BasePicker() {
 function TerrainPicker() {
   const engine = useEngine();
   const id = useSignal(engine?.terrainId, "none");
+  const { terrains } = useSignal(catalogue, catalogue.get());
   const [busy, setBusy] = useState(false);
   return (
     <Section title="Terrain" icon={Mountain}>
       <div role="radiogroup" aria-label="Terrain" className={cx(busy && "opacity-60")}>
-        {TERRAINS.map((t) => (
+        {terrains.map((t) => (
           <Choice
             key={t.id}
             checked={id === t.id}
             label={t.label.replace(/ \((online|offline)\)$/, "")}
-            note={t.id === "none" ? undefined : t.online ? (NO_ONLINE ? "not in preview" : "online") : "offline"}
+            note={t.id === "none" ? undefined : t.site ? "site" : t.online ? (NO_ONLINE ? "not in preview" : "online") : "offline"}
             disabled={NO_ONLINE && t.online}
             onSelect={async () => {
               setBusy(true);
