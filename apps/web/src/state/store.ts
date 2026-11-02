@@ -52,6 +52,12 @@ interface AppState {
   classOverrides: Record<string, string>;
   /** Models uploaded in this browser session (kept in memory until the server stores them, Phase 3). */
   uploads: ModelSummary[];
+  /** The VIEWER server, when one answers (Phase 3). Without it the app uses the sample library. */
+  server: import("../server/api").ServerInfo | null;
+  /** The server's library, when there is a server. */
+  serverModels: ModelSummary[];
+  /** True once the server lookup has finished, with or without a server. */
+  libraryReady: boolean;
   addUpload: (m: ModelSummary) => void;
   setClassification: (modelId: string, classificationId: string) => void;
   set: (patch: Partial<AppState>) => void;
@@ -96,6 +102,9 @@ export const useApp = create<AppState>((set) => ({
     }
   })(),
   uploads: [],
+  server: null,
+  serverModels: [],
+  libraryReady: false,
   addUpload: (m) => set((s) => ({ uploads: [m, ...s.uploads.filter((x) => x.id !== m.id)] })),
   setClassification: (modelId, classificationId) =>
     set((s) => {

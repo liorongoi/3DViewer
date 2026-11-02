@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { checkFiles, converterForEpsg, fmtBytes, prepareFiles, type CheckReport, type LocalFile } from "@viewer/core";
+import { uploadAndIngest, type UploadProgress } from "../server/api";
+import { refreshLibrary } from "../state/library";
 import { SAMPLE_CLASSIFICATIONS, UPDATE_STATUSES, type ModelSummary, type UpdateStatus } from "@viewer/shared";
 import { useEngine } from "../engine";
 import { useApp } from "../state/store";
@@ -50,6 +52,8 @@ export function UploadWizard() {
   const [cls, setCls] = useState("");
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<UploadProgress | null>(null);
+  const server = useApp((s) => s.server);
   const folderInput = useRef<HTMLInputElement>(null);
   const chosen = SAMPLE_CLASSIFICATIONS.find((c) => c.id === cls);
   const report = checked?.report ?? null;
@@ -92,13 +96,53 @@ export function UploadWizard() {
   const browserCanOpen = report?.ok && report.format !== "fbx";
   const placeOk = place.fromFile && report?.georef ? true : Number.isFinite(parseFloat(place.x)) && Number.isFinite(parseFloat(place.y));
   const canNext = step === 0 ? !!report : step === 1 ? !!report?.ok : step === 2 ? placeOk : true;
-  const canPublish = !!cls && !!browserCanOpen && meta.name.trim() !== "" && !publishing;
+  // The server converts FBX; without it only what the browser opens can be published.
+  const canPublish = !!cls && (server ? !!report?.ok : !!browserCanOpen) && meta.name.trim() !== "" && !publishing;
+
+  const position = (r: CheckReport) => {
+    const useFile = !!(place.fromFile && r.georef);
+    if (useFile) return { useFile, ...r.georef! };
+    const [lon, lat] = converterForEpsg(place.crs).toLonLat(parseFloat(place.x), parseFloat(place.y));
+    return { useFile, lat, lon, height: parseFloat(place.height) || 0 };
+  };
+
+  /** With a server: send the files, let it check, scan, convert and publish, then open the result. */
+  const publishToServer = async (srv: NonNullable<typeof server>, r: CheckReport) => {
+    const { useFile, lat, lon, height } = position(r);
+    const status = await uploadAndIngest(
+      srv,
+      files,
+      {
+        model: {
+          name: meta.name.trim(),
+          project: meta.project.trim() || "Uploads",
+          operation: meta.operation.trim(),
+          responsibleEntity: meta.entity.trim(),
+          description: meta.description.trim(),
+          status: meta.status,
+          classificationId: cls,
+        },
+        placement: useFile ? undefined : { lat, lon, height, aboveGround: place.onTerrain ? 0 : undefined, headingDeg: parseFloat(place.heading) || 0, scale: parseFloat(place.scale) || 1 },
+        groundFit: r.format === "3dtiles" && useFile ? (place.fitGround ? "street" : "none") : undefined,
+      },
+      setProgress,
+    );
+    if (status.state !== "ready" || !status.modelId) {
+      const problems = status.report?.items.filter((i) => i.severity === "error").map((i) => i.title + (i.detail ? `: ${i.detail}` : "")) ?? [];
+      throw new Error([status.error ?? "The server could not publish the model.", ...problems].join("\n"));
+    }
+    await refreshLibrary();
+    close();
+    setTimeout(() => openModel(status.modelId!), 0);
+  };
 
   const publish = async () => {
     if (!report || !checked) return;
     setPublishing(true);
     setPublishError(null);
+    setProgress(null);
     try {
+      if (server) return await publishToServer(server, report);
       const prepared = await prepareFiles(checked.files, report);
       let lat: number, lon: number, height: number;
       const useFile = place.fromFile && report.georef;
@@ -228,7 +272,7 @@ export function UploadWizard() {
                 ))}
                 <li className="flex items-center gap-3 rounded-[10px] bg-s2 p-3 text-fg3">
                   <AlertTriangle size={18} className="shrink-0" />
-                  <span>{t("upload.checks.antivirus")}: runs on the server when it is in place.</span>
+                  <span>{t("upload.checks.antivirus")}: {server ? "runs on the server when you publish." : "needs the server, which is not connected."}</span>
                 </li>
               </ul>
               {!report.ok && <p className="text-[12px] text-fg3">Fix the problems above and drop the files again.</p>}
@@ -349,9 +393,20 @@ export function UploadWizard() {
               </Field>
               <div className="col-span-2"><Field label={t("upload.fields.description")}><textarea className="input h-24 py-2" value={meta.description} onChange={(e) => setMeta({ ...meta, description: e.target.value })} /></Field></div>
               <p className="col-span-2 text-[12px] text-fg3">
-                {report && fmtBytes(report.stats.bytes)} · The model stays in this browser session. The server keeps it once it is in place.
+                {report && fmtBytes(report.stats.bytes)} ·{" "}
+                {server ? "The server checks the files again, scans them and publishes the model to the library." : "No server is connected, so the model stays in this browser session."}
               </p>
-              {publishError && <p className="col-span-2 rounded-[8px] bg-s2 p-3 text-[12px]">{publishError}</p>}
+              {progress && publishing && (
+                <div className="col-span-2 flex flex-col gap-1.5" data-testid="upload-progress">
+                  <div className="h-1.5 overflow-hidden rounded-full bg-s3">
+                    <div className="h-full bg-accent transition-[width]" style={{ width: `${progress.total ? Math.round((progress.sent / progress.total) * 100) : 100}%` }} />
+                  </div>
+                  <span className="text-[12px] text-fg3">
+                    {progress.step === "upload" ? `Sending ${fmtBytes(progress.sent)} of ${fmtBytes(progress.total)}` : (STEP_TEXT[progress.step] ?? "Working…")}
+                  </span>
+                </div>
+              )}
+              {publishError && <p className="col-span-2 whitespace-pre-line rounded-[8px] bg-s2 p-3 text-[12px]" data-testid="publish-error">{publishError}</p>}
             </div>
           )}
         </div>
@@ -365,7 +420,7 @@ export function UploadWizard() {
             </button>
           ) : (
             <span className="flex items-center gap-3">
-              {report?.format === "fbx" ? (
+              {report?.format === "fbx" && !server ? (
                 <span className="text-[12px] text-fg3">FBX opens once the server converts it.</span>
               ) : !cls ? (
                 <span className="text-[12px] text-fg3">Choose a classification to publish.</span>
@@ -380,6 +435,15 @@ export function UploadWizard() {
     </div>
   );
 }
+
+const STEP_TEXT: Record<string, string> = {
+  queued: "Waiting for the server…",
+  unpack: "Unpacking…",
+  check: "Checking the files…",
+  scan: "Scanning for viruses…",
+  convert: "Converting FBX to glTF…",
+  publish: "Publishing…",
+};
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (

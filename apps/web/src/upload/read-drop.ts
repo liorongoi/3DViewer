@@ -1,6 +1,11 @@
 import type { LocalFile } from "@viewer/core";
 
-const wrap = (file: File, path: string): LocalFile => ({ path, size: file.size, bytes: async () => new Uint8Array(await file.arrayBuffer()) });
+const wrap = (file: File, path: string): LocalFile => ({
+  path,
+  size: file.size,
+  bytes: async () => new Uint8Array(await file.arrayBuffer()),
+  slice: async (start, end) => new Uint8Array(await file.slice(start, end).arrayBuffer()),
+});
 
 /** Files from a file input; a folder pick keeps the paths inside the folder. */
 export function fromInput(list: FileList | null): LocalFile[] {

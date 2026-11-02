@@ -15,6 +15,8 @@ export default defineConfig({
     }),
   ],
   define: { CESIUM_BASE_URL: JSON.stringify("./cesium/") },
-  server: { port: 5173, host: true },
+  // In development the server (apps/server, port 8787) is reached through the same origin.
+  server: { port: 5173, host: true, proxy: { "/api": "http://127.0.0.1:8787", "/files": "http://127.0.0.1:8787" } },
+  preview: { proxy: { "/api": "http://127.0.0.1:8787", "/files": "http://127.0.0.1:8787" } },
   build: { chunkSizeWarningLimit: 6000 },
 });

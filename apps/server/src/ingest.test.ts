@@ -248,6 +248,20 @@ describe("ingest job", () => {
   });
 });
 
+describe("cross-origin calls", () => {
+  it("answers a preflight and exposes the tus headers to an allowed origin only", async () => {
+    const corsApp = await buildApp({ db, storage, corsOrigins: ["app://viewer"] });
+    const pre = await corsApp.inject({ method: "OPTIONS", url: "/api/ingests", headers: { origin: "app://viewer", "access-control-request-method": "POST" } });
+    expect(pre.statusCode).toBe(204);
+    expect(pre.headers["access-control-allow-headers"]).toContain("upload-offset");
+    const ok = await corsApp.inject({ url: "/api/health", headers: { origin: "app://viewer" } });
+    expect(ok.headers["access-control-expose-headers"]).toContain("upload-offset");
+    const other = await corsApp.inject({ url: "/api/health", headers: { origin: "https://elsewhere.example" } });
+    expect(other.headers["access-control-allow-origin"]).toBeUndefined();
+    await corsApp.close();
+  });
+});
+
 describe("job queue", () => {
   it("gives a job to another worker when the first one's lease runs out", async () => {
     let runs = 0;

@@ -28,7 +28,7 @@ const fbxLoader: LoaderPlugin = {
     return {
       items: [
         format,
-        { id: "conversion", severity: "warning", title: "Converted to glTF on the server", detail: "FBX is converted with FBX2glTF when the server is in place. The browser preview cannot open it yet." },
+        { id: "conversion", severity: "warning", title: "Converted to glTF on the server", detail: "The server converts FBX with FBX2glTF when you publish. The browser cannot preview FBX before that." },
       ],
       stats: { files: files.files.length, bytes: files.bytes },
       nodes: [],
