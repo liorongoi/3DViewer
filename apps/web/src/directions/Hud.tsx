@@ -126,7 +126,7 @@ export function HudDirection() {
       )}
 
       {leftOpen && route === "viewer" && (
-        <div className="fixed start-14 top-7 bottom-7 z-20 flex">
+        <div className="fixed start-14 top-7 bottom-24 z-20 flex">
           <LayersPanel className="min-h-0" onClose={() => set({ leftOpen: false })} />
         </div>
       )}

@@ -87,7 +87,7 @@ export function InstrumentDirection() {
           </IconButton>
         )}
       </div>
-      <div className="pointer-events-none fixed end-3 top-7 bottom-7 z-20 flex flex-col items-end gap-2">
+      <div className="pointer-events-none fixed end-3 top-7 bottom-[120px] z-20 flex flex-col items-end gap-2">
         <ViewCube className="pointer-events-auto" />
         {rightOpen ? (
           <SidePanel className="pointer-events-auto min-h-0" onClose={() => set({ rightOpen: false })} />
@@ -101,9 +101,9 @@ export function InstrumentDirection() {
         <HintLine />
         <Dock className="pointer-events-auto" />
       </div>
-      <div className="pointer-events-none fixed start-3 bottom-7 z-10 flex flex-col gap-2">
-        <ScaleBar className={leftOpen ? "ms-[292px]" : ""} />
-        <CoordinatesHud className={`pointer-events-auto ${leftOpen ? "ms-[292px]" : ""}`} />
+      <div className="pointer-events-none fixed end-3 bottom-7 z-10 flex flex-col items-end gap-2">
+        <ScaleBar />
+        <CoordinatesHud className="pointer-events-auto" />
       </div>
       <LoadingAndError loading={loading} error={error} onBack={close} />
     </>

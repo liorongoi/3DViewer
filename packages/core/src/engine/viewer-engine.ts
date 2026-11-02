@@ -214,6 +214,8 @@ export class ViewerEngine {
       this.setLocalTime(summary.centre.lon, 10.5);
       this.applyViewMode(this.viewMode.get());
       this.applyPinVisibility();
+      // The model's bounding sphere is final only after its first update, so render once first.
+      this.widget.render();
       if (opts.fly !== false) await this.home(1.6);
       else await this.home(0);
     } catch (e) {
@@ -259,7 +261,7 @@ export class ViewerEngine {
   /** Whole-region view used before any model is open (Earth workspace). */
   flyHome(duration = 1.5): void {
     this.widget.camera.flyTo({
-      destination: Cartesian3.fromDegrees(34.9, 31.4, 2_600_000),
+      destination: Cartesian3.fromDegrees(34.9, 30.2, 4_200_000),
       orientation: { heading: 0, pitch: CMath.toRadians(-80), roll: 0 },
       duration,
     });
@@ -286,7 +288,7 @@ export class ViewerEngine {
 
   private flySphere(bs: BoundingSphere, heading: number, pitch: number, duration: number): Promise<void> {
     return new Promise((resolve) => {
-      const range = Math.max(bs.radius * 2.4, 3);
+      const range = Math.max(bs.radius * 3.1, 3);
       this.widget.camera.flyToBoundingSphere(bs, {
         offset: new HeadingPitchRange(heading, pitch, range),
         duration,
@@ -444,8 +446,15 @@ export class ViewerEngine {
   }
 
   private applyPinVisibility(): void {
-    const open = this.current.get()?.id;
-    for (const p of this.pins) p.show = p.id !== `pin:${open}`;
+    // With a model open, the model is the subject: hide every pin and mute the base map
+    // so the model is the brightest thing on screen (UI spec 1, "Quiet").
+    const open = !!this.current.get();
+    for (const p of this.pins) p.show = !open;
+    if (this.baseLayer) {
+      this.baseLayer.brightness = open ? 0.42 : 1;
+      this.baseLayer.saturation = open ? 0.3 : 1;
+      this.baseLayer.contrast = open ? 0.9 : 1;
+    }
   }
 
   // ---------- picking & pointer ----------
