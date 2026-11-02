@@ -5,6 +5,7 @@ import { UPDATE_STATUSES } from "@viewer/shared/model";
 import { audit, auditCsv, verifyAudit, type AuditRow } from "./audit.ts";
 import type { Db } from "./db.ts";
 import { registerIngest } from "./ingest.ts";
+import { enqueue } from "./jobs.ts";
 import { registerFiles, type Storage } from "./storage.ts";
 import { addVersion, createModel, getModel, listModels, listVersions, updateModel, type LibraryFilter, type ModelPatch, type NewModel } from "./library.ts";
 
@@ -17,6 +18,8 @@ export interface AppOptions {
   storage?: Storage;
   /** Origins allowed to call the API from another origin (the desktop app, a separate web host). "*" allows any. */
   corsOrigins?: string[];
+  /** A thumbnail worker runs, so a classification change re-renders the band on the thumbnail. */
+  thumbnails?: boolean;
 }
 
 const FORMATS = ["glb", "gltf", "fbx", "3dtiles"];
@@ -174,6 +177,10 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       const changes = await db.tx(async (q) => {
         const c = await updateModel(q, req.params.id, req.body);
         if (c && Object.keys(c).length) await audit(q, { ...w, action: "model.update", target: req.params.id, detail: { changes: c } });
+        if (c?.classificationId && opts.thumbnails) {
+          const [m] = await q.query<{ v: number }>("SELECT current_version AS v FROM models WHERE id = $1", [req.params.id]);
+          await enqueue(q, "thumbnail", { modelId: req.params.id, version: m!.v });
+        }
         return c;
       });
       if (!changes) return reply.status(404).send({ error: "No model with this id." });
