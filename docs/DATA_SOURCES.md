@@ -96,7 +96,7 @@ Everything below is downloaded by `scripts/fetch-samples.sh`, `scripts/build-dem
 | Item | Format and LOD | Where it is | Source and licence | Shows |
 |---|---|---|---|---|
 | Lyon 1st district, textured buildings | 3D Tiles 1.0, b3dm, 3-level LOD tree, ECEF (EPSG:4978) | `samples/3dtiles/lyon1` | Data Grand Lyon via iTowns sample data; **Licence Ouverte 2.0** | City on terrain, height-datum fit (+80 m), line of sight and viewshed against buildings |
-| Lyon Fourvière photomesh | 3D Tiles 1.0, b3dm (glTF 2.0, Draco, unlit), 7 LOD levels (4 pyramid + 3 per block), 16 blocks | `samples/3dtiles/lyon-photomesh` | Data Grand Lyon photomesh 2023; **Licence Ouverte 2.0** | Photo-textured city on terrain, street-level ground fit, LOD streaming |
+| Lyon Fourvière photomesh | 3D Tiles 1.0, b3dm (glTF 2.0, Draco, unlit), 5 LOD levels (2 district + 3 per block), 16 blocks | `samples/3dtiles/lyon-photomesh` | Data Grand Lyon photomesh 2023; **Licence Ouverte 2.0** | Photo-textured city on terrain, street-level ground fit, LOD streaming |
 | Tarn gorges lidar | 3D Tiles 1.0, pnts, 11-level octree, 4,318 tiles, ECEF | `samples/3dtiles/tarn-lidar` | IGN Lidar HD via iTowns sample data; **Licence Ouverte 2.0** | LOD inspector, point clouds on terrain |
 | Discrete LOD and request volume tilesets | 3D Tiles 1.0 | `samples/3dtiles/TilesetWith*` | CesiumGS 3d-tiles-samples; Apache 2.0 | Format conformance, LOD switching |
 | Sentinel-2 L2A true colour, summer 2025 | XYZ JPEG tiles z10–15 for Jerusalem, Lyon, Tarn | `samples/imagery/s2` | Copernicus Sentinel-2 via AWS Open Data (`sentinel-cogs`); **Copernicus open licence**, "Contains modified Copernicus Sentinel data 2025" | Offline base map |
