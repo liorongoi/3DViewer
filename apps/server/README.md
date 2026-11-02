@@ -17,6 +17,7 @@ DATABASE_URL=postgres://… pnpm --filter @viewer/server dev   # a real PostgreS
 | `CORS_ORIGINS` | none | Comma-separated origins allowed to call the API from elsewhere (the desktop app, a separate web host); `*` allows any. |
 | `THUMBNAIL_WEB_URL` | none | Address of the web app the thumbnail renderer opens (for example `http://localhost:5173`). Without it no thumbnails are made and library cards show a plain tile. |
 | `CHROMIUM` | Playwright's own | Path to a Chromium for thumbnails. Needs the optional `playwright-core` package. |
+| `STRICT_VALIDATION` | `0` | `1` makes errors from the official glTF and 3D Tiles validators block publishing. By default they are listed in the report as warnings, because many real tilesets break a rule and still load (Lyon's has 72 misaligned tiles). |
 | `WORKERS` | `1` | `0` runs the API without the conversion worker. |
 | `SEED_SAMPLES` | `1` | `0` starts with an empty library (classification levels are always seeded once). |
 | `HOST`, `PORT` | `127.0.0.1`, `8787` | Listen address. |
@@ -54,8 +55,10 @@ Every view and change is stored with time, IP and workstation, in the same trans
 3. The job unpacks zips without trusting them: each name must stay inside the upload, sizes are counted as they inflate, and an entry that expands over 1000 times is stopped as a zip bomb.
 4. It checks the files with the same loaders the browser uses (`@viewer/core/loaders`), so the report is the one the upload wizard shows. Every problem is listed.
 5. ClamAV scans the files when `CLAMDSCAN` is set. FBX is converted to GLB with FBX2glTF.
-6. Files are published under `files/<model>/<ingest>/`. The model or version, its report and the audit row are written in one transaction.
+6. The official glTF or 3D Tiles validator checks what will be published (see `STRICT_VALIDATION`).
+7. A model over 1.5 M triangles or 300 MB is tiled into 3D Tiles 1.1 (`src/tiler.ts`) so it streams; the upload is kept under `original/`.
+8. Files are published under `files/<model>/<ingest>/`. The model or version, its report and the audit row are written in one transaction.
 
 ## Not yet
 
-Tiling large meshes and thumbnails follow in WP 3.5. The admin password and quotas come in WP 3.9.
+The admin password and quotas come in WP 3.9.

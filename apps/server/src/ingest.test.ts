@@ -6,6 +6,7 @@ import type { FastifyInstance } from "fastify";
 import { zipSync } from "fflate";
 import { buildApp } from "./app.ts";
 import { migrate, openPglite, openPostgres, type Db } from "./db.ts";
+import { gridGlb } from "./test-models.ts";
 import { ingestHandler, type IngestOptions } from "./ingest.ts";
 import { enqueue, PermanentError, Worker } from "./jobs.ts";
 import { seed } from "./seed.ts";
@@ -180,6 +181,7 @@ describe("ingest job", () => {
     const zip = zipSync({ "city/tileset.json": enc(JSON.stringify(tileset)), "city/tiles/0.glb": glb(triangle) });
     const r = await submitAndRun((await upload([{ path: "city.zip", data: zip }], { model: { ...model, name: "City block" }, groundFit: "street" })).id);
     expect(r, JSON.stringify(r.report?.items)).toMatchObject({ state: "ready", report: { format: "3dtiles", mainFile: "tileset.json" } });
+    expect(r.report.items.find((i: { id: string }) => i.id === "validator")?.title).toMatch(/official 3D Tiles validator/);
     const m = (await app.inject(`/api/models/${r.modelId}`)).json();
     expect(m.source).toEqual({ kind: "3dtiles", url: `files/${r.modelId}/${r.id}/tileset.json`, groundFit: "street" });
     expect(m.centre.lat).toBeCloseTo((0.555 * 180) / Math.PI, 3);
@@ -240,6 +242,8 @@ describe("ingest job", () => {
       const r = await submitAndRun((await upload([{ path: "plant.fbx", data: fbx }])).id);
       expect(r, r.error).toMatchObject({ state: "ready", report: { format: "fbx", ok: true, nodes: ["Water tower"] } });
       expect(r.report.items.map((i: { id: string; severity: string }) => `${i.id}:${i.severity}`)).toEqual(expect.arrayContaining(["format:ok", "conversion:ok"]));
+      // The official validator checks the converted GLB, not the FBX.
+      expect(r.report.items.find((i: { id: string }) => i.id === "validator")?.title).toMatch(/official glTF validator/);
       const m = (await app.inject(`/api/models/${r.modelId}`)).json();
       expect(m).toMatchObject({ sourceFormat: "fbx", source: { kind: "glb", url: `files/${r.modelId}/${r.id}/plant.glb` } });
       expect((await app.inject(`/files/${r.modelId}/${r.id}/original/plant.fbx`)).statusCode).toBe(200);
@@ -247,6 +251,29 @@ describe("ingest job", () => {
       delete opts.fbx2gltf;
     }
   });
+
+  it("tiles a large model into 3D Tiles and keeps the upload", async () => {
+    // Thresholds lowered so a 5,000-triangle grid counts as large.
+    opts.tileIf = { triangles: 1000, bytes: 1e12 };
+    opts.leafTriangles = 1000;
+    try {
+      const zPlacement = { ...placement, upAxis: "z", scale: 0.01 };
+      const r = await submitAndRun((await upload([{ path: "site.glb", data: gridGlb(50, true) }], { model: { ...model, name: "Site" }, placement: zPlacement })).id);
+      expect(r, r.error).toMatchObject({ state: "ready", report: { format: "glb", ok: true } });
+      expect(r.report.items.find((i: { id: string }) => i.id === "tiling")).toMatchObject({ severity: "ok", title: expect.stringMatching(/^Tiled for streaming: \d+ tiles in \d+ levels$/) });
+      const m = (await app.inject(`/api/models/${r.modelId}`)).json();
+      expect(m.source).toEqual({ kind: "3dtiles", url: `files/${r.modelId}/${r.id}/tileset.json`, localFrame: true });
+      // The axis and scale are in the tiles now, so the placement no longer applies them.
+      expect(m.placement).toEqual({ lat: placement.lat, lon: placement.lon, height: placement.height, aboveGround: placement.aboveGround });
+      const ts = (await app.inject(`/files/${r.modelId}/${r.id}/tileset.json`)).json();
+      expect(ts.root.children.length).toBeGreaterThan(1);
+      expect((await app.inject(`/files/${r.modelId}/${r.id}/${ts.root.content.uri}`)).statusCode).toBe(200);
+      expect((await app.inject(`/files/${r.modelId}/${r.id}/original/site.glb`)).statusCode).toBe(200);
+    } finally {
+      delete opts.tileIf;
+      delete opts.leafTriangles;
+    }
+  }, 60_000);
 });
 
 describe("thumbnails (WP 3.5)", () => {

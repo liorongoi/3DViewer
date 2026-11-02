@@ -13,6 +13,8 @@ import type { Db, Queryable } from "./db.ts";
 import { enqueue, PermanentError, type Handler } from "./jobs.ts";
 import { addVersion, createModel, type NewModel } from "./library.ts";
 import { Storage, validRelPath } from "./storage.ts";
+import { TILE_IF, tileModel } from "./tiler.ts";
+import { validateOfficial } from "./validate.ts";
 
 /**
  * Uploads and ingest (WP 3.2–3.4, 3.7).
@@ -43,6 +45,14 @@ export interface IngestOptions {
   fbx2gltf?: string;
   /** Queue a thumbnail render after each publish (WP 3.5). */
   thumbnails?: boolean;
+  /** Errors from the official glTF and 3D Tiles validators block publishing (otherwise they are warnings). */
+  strictValidation?: boolean;
+  /** Stop the official validator after this long. */
+  validatorTimeoutMs?: number;
+  /** When a model is tiled into 3D Tiles (default: over 1.5 M triangles or 300 MB). */
+  tileIf?: { triangles: number; bytes: number };
+  /** Most triangles in one tile. */
+  leafTriangles?: number;
 }
 
 const MAX_FILES = 100_000;
@@ -423,12 +433,47 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
         publish = [...(converted.files as DiskFile[]), { ...fbx, path: `original/${path.basename(fbx.path)}` }];
       }
 
-      // Where it goes and where it stands.
+      // The official validator, on what will be published (the GLB for an FBX).
+      await ctx.progress({ step: "validate" });
+      const main = report.format === "fbx" ? publish[0] : publish.find((f) => f.path === report.mainFile);
+      if (main) {
+        const official = await validateOfficial(report.format === "3dtiles" ? "3dtiles" : "gltf", main.src, { strict: opts.strictValidation, timeoutMs: opts.validatorTimeoutMs });
+        report.items.push(official);
+        if (official.severity === "error") return reject({ ...report, ok: false }, official.title);
+      }
+
+      // Large models stream as 3D Tiles (AD-04); the uploaded file is kept for download.
       const req = ing.request;
+      const limit = opts.tileIf ?? TILE_IF;
+      const meshBytes = publish.reduce((t, f) => t + (f.path.startsWith("original/") ? 0 : f.size), 0);
+      let tiled = false;
+      if (main && report.format !== "3dtiles" && ((report.stats.triangles ?? 0) > limit.triangles || meshBytes > limit.bytes)) {
+        await setState("converting");
+        await ctx.progress({ step: "tile" });
+        const dir = path.join(work, "tiled");
+        try {
+          const t = await tileModel(main.src, dir, { upAxis: req.placement?.upAxis, scale: req.placement?.scale, leafTriangles: opts.leafTriangles }, (done, total) => void ctx.progress({ step: "tile", done, total }));
+          const kept = publish.map((f) => (f.path.startsWith("original/") ? f : { ...f, path: `original/${f.path}` }));
+          publish = [...(await Promise.all(t.files.map(async (f) => diskFile(f, path.join(dir, f), await fileSize(path.join(dir, f)))))), ...kept];
+          tiled = true;
+          report.items.push({
+            id: "tiling",
+            severity: t.skipped ? "warning" : "ok",
+            title: `Tiled for streaming: ${t.tiles} tiles in ${t.levels} levels`,
+            detail: `${t.triangles.toLocaleString("en")} triangles. Far views draw simplified tiles, close views the full detail.${t.skipped ? ` ${t.skipped} parts that are lines or points were left out of the tiles; the original file keeps them.` : ""}`,
+          });
+        } catch (e) {
+          report.items.push({ id: "tiling", severity: "warning", title: "Could not tile the model; it is published as one file", detail: e instanceof Error ? e.message : String(e) });
+        }
+      }
+
+      // Where it goes and where it stands.
       const georef = report.georef;
       const centre = georef ? { lat: georef.lat, lon: georef.lon } : req.placement ? { lat: req.placement.lat, lon: req.placement.lon } : req.centre;
       if (!centre) return reject({ ...report, ok: false, items: [...report.items, { id: "georef", severity: "error", title: "No position", detail: "The file has none and none was set in the Place step." }] }, "No position");
-      const placement = georef ? undefined : req.placement;
+      let placement = georef ? undefined : req.placement;
+      // The tiler baked the up axis and scale into the tiles.
+      if (tiled) placement = { ...(placement ?? { ...centre, height: 0 }), upAxis: undefined, scale: undefined };
 
       await ctx.progress({ step: "publish" });
       const modelId = ing.model_id ?? `m-${crypto.randomUUID()}`;
@@ -444,12 +489,13 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
         else (await mkdir(path.dirname(dest), { recursive: true }), await writeFile(dest, await f.bytes()));
         bytes += f.size;
       }
-      const mainPath = report.format === "fbx" ? publish[0]!.path : report.mainFile!;
+      const mainPath = tiled ? "tileset.json" : report.format === "fbx" ? publish[0]!.path : report.mainFile!;
+      const isTiles = tiled || report.format === "3dtiles";
       const source: ModelSummary["source"] = {
-        kind: report.format === "3dtiles" ? "3dtiles" : "glb",
+        kind: isTiles ? "3dtiles" : "glb",
         url: `files/${rel}/${mainPath.split("/").map(encodeURIComponent).join("/")}`,
         ...(report.format === "3dtiles" && req.groundFit ? { groundFit: req.groundFit } : {}),
-        ...(report.format === "3dtiles" && !georef && placement ? { localFrame: true } : {}),
+        ...(isTiles && !georef && placement ? { localFrame: true } : {}),
       };
 
       await db.tx(async (q) => {

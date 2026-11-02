@@ -3,6 +3,7 @@ import {
   BoundingSphere,
   Cartesian2,
   Cartesian3,
+  Matrix3,
   ImageBasedLighting,
   Cartographic,
   Cesium3DTileset,
@@ -273,9 +274,10 @@ export class ViewerEngine {
         let gltfJson: unknown = null;
         const model = await Model.fromGltfAsync({
           url: summary.source.url,
-          modelMatrix: placeMatrix(place, height),
+          modelMatrix: placeMatrix(place, height, place.upAxis === "z"),
           scale: place.scale ?? 1,
           upAxis: place.upAxis === "z" ? Axis.Z : Axis.Y,
+          forwardAxis: place.upAxis === "z" ? Axis.X : Axis.Z,
           shadows: ShadowMode.ENABLED,
           enableDebugWireframe: true,
           imageBasedLighting: this.makeIbl(),
@@ -587,7 +589,7 @@ export class ViewerEngine {
     const m = this.current.get();
     const placed = this.model ?? (m?.source.localFrame ? this.tileset : null);
     if (placed && m?.placement) {
-      placed.modelMatrix = placeMatrix(m.placement, this.modelBaseHeight + metres);
+      placed.modelMatrix = placeMatrix(m.placement, this.modelBaseHeight + metres, placed === this.model && m.placement.upAxis === "z");
       this.widget.scene.requestRender();
       return;
     }
@@ -980,8 +982,16 @@ export interface SharedView {
   roll: number;
 }
 
-function placeMatrix(p: NonNullable<ModelSummary["placement"]>, height: number): Matrix4 {
-  return Transforms.headingPitchRollToFixedFrame(Cartesian3.fromDegrees(p.lon, p.lat, height), new HeadingPitchRoll(CMath.toRadians(p.headingDeg ?? 0), 0, 0));
+/**
+ * Where a model or local-frame tileset stands. For a model loaded Z-up (`zUpModel`) Cesium is
+ * given forward X, since its default glTF forward axis (Z) would turn the model onto its side;
+ * the quarter turn here then makes a Z-up file face the same way as the same file in Y-up,
+ * so switching the up axis in the Place step stands a model up without spinning it.
+ * The tiler bakes the same orientation into tiles (apps/server/src/tiler.ts).
+ */
+function placeMatrix(p: NonNullable<ModelSummary["placement"]>, height: number, zUpModel = false): Matrix4 {
+  const m = Transforms.headingPitchRollToFixedFrame(Cartesian3.fromDegrees(p.lon, p.lat, height), new HeadingPitchRoll(CMath.toRadians(p.headingDeg ?? 0), 0, 0));
+  return zUpModel ? Matrix4.multiply(m, Matrix4.fromRotation(Matrix3.fromRotationZ(CMath.PI_OVER_TWO)), m) : m;
 }
 
 function friendlyReason(err: Error): string {
