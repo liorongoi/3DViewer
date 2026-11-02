@@ -18,8 +18,11 @@ import {
   WebMapServiceImageryProvider,
   WebMapTileServiceImageryProvider,
   WebMercatorTilingScheme,
+  SceneTransforms,
+  type Cartesian3,
   type CesiumWidget,
   type DataSource,
+  type Entity,
 } from "cesium";
 import shp from "shpjs";
 import { signal } from "../signal";
@@ -54,10 +57,25 @@ const PALETTE = ["#FFB547", "#5AC8FA", "#F05BDC", "#7BE495", "#FF7A59", "#B49CFF
 
 type Handle = { ds?: DataSource; layer?: ImageryLayer };
 
+/** A clicked vector feature and its attributes (VWR-GEO-02 attribute pop-up). */
+export interface PickedFeature {
+  layerId: string;
+  layerName: string;
+  color: string;
+  /** Best guess at a readable name for the feature. */
+  title: string;
+  /** Attribute rows in file order. */
+  rows: [string, string][];
+  /** Where the pop-up points to, in canvas pixels; null when behind the globe. */
+  screen: { x: number; y: number } | null;
+}
+
 export class UserLayers {
   readonly list = signal<UserLayer[]>([]);
+  readonly picked = signal<PickedFeature | null>(null);
   private handles = new Map<string, Handle>();
   private seq = 0;
+  private pickedAt: { entity: Entity; world: Cartesian3; undo: () => void; off: () => void } | null = null;
 
   constructor(
     private readonly widget: CesiumWidget,
@@ -263,6 +281,7 @@ export class UserLayers {
   }
 
   remove(id: string): void {
+    if (this.picked.get()?.layerId === id) this.clearPick();
     const h = this.handles.get(id);
     const wasBase = this.list.get().find((l) => l.id === id)?.asBase;
     if (h?.ds) this.widget.dataSources.remove(h.ds, true);
@@ -290,6 +309,47 @@ export class UserLayers {
     this.list.set([layer, ...this.list.get()]);
     this.widget.scene.requestRender();
     return layer;
+  }
+
+  // ---------- attribute pop-up ----------
+
+  /** Shows the attributes of a clicked feature. Returns false when it is not a user vector. */
+  pickFeature(entity: Entity, world: Cartesian3): boolean {
+    let layerId: string | undefined;
+    for (const [id, h] of this.handles) if (h.ds && h.ds.entities.contains(entity)) layerId = id;
+    const layer = this.list.get().find((l) => l.id === layerId);
+    if (!layer) return false;
+    this.clearPick();
+    const rows = attributes(entity);
+    const title =
+      rows.find(([k]) => /^(name|nom|shem|title|label)$/i.test(k))?.[1] ??
+      rows.find(([k]) => /name/i.test(k))?.[1] ??
+      (entity.name && !/^\d+$/.test(entity.name) ? entity.name : `Feature ${layer.name}`);
+    const scene = this.widget.scene;
+    const place = () => {
+      const p = SceneTransforms.worldToWindowCoordinates(scene, world);
+      const cur = this.picked.get();
+      if (!cur) return;
+      const next = p ? { x: p.x, y: p.y } : null;
+      const was = cur.screen;
+      if (next && was && Math.abs(next.x - was.x) < 0.5 && Math.abs(next.y - was.y) < 0.5) return;
+      if (!next && !was) return;
+      this.picked.set({ ...cur, screen: next });
+    };
+    this.picked.set({ layerId: layer.id, layerName: layer.name, color: layer.color, title, rows, screen: null });
+    this.pickedAt = { entity, world, undo: highlight(entity), off: scene.postRender.addEventListener(place) };
+    place();
+    scene.requestRender();
+    return true;
+  }
+
+  clearPick(): void {
+    if (!this.pickedAt) return;
+    this.pickedAt.undo();
+    this.pickedAt.off();
+    this.pickedAt = null;
+    this.picked.set(null);
+    this.widget.scene.requestRender();
   }
 
   private patch(id: string, p: Partial<UserLayer>): void {
@@ -334,6 +394,61 @@ function styleVectors(ds: DataSource, c: Color): number {
     }
   }
   return entities.length;
+}
+
+/** Attribute rows of a feature: GeoJSON / shapefile properties, or a KML description table. */
+function attributes(e: Entity): [string, string][] {
+  const rows: [string, string][] = [];
+  const props = e.properties;
+  if (props) {
+    for (const k of props.propertyNames) {
+      const v = (props as unknown as Record<string, { getValue: (t?: unknown) => unknown } | undefined>)[k]?.getValue(undefined);
+      if (v === undefined || v === null || v === "") continue;
+      rows.push([k, typeof v === "object" ? JSON.stringify(v) : typeof v === "number" ? fmtNum(v) : String(v)]);
+    }
+  }
+  if (rows.length === 0 && e.description) {
+    const d = e.description as unknown as string | { getValue: (t?: unknown) => unknown };
+    const html = String((typeof d === "string" ? d : d.getValue(undefined)) ?? "");
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    for (const tr of doc.querySelectorAll("tr")) {
+      const cells = [...tr.querySelectorAll("th,td")].map((c) => c.textContent?.trim() ?? "");
+      if (cells.length >= 2 && cells[0]) rows.push([cells[0], cells.slice(1).join(" ")]);
+    }
+    const text = doc.body.textContent?.trim();
+    if (rows.length === 0 && text) rows.push(["Description", text]);
+  }
+  return rows;
+}
+
+function fmtNum(v: number): string {
+  return Number.isInteger(v) ? String(v) : String(Math.round(v * 1e6) / 1e6);
+}
+
+/** Makes the picked feature stand out; returns how to undo it. */
+function highlight(e: Entity): () => void {
+  const undo: (() => void)[] = [];
+  if (e.point) {
+    const { pixelSize, outlineColor } = e.point;
+    e.point.pixelSize = new ConstantProperty(12);
+    e.point.outlineColor = new ConstantProperty(Color.WHITE);
+    undo.push(() => {
+      e.point!.pixelSize = pixelSize;
+      e.point!.outlineColor = outlineColor;
+    });
+  }
+  if (e.polyline) {
+    const { width } = e.polyline;
+    const w = Number(width?.getValue(undefined) ?? 2);
+    e.polyline.width = new ConstantProperty(w + 3);
+    undo.push(() => (e.polyline!.width = width));
+  }
+  if (e.polygon) {
+    const { material } = e.polygon;
+    e.polygon.material = Color.WHITE.withAlpha(0.45) as never;
+    undo.push(() => (e.polygon!.material = material));
+  }
+  return () => undo.forEach((u) => u());
 }
 
 function fade(e: import("cesium").Entity, a: number): void {

@@ -8,6 +8,7 @@ import { SidePanel } from "../components/SidePanel";
 import { Dock } from "../components/Dock";
 import { CoordinatesHud, HintLine, ScaleBar, ViewCube } from "../components/Hud";
 import { ModelHeader } from "../components/ModelHeader";
+import { FeaturePopup } from "../components/FeaturePopup";
 import { Globe, Layers, PanelIcon, Ruler, Upload } from "./parts";
 import { IconButton, cx } from "../components/primitives";
 import { fadeClasses, useChromeFade } from "./useChromeFade";
@@ -109,6 +110,7 @@ export function Workspace() {
         <CoordinatesHud className="pointer-events-auto" />
       </div>
 
+      <FeaturePopup />
       <LoadingAndError loading={loading} error={error} onBack={close} />
     </>
   );

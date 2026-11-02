@@ -1,9 +1,10 @@
 import { useEngine, useSignal } from "../engine";
 import { useApp } from "../state/store";
-import { Eye, EyeOff, Radar, ScanEye, Trash2, X } from "./icons";
+import { Download, Eye, EyeOff, Radar, ScanEye, Trash2, X } from "./icons";
 import { IconButton, cx } from "./primitives";
 import { ProfileChart, fmtDist } from "./ProfileChart";
-import type { SightPair } from "@viewer/core";
+import { pairsToCsv, profileToCsv, type SightPair } from "@viewer/core";
+import { saveText, slug } from "../download";
 
 /** Right panel tab: line of sight pairs with profiles (WP 2.8) and the 360° viewshed (WP 2.9). */
 export function AnalysisTab() {
@@ -51,9 +52,14 @@ function SightSection() {
           {active ? "Done adding" : "Add pairs"} <span className="num opacity-70">I</span>
         </button>
         {pairs.length > 0 && (
-          <button type="button" className="btn-ghost" onClick={() => engine?.sight.clear()}>
-            Clear all
-          </button>
+          <>
+            <button type="button" className="btn-ghost" onClick={() => saveText("line-of-sight.csv", pairsToCsv(pairs))}>
+              <Download size={14} /> Export CSV
+            </button>
+            <button type="button" className="btn-ghost" onClick={() => engine?.sight.clear()}>
+              Clear all
+            </button>
+          </>
         )}
       </div>
       {pairs.length > 0 && (
@@ -105,6 +111,11 @@ function PairCard({ p, open, onOpen }: { p: SightPair; open: boolean; onOpen: ()
       {open && (
         <div className="border-t border-line p-2">
           <ProfileChart pair={p} />
+          <div className="mt-1 flex justify-end">
+            <button type="button" className="btn-ghost h-7 px-2 text-[12px]" disabled={p.computing} onClick={() => saveText(`profile-${slug(p.name)}.csv`, profileToCsv(p))}>
+              <Download size={13} /> Profile CSV
+            </button>
+          </div>
           <div className="mt-2 grid grid-cols-2 gap-2">
             <NumberField label={`A${n} above ground`} value={p.aHeight} onChange={(v) => engine?.sight.update(p.id, { aHeight: v })} />
             <NumberField label={`B${n} above ground`} value={p.bHeight} onChange={(v) => engine?.sight.update(p.id, { bHeight: v })} />

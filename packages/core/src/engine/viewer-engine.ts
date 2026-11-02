@@ -739,7 +739,16 @@ export class ViewerEngine {
       }
       const picked = this.widget.scene.pick(pos);
       const id = picked?.id?.id as string | undefined;
-      if (id?.startsWith("pin:") && this.onPinClick) this.onPinClick(id.slice(4));
+      if (id?.startsWith("pin:") && this.onPinClick) {
+        this.onPinClick(id.slice(4));
+        return;
+      }
+      // A feature of the user's own vector data: show its attributes.
+      if (picked?.id instanceof Entity) {
+        const world = this.pick(pos) ?? this.pick(pos, true);
+        if (world && this.userLayers.pickFeature(picked.id, world)) return;
+      }
+      this.userLayers.clearPick();
     });
     canvas.addEventListener("dblclick", () => {
       if (this.measure.active.get() === "path") this.measure.finish();

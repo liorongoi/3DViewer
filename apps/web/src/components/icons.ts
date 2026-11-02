@@ -2,6 +2,7 @@
 export {
   Box,
   Boxes,
+  Download,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
