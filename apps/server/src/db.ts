@@ -24,6 +24,8 @@ export interface Db extends Queryable {
 /** Embedded PostgreSQL (PGlite). No data dir means in memory. */
 export async function openPglite(dataDir?: string): Promise<Db> {
   const { PGlite } = await import("@electric-sql/pglite");
+  // PGlite creates only the last folder; a fresh DATA_DIR needs its parents too.
+  if (dataDir) await (await import("node:fs/promises")).mkdir(dataDir, { recursive: true });
   const pg = new PGlite(dataDir);
   await pg.waitReady;
   const q: Queryable = { query: async <T>(sql: string, params?: unknown[]) => (await pg.query<T>(sql, params as never[])).rows };
