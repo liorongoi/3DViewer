@@ -294,7 +294,7 @@ describe("thumbnails (WP 3.5)", () => {
       while (await w.runOnce());
       const r = (await app.inject(`/api/ingests/${ing.id}`)).json();
       const m = (await app.inject(`/api/models/${r.modelId}`)).json();
-      expect(m.thumbnail).toBe(`files/${r.modelId}/thumbs/v1.webp`);
+      expect(m.thumbnail).toMatch(new RegExp(`^files/${r.modelId}/thumbs/v1-[0-9a-z]+\\.webp$`));
       expect(seen[0]).toMatchObject({ name: "Water tower", version: 1, level: "RESTRICTED", url: `files/${r.modelId}/${ing.id}/tower.glb` });
       const file = await app.inject(`/${m.thumbnail}`);
       expect(file.statusCode).toBe(200);
@@ -304,6 +304,11 @@ describe("thumbnails (WP 3.5)", () => {
       await thumbApp.inject({ method: "PATCH", url: `/api/models/${r.modelId}`, payload: { classificationId: "secret" } });
       while (await w.runOnce());
       expect(seen.at(-1)).toMatchObject({ version: 1, level: "SECRET" });
+      // Files are cached as immutable, so the new picture has a new address and the old one goes.
+      const after = (await app.inject(`/api/models/${r.modelId}`)).json().thumbnail;
+      expect(after).not.toBe(m.thumbnail);
+      expect((await app.inject(`/${after}`)).statusCode).toBe(200);
+      expect((await app.inject(`/${m.thumbnail}`)).statusCode).toBe(404);
     } finally {
       delete opts.thumbnails;
       await thumbApp.close();

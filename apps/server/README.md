@@ -20,6 +20,7 @@ DATABASE_URL=postgres://… pnpm --filter @viewer/server dev   # a real PostgreS
 | `STRICT_VALIDATION` | `0` | `1` makes errors from the official glTF and 3D Tiles validators block publishing. By default they are listed in the report as warnings, because many real tilesets break a rule and still load (Lyon's has 72 misaligned tiles). |
 | `ADMIN_PASSWORD` | none | Sets the admin password on first start (12 characters or more), stored as an argon2id hash. Later starts keep the stored one. Without a password the admin page stays closed. |
 | `ADMIN_PASSWORD_RESET` | `0` | `1` replaces the stored admin password with `ADMIN_PASSWORD` and signs everyone out, for a lost password. Remove it after the restart. |
+| `AUDIT_SYSLOG` | none | Sends every audit entry to the SIEM as CEF in syslog (RFC 5424, facility log audit): `udp://host:514`, `tcp://host:514` or `tls://host:6514` (octet-counted framing). Entries go out in order once committed; a SIEM outage or restart loses nothing, as the last sent entry is remembered. Repeats are possible after a crash; `externalId` is the entry number. |
 | `WORKERS` | `1` | `0` runs the API without the conversion worker. |
 | `SEED_SAMPLES` | `1` | `0` starts with an empty library (classification levels are always seeded once). |
 | `HOST`, `PORT` | `127.0.0.1`, `8787` | Listen address. |
@@ -78,4 +79,10 @@ There are no user accounts. One admin password opens the admin page (Settings, A
 | `GET` / `PUT /api/admin/storage` | Usage, disk space and the quota. Uploads past the quota get 507 with a message. |
 | `GET /api/basemaps`, `PUT /api/admin/basemaps` | This site's base map and terrain sources (XYZ, TMS, WMTS, Terrarium, quantized-mesh), the defaults the viewer opens with, and whether to hide the internet sources. |
 | `GET /api/audit`, `/api/audit.csv`, `/api/audit/verify` | The audit log, now admin only. |
+
+## Audit log (WP 3.8)
+
+- Every action is one row, chained by SHA-256 to the row before; `GET /api/audit/verify` checks the chain.
+- The database itself refuses to change any row, or to delete or truncate rows younger than 366 days (a trigger, migration 005), so the log is kept at least a year (NFR-11) whatever the application does. Rows older than that may be purged by the database owner (`DELETE FROM audit_events WHERE at < now() - interval '366 days'`); the chain is then checked from the oldest row kept, and the check says where that is.
+- With `AUDIT_SYSLOG` set, the SIEM gets each entry as CEF: `rt` time, `src` address, `shost` workstation, `act` action, `externalId` entry number, `cs1` target, `cs2` detail (JSON), `cs3` hash. Severity runs from 3 (views) to 7 (a wrong admin password).
 

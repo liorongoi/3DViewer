@@ -1,0 +1,103 @@
+# VIEWER production front end (WP 3.7, NFR-05, NFR-13).
+#
+# One origin serves the web app, the API and the published model files, so the app needs no
+# CORS and its security policy can stay at 'self'. Set these in the environment (systemd unit
+# or /etc/default/viewer):
+#
+#   VIEWER_HOST   server name on the certificate, for example viewer.internal
+#   TLS_CERT      the organisation's certificate (PEM, full chain)
+#   TLS_KEY       its private key (PEM)
+#   WEB_ROOT      the built web app (apps/web/dist)
+#   FILES_ROOT    the server's published files (STORAGE_DIR/files)
+#   API_UPSTREAM  the Node server, default 127.0.0.1:8787
+#   LOG_DIR       default /var/log/viewer; HTTP_PORT and HTTPS_PORT default to 80 and 443
+{
+	# No ACME, no internet: certificates come from the organisation (NFR-13).
+	auto_https disable_redirects
+	admin off
+	http_port {$HTTP_PORT:80}
+	https_port {$HTTPS_PORT:443}
+	servers {
+		protocols h1 h2
+		# Uploads arrive as long tus PATCH requests; keep idle connections short.
+		timeouts {
+			read_header 10s
+			idle 2m
+		}
+	}
+	log {
+		output file {$LOG_DIR:/var/log/viewer}/caddy.log {
+			roll_size 100MiB
+			roll_keep 10
+		}
+		format json
+	}
+}
+
+http://{$VIEWER_HOST}:{$HTTP_PORT:80} {
+	redir https://{host}:{$HTTPS_PORT:443}{uri} permanent
+}
+
+https://{$VIEWER_HOST}:{$HTTPS_PORT:443} {
+	tls {$TLS_CERT} {$TLS_KEY} {
+		protocols tls1.2 tls1.3
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		X-Frame-Options DENY
+		-Server
+	}
+
+	# API: everything goes to Node, which audits it. The client address is passed on for the
+	# audit log (the server trusts X-Forwarded-For from this proxy only).
+	handle /api/* {
+		request_body {
+			# tus sends at most one 2 GB file per PATCH (LIMITS.file).
+			max_size 2GB
+		}
+		reverse_proxy {$API_UPSTREAM:127.0.0.1:8787} {
+			# Stream upload bodies straight through instead of buffering them on disk.
+			request_buffers 0
+			response_buffers 0
+			flush_interval -1
+			transport http {
+				read_timeout 30m
+				write_timeout 30m
+			}
+		}
+	}
+
+	# Published model files. A path names a model, an upload and a file, and never changes, so
+	# it is cached for a year. file_server adds ETag and Last-Modified and answers Range requests.
+	handle_path /files/* {
+		root * {$FILES_ROOT}
+		@json path *.json *.gltf
+		encode @json zstd gzip
+		header Cache-Control "public, max-age=31536000, immutable"
+		header @json Content-Type "application/json"
+		header *.gltf Content-Type "model/gltf+json"
+		header *.glb Content-Type "model/gltf-binary"
+		header *.ktx2 Content-Type "image/ktx2"
+		file_server {
+			# No folder listings.
+			browse off
+			hide .*
+		}
+	}
+
+	# The web app. Hashed assets are immutable; index.html is checked on every load so an
+	# update reaches everyone at once.
+	handle {
+		root * {$WEB_ROOT}
+		encode zstd gzip
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		@index path / /index.html
+		header @index Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}

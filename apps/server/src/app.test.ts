@@ -122,7 +122,11 @@ describe("audit log", () => {
   });
 
   it("detects a changed row", async () => {
+    // The database refuses the change, so this plays someone who switched the guard off first.
+    await expect(db.query("UPDATE audit_events SET host = 'someone-else' WHERE action = 'model.update'")).rejects.toThrow(/append-only/);
+    await db.exec("ALTER TABLE audit_events DISABLE TRIGGER audit_events_rows");
     await db.query("UPDATE audit_events SET host = 'someone-else' WHERE action = 'model.update'");
+    await db.exec("ALTER TABLE audit_events ENABLE TRIGGER audit_events_rows");
     const v = (await read("/api/audit/verify")).json();
     expect(v.ok).toBe(false);
     expect(Number(v.brokenAt)).toBe(4);
