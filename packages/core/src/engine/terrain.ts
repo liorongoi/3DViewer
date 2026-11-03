@@ -3,6 +3,8 @@ import {
   GeographicTilingScheme,
   Math as CMath,
   Rectangle,
+  type TerrainData,
+  type TerrainProvider,
 } from "cesium";
 
 /**
@@ -44,6 +46,8 @@ export interface DemSource {
   rectangle: Rectangle;
   /** Heights on an n × n lon/lat grid over rect (north row first); NaN where there is no data. */
   heightGrid(rect: Rectangle, n: number): Promise<Float32Array | null>;
+  /** "replace" (default): its heights win. "lower": it can only lower the terrain (the ground cut under a model). */
+  mode?: "replace" | "lower";
 }
 
 export function createTerrariumTerrain(
@@ -212,8 +216,11 @@ export function createLayeredTerrain(
       if (!Rectangle.intersection(rect, d.rectangle)) continue;
       const g = await d.heightGrid(rect, n);
       if (!g) continue;
-      for (let i = 0; i < out.length; i++)
-        if (Number.isFinite(g[i]!)) out[i] = g[i]!;
+      const lower = d.mode === "lower";
+      for (let i = 0; i < out.length; i++) {
+        const v = g[i]!;
+        if (Number.isFinite(v) && (!lower || v < out[i]!)) out[i] = v;
+      }
     }
     return out;
   };
@@ -224,4 +231,51 @@ export function createLayeredTerrain(
     callback: tileHeights,
   });
   return Object.assign(provider, { tileHeights, samples: n });
+}
+
+/**
+ * Any geographic-tiled terrain (such as an internal quantized-mesh server) as layerable
+ * terrain, so DEMs and the ground cut can go over it. Each tile's heights are read from the
+ * provider's own tile, or from its deepest available ancestor.
+ */
+export function asLayerable(provider: TerrainProvider, samples = 65): LayerableTerrain | null {
+  if ("tileHeights" in provider) return provider as LayerableTerrain;
+  if (!(provider.tilingScheme instanceof GeographicTilingScheme)) return null;
+  const n = samples;
+  const tilingScheme = new GeographicTilingScheme();
+  const cache = new Map<string, Promise<TerrainData | undefined>>();
+  const tile = (x: number, y: number, level: number) => {
+    const key = `${level}/${x}/${y}`;
+    let p = cache.get(key);
+    if (!p) {
+      p = Promise.resolve(provider.requestTileGeometry(x, y, level)).catch(() => undefined);
+      cache.set(key, p);
+      if (cache.size > 512) cache.delete(cache.keys().next().value!);
+    }
+    return p;
+  };
+  const available = (x: number, y: number, level: number) => {
+    const a = provider.availability;
+    return a ? a.isTileAvailable(level, x, y) : level <= 14;
+  };
+  const tileHeights: TileHeights = async (x, y, level) => {
+    let tx = x, ty = y, tl = level;
+    while (tl > 0 && !available(tx, ty, tl)) (tx >>= 1), (ty >>= 1), tl--;
+    const data = await tile(tx, ty, tl);
+    const out = new Float32Array(n * n);
+    if (!data) return out;
+    const src = tilingScheme.tileXYToRectangle(tx, ty, tl);
+    const rect = tilingScheme.tileXYToRectangle(x, y, level);
+    for (let r = 0; r < n; r++) {
+      const lat = rect.north - ((rect.north - rect.south) * r) / (n - 1);
+      for (let c = 0; c < n; c++) {
+        const lon = rect.west + ((rect.east - rect.west) * c) / (n - 1);
+        const h = data.interpolateHeight(src, lon, lat);
+        out[r * n + c] = h ?? 0;
+      }
+    }
+    return out;
+  };
+  const p = new CustomHeightmapTerrainProvider({ width: n, height: n, tilingScheme, callback: tileHeights });
+  return Object.assign(p, { tileHeights, samples: n });
 }
