@@ -28,6 +28,8 @@ import {
   ScreenSpaceEventType,
   ShadowMode,
   EllipsoidTerrainProvider,
+  GeographicTilingScheme,
+  type TerrainProvider,
   sampleTerrain,
   sampleTerrainMostDetailed,
   Tonemapper,
@@ -48,7 +50,8 @@ import { effectiveVisibility, layersFromGltf, type Layer } from "../layers/layer
 import { applySiteConfig, catalogue, makeBaseLayers } from "./basemaps";
 import { ENVIRONMENTS, environmentSh, environmentSpecular, type EnvironmentId } from "./environments";
 import { cubeToKtx2 } from "./ktx2";
-import { createLayeredTerrain, type DemSource, type LayerableTerrain } from "./terrain";
+import { asLayerable, createLayeredTerrain, type DemSource } from "./terrain";
+import { captureUnderside, coverage, groundCut, MIN_COVERAGE, mergeUndersides, type Underside } from "./ground-cut";
 import { SightlineTool } from "./sightline";
 import { Viewshed } from "./viewshed";
 import { UserLayers } from "./user-layers";
@@ -141,6 +144,16 @@ export class ViewerEngine {
   /** Vertical shift applied to a 3D Tiles dataset to meet the terrain, metres. */
   readonly groundOffset = signal(0);
   private userDems: DemSource[] = [];
+  /** The chosen terrain as its source gives it, before DEMs and the ground cut. */
+  private terrainBase: TerrainProvider = new EllipsoidTerrainProvider();
+  /** The ground: the chosen terrain with the user's DEMs. Heights are sampled from this. */
+  private groundTerrain: TerrainProvider = this.terrainBase;
+  /** Terrain lowered under the open model so it never shows through it (WP 1.6). */
+  private cut: { source: DemSource; offset: number; u: Underside } | null = null;
+  private cutRefineTimer: ReturnType<typeof setTimeout> | null = null;
+  private offTilesLoaded: (() => void) | null = null;
+  private cutTimer: ReturnType<typeof setTimeout> | null = null;
+  private cutRun = 0;
 
   private model: Model | null = null;
   private tileset: Cesium3DTileset | null = null;
@@ -259,6 +272,8 @@ export class ViewerEngine {
         if (this.current.get()?.id !== summary.id) return tileset.destroy();
         scene.primitives.add(tileset);
         this.tileset = tileset;
+        // Finer tiles can hold ground the first capture did not see: refine the cut as they load.
+        this.offTilesLoaded = tileset.allTilesLoaded.addEventListener(() => this.scheduleGroundCutRefine());
         this.lod.attach(tileset);
         this.layers.set([{ id: "tileset", name: summary.name, children: [], visible: true }]);
         if (summary.source.localFrame && summary.placement) {
@@ -266,7 +281,7 @@ export class ViewerEngine {
           this.modelBaseHeight = await this.placementHeight(summary.placement);
           this.groundOffset.set(0);
           tileset.modelMatrix = placeMatrix(summary.placement, this.modelBaseHeight);
-        } else void this.fitTilesetToGround(tileset, summary);
+        } else void this.fitTilesetToGround(tileset, summary).then(() => this.updateGroundCut());
       } else {
         const place = summary.placement ?? { ...summary.centre, height: 0 };
         const height = await this.placementHeight(place);
@@ -301,6 +316,8 @@ export class ViewerEngine {
       this.applyPinVisibility();
       // The model's bounding sphere is final only after its first update, so render once first.
       this.widget.render();
+      // A tileset that is fitted to the ground gets its cut after the fit.
+      if (summary.source.kind !== "3dtiles" || summary.source.localFrame) void this.updateGroundCut();
       if (opts.fly !== false) await this.home(1.6);
       else await this.home(0);
     } catch (e) {
@@ -332,6 +349,14 @@ export class ViewerEngine {
     this.current.set(null);
     this.error.set(null);
     this.applyPinVisibility();
+    this.cutRun++;
+    this.offTilesLoaded?.();
+    this.offTilesLoaded = null;
+    if (this.cutRefineTimer) clearTimeout(this.cutRefineTimer);
+    if (this.cut) {
+      this.cut = null;
+      this.applyTerrain();
+    }
   }
 
   boundingSphere(): BoundingSphere | null {
@@ -493,13 +518,112 @@ export class ViewerEngine {
   async setTerrain(id: string): Promise<void> {
     const def = catalogue.get().terrains.find((t) => t.id === id);
     if (!def) return;
-    const base = await def.create();
-    // The user's elevation GeoTIFFs replace the chosen terrain inside their footprints.
-    this.widget.scene.terrainProvider = this.userDems.length
-      ? createLayeredTerrain("tileHeights" in base ? (base as LayerableTerrain) : null, this.userDems)
-      : base;
+    this.terrainBase = await def.create();
+    this.cut = null;
     this.terrainId.set(id);
+    this.applyTerrain();
     await this.placeOnGround();
+  }
+
+  /**
+   * Builds the terrain the globe draws: the chosen terrain, the user's elevation GeoTIFFs
+   * over it (inside their footprints they replace it), and the ground cut under the open model.
+   */
+  private applyTerrain(): void {
+    const base = this.terrainBase;
+    const layerable = this.userDems.length || this.cut ? asLayerable(base) : null;
+    this.groundTerrain = this.userDems.length ? createLayeredTerrain(layerable, this.userDems) : base;
+    const cut = this.cut && layerable ? [this.cut.source] : [];
+    this.widget.scene.terrainProvider = cut.length || this.userDems.length ? createLayeredTerrain(layerable, [...this.userDems, ...cut]) : base;
+  }
+
+  /**
+   * Lowers the terrain under the open model to just below the model's lowest surface, so the
+   * terrain cannot show through it (VWR-GEO-01). Waits for the model's tiles first.
+   */
+  private async updateGroundCut(): Promise<void> {
+    const run = ++this.cutRun;
+    const target = this.tileset ?? this.model;
+    const had = !!this.cut;
+    this.cut = null;
+    if (!target || this.terrainBase instanceof EllipsoidTerrainProvider || !(this.terrainBase.tilingScheme instanceof GeographicTilingScheme || "tileHeights" in this.terrainBase)) {
+      if (had) this.applyTerrain();
+      return;
+    }
+    if (this.tileset && !this.tileset.tilesLoaded) {
+      const t = this.tileset;
+      await new Promise<void>((resolve) => {
+        const off = t.allTilesLoaded.addEventListener(() => (off(), clearTimeout(timer), resolve()));
+        const timer = setTimeout(() => (off(), resolve()), 8000);
+      });
+    }
+    const u = await this.captureGround(target, () => run === this.cutRun && (this.tileset ?? this.model) === target);
+    if (run !== this.cutRun || (this.tileset ?? this.model) !== target) return;
+    if (!u) {
+      if (had) this.applyTerrain();
+      return;
+    }
+    this.setCut(u, this.groundOffset.get());
+  }
+
+  /** The model's underside, retried a few frames apart if a capture comes out empty. */
+  private async captureGround(target: Model | Cesium3DTileset, current: () => boolean): Promise<Underside | null> {
+    let best: Underside | null = null;
+    for (let i = 0; i < 4 && current(); i++) {
+      await this.afterFrames(2);
+      if (!current()) break;
+      const u = captureUnderside(this.widget.scene, target, () => this.widget.render());
+      if (coverage(u) > coverage(best)) best = u;
+      if (coverage(best) >= MIN_COVERAGE) break;
+    }
+    return best;
+  }
+
+  /** Resolves after `n` frames have been drawn (or after a second, if nothing is drawing). */
+  private afterFrames(n: number): Promise<void> {
+    return new Promise((resolve) => {
+      let left = n;
+      const done = () => (off(), clearTimeout(timer), setTimeout(resolve, 0));
+      const off = this.widget.scene.postRender.addEventListener(() => --left <= 0 && done());
+      const timer = setTimeout(done, 1000);
+    });
+  }
+
+  private setCut(u: Underside, offset: number): void {
+    const cut = { offset, u, source: null as unknown as DemSource };
+    cut.source = groundCut(u, () => this.groundOffset.get() - cut.offset);
+    this.cut = cut;
+    this.applyTerrain();
+  }
+
+  /**
+   * Once newly loaded tiles settle, capture again and keep the lower of the two. The terrain
+   * is rebuilt only if that uncovers ground the cut missed, so most refines change nothing.
+   */
+  private scheduleGroundCutRefine(): void {
+    if (!this.cut || !this.tileset) return;
+    if (this.cutRefineTimer) clearTimeout(this.cutRefineTimer);
+    this.cutRefineTimer = setTimeout(async () => {
+      this.cutRefineTimer = null;
+      const cut = this.cut, t = this.tileset;
+      if (!cut || !t) return;
+      const u = await this.captureGround(t, () => this.cut === cut && this.tileset === t);
+      if (!u || coverage(u) < MIN_COVERAGE || this.cut !== cut) return;
+      const merged = mergeUndersides(cut.u, u);
+      // The canvas changed size: start again from this capture.
+      if (merged === "incompatible") this.setCut(u, this.groundOffset.get());
+      else if (merged !== "unchanged") this.setCut(merged, cut.offset);
+    }, 1200);
+  }
+
+  /** The cut follows the model when the user moves it up or down; rebuilt once they stop. */
+  private scheduleGroundCutShift(): void {
+    if (!this.cut) return;
+    if (this.cutTimer) clearTimeout(this.cutTimer);
+    this.cutTimer = setTimeout(() => {
+      this.cutTimer = null;
+      if (this.cut) this.applyTerrain();
+    }, 400);
   }
 
   /**
@@ -507,7 +631,8 @@ export class ViewerEngine {
    * availability (quantized-mesh), otherwise a fixed deep level (heightmap sources).
    */
   async sampleGround(points: Cartographic[], level = 14): Promise<Cartographic[]> {
-    const tp = this.widget.scene.terrainProvider;
+    // The ground itself, not the cut the globe draws under the open model.
+    const tp = this.groundTerrain;
     if (tp instanceof EllipsoidTerrainProvider) return points.map((p) => ((p.height = 0), p));
     return tp.availability ? sampleTerrainMostDetailed(tp, points) : sampleTerrain(tp, level, points);
   }
@@ -524,8 +649,7 @@ export class ViewerEngine {
 
   /** Model height from its placement: terrain height + aboveGround when terrain is on. */
   private async placementHeight(place: NonNullable<ModelSummary["placement"]>): Promise<number> {
-    const tp = this.widget.scene.terrainProvider;
-    if (place.aboveGround === undefined || tp instanceof EllipsoidTerrainProvider) return place.height;
+    if (place.aboveGround === undefined || this.groundTerrain instanceof EllipsoidTerrainProvider) return place.height;
     try {
       const [c] = await this.sampleGround([Cartographic.fromDegrees(place.lon, place.lat)]);
       return c && Number.isFinite(c.height) ? c.height + place.aboveGround : place.height;
@@ -543,6 +667,7 @@ export class ViewerEngine {
       this.setGroundOffset(0);
     }
     this.sight.recomputeAll();
+    await this.updateGroundCut();
   }
 
   /**
@@ -602,6 +727,7 @@ export class ViewerEngine {
   /** Shift the open 3D Tiles dataset up or down along the local vertical. */
   setGroundOffset(metres: number): void {
     this.groundOffset.set(metres);
+    this.scheduleGroundCutShift();
     const m = this.current.get();
     const placed = this.model ?? (m?.source.localFrame ? this.tileset : null);
     if (placed && m?.placement) {
