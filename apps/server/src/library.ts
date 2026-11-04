@@ -81,9 +81,14 @@ export async function listModels(db: Queryable, f: LibraryFilter): Promise<Model
   return rows.map(toSummary);
 }
 
-export async function getModel(db: Queryable, id: string): Promise<ModelSummary | null> {
-  const [r] = await db.query<ModelRow>(`${SELECT} AND m.id = $1`, [id]);
-  return r ? toSummary(r) : null;
+/** The model as it is now, or as it was at an earlier version (UPL-07: old versions stay openable). */
+export async function getModel(db: Queryable, id: string, version?: number): Promise<ModelSummary | null> {
+  if (version === undefined) {
+    const [r] = await db.query<ModelRow>(`${SELECT} AND m.id = $1`, [id]);
+    return r ? toSummary(r) : null;
+  }
+  const [r] = await db.query<ModelRow>(`${SELECT.replace("v.version = m.current_version", "v.version = $2")} AND m.id = $1`, [id, version]);
+  return r ? { ...toSummary(r), version } : null;
 }
 
 export async function listVersions(db: Queryable, id: string) {

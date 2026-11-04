@@ -1288,7 +1288,10 @@ export type paths = {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description Open an earlier version. Left out, the current one. */
+                    version?: number;
+                };
                 header?: never;
                 path: {
                     id: string;

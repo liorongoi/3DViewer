@@ -186,7 +186,7 @@ describe("ingest job", () => {
     expect(m.source).toEqual({ kind: "3dtiles", url: `files/${r.modelId}/${r.id}/tileset.json`, groundFit: "street" });
     expect(m.centre.lat).toBeCloseTo((0.555 * 180) / Math.PI, 3);
     expect((await app.inject(`/files/${r.modelId}/${r.id}/tiles/0.glb`)).statusCode).toBe(200);
-  });
+  }, 30_000); // the first call starts the official 3D Tiles validator
 
   it("stops a zip whose entries point outside the upload", async () => {
     const zip = zipSync({ "model.glb": glb(triangle), "../../escaped.txt": enc("gotcha") });
@@ -274,6 +274,96 @@ describe("ingest job", () => {
       delete opts.leafTriangles;
     }
   }, 60_000);
+});
+
+describe("AC-02: the bad-file kit", () => {
+  // The corrupt and hostile files from docs/DATA_SOURCES.md, each through the real upload and job.
+  // Every one must fail with a reason that names the problem, list each problem it has (not just
+  // the first), publish nothing, leave no work files and keep the server answering.
+  const region = [0.6, 0.55, 0.61, 0.56, 0, 50];
+  const tileset = (uris: string[]) => ({
+    asset: { version: "1.1" },
+    geometricError: 100,
+    root: { boundingVolume: { region }, geometricError: 10, refine: "REPLACE", children: uris.map((uri) => ({ boundingVolume: { region }, geometricError: 0, content: { uri } })) },
+  });
+  const fbx = (version: number) => {
+    const b = new Uint8Array(64);
+    b.set(enc("Kaydara FBX Binary  \0\x1a\0"));
+    new DataView(b.buffer).setUint32(23, version, true);
+    return b;
+  };
+  const whole = glb(triangle);
+  const brokenJson = glb(triangle);
+  brokenJson.set(enc("{{{{"), 20);
+  const kit: { name: string; files: { path: string; data: Uint8Array }[]; error: RegExp; problems?: { id: string; detail: RegExp }[] }[] = [
+    { name: "truncated GLB", files: [{ path: "tower.glb", data: whole.subarray(0, whole.length - 20) }], error: /^tower\.glb cannot be read$/, problems: [{ id: "format", detail: /cut short: the header says \d+ bytes, the file has \d+/ }] },
+    { name: "GLB whose JSON is broken", files: [{ path: "tower.glb", data: brokenJson }], error: /^tower\.glb cannot be read$/, problems: [{ id: "format", detail: /JSON cannot be read/ }] },
+    {
+      name: "glTF with a missing texture",
+      files: [{ path: "tower/tower.gltf", data: enc(JSON.stringify({ ...triangle, buffers: [{ byteLength: 36, uri: "geometry.bin" }], images: [{ uri: "textures/wall.png" }] })) }],
+      error: /^2 referenced files are missing$/,
+      problems: [{ id: "references", detail: /geometry\.bin.*textures\/wall\.png|textures\/wall\.png.*geometry\.bin/ }],
+    },
+    {
+      name: "glTF with several problems at once",
+      files: [{ path: "tower.gltf", data: enc(JSON.stringify({ ...triangle, extensionsRequired: ["ACME_holograms"], buffers: [{ byteLength: 36, uri: "geometry.bin" }] })) }],
+      error: /./,
+      problems: [
+        { id: "extensions", detail: /ACME_holograms/ },
+        { id: "references", detail: /geometry\.bin/ },
+      ],
+    },
+    { name: "FBX with a bad header", files: [{ path: "plant.fbx", data: fbx(99999) }], error: /^The FBX header is damaged$/, problems: [{ id: "format", detail: /version 99999/ }] },
+    { name: "FBX that is not FBX inside", files: [{ path: "plant.fbx", data: enc("hello, this is not a model") }], error: /^The file is not FBX$/, problems: [{ id: "format", detail: /FBX header/ }] },
+    {
+      name: "tileset with missing tiles",
+      files: [{ path: "city/tileset.json", data: enc(JSON.stringify(tileset(["tiles/0.glb", "tiles/1.glb", "tiles/2.glb"]))) }, { path: "city/tiles/0.glb", data: glb(triangle) }],
+      error: /^2 tile files are missing$/,
+      problems: [{ id: "references", detail: /(?=.*tiles\/1\.glb)(?=.*tiles\/2\.glb)/ }],
+    },
+    { name: "file of no known kind", files: [{ path: "notes.txt", data: enc("not a model") }], error: /^No model found$/, problems: [{ id: "format", detail: /opens GLB, glTF, FBX and 3D Tiles.*Found: txt/ }] },
+    { name: "zip bomb", files: [{ path: "bomb.zip", data: zipSync({ "model.glb": glb(triangle), "padding.bin": new Uint8Array(40 * 1024 * 1024) }, { level: 9 }) }], error: /^padding\.bin expands over \d+ times; this looks like a zip bomb\.$/ },
+    { name: "zip with a path out of the upload", files: [{ path: "evil.zip", data: zipSync({ "model.glb": glb(triangle), "../../escaped.txt": enc("gotcha") }) }], error: /^The zip has an entry that points outside the upload: \.\.\/\.\.\/escaped\.txt$/ },
+    { name: "damaged zip", files: [{ path: "broken.zip", data: zipSync({ "model.glb": glb(triangle) }).subarray(0, 60) }], error: /^broken\.zip is not a readable zip file\.$/ },
+  ];
+  const ids: string[] = [];
+  let modelsBefore = 0;
+  beforeAll(async () => {
+    modelsBefore = (await app.inject("/api/models")).json().length;
+  });
+
+  it.each(kit)("rejects a $name, naming the problem", async ({ files, error, problems }) => {
+    const ing = await upload(files);
+    ids.push(ing.id);
+    const r = await submitAndRun(ing.id);
+    expect(r.state).toBe("failed");
+    expect(r.modelId, "no model is made").toBeNull();
+    expect(r.error).toMatch(error);
+    for (const p of problems ?? []) {
+      const item = r.report?.items.find((i: { id: string }) => i.id === p.id);
+      expect(item, `${p.id} is listed: ${JSON.stringify(r.report?.items)}`).toMatchObject({ severity: "error" });
+      expect(item.detail).toMatch(p.detail);
+    }
+    if (problems) expect(r.report.ok).toBe(false);
+    // One try only: a bad file does not get better on a retry.
+    expect(r.job.attempts).toBe(1);
+  });
+
+  it("published nothing, left nothing behind, recorded each refusal and kept answering", async () => {
+    expect(ids).toHaveLength(kit.length);
+    expect((await app.inject("/api/health")).statusCode).toBe(200);
+    expect((await app.inject("/api/models")).json()).toHaveLength(modelsBefore);
+    const published = await readdir(storage.files, { recursive: true }).catch(() => []);
+    const work = await readdir(storage.ingests).catch(() => []);
+    const parts = await readdir(storage.uploads).catch(() => []);
+    for (const id of ids) {
+      expect(published.some((f) => f.includes(id)), `${id} published`).toBe(false);
+      expect(work).not.toContain(id);
+      expect(parts.some((f) => f.startsWith(id))).toBe(false);
+    }
+    const rejects = await db.query<{ detail: { ingest: string; reason: string } }>("SELECT detail FROM audit_events WHERE action = 'ingest.reject'");
+    for (const id of ids) expect(rejects.filter((e) => e.detail.ingest === id), `one refusal recorded for ${id}`).toHaveLength(1);
+  });
 });
 
 describe("thumbnails (WP 3.5)", () => {
