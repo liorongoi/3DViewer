@@ -125,12 +125,23 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     async (req) => listModels(db, req.query),
   );
 
-  app.get<{ Params: { id: string } }>("/api/models/:id", { schema: { tags: ["library"], params: idParam, response: { 200: ref("ModelDetail") } } }, async (req, reply) => {
-    const m = await getModel(db, req.params.id);
-    if (!m) return reply.status(404).send({ error: "No model with this id." });
-    await audit(db, { ...(await who(req)), action: "model.view", target: m.id, detail: { version: m.version } });
-    return { ...m, history: await listVersions(db, m.id) };
-  });
+  app.get<{ Params: { id: string }; Querystring: { version?: number } }>(
+    "/api/models/:id",
+    {
+      schema: {
+        tags: ["library"],
+        params: idParam,
+        querystring: { type: "object", properties: { version: { type: "integer", minimum: 1, description: "Open an earlier version. Left out, the current one." } }, additionalProperties: false },
+        response: { 200: ref("ModelDetail") },
+      },
+    },
+    async (req, reply) => {
+      const m = await getModel(db, req.params.id, req.query.version);
+      if (!m) return reply.status(404).send({ error: req.query.version && (await getModel(db, req.params.id)) ? `This model has no version ${req.query.version}.` : "No model with this id." });
+      await audit(db, { ...(await who(req)), action: "model.view", target: m.id, detail: { version: m.version } });
+      return { ...m, history: await listVersions(db, m.id) };
+    },
+  );
 
   app.post<{ Body: NewModel }>(
     "/api/models",
