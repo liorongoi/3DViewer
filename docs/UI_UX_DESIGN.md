@@ -156,16 +156,17 @@ Classification levels (name, banner colour, text colour, order), base map source
 
 ## 4. Visual design tokens
 
-All colours were checked for WCAG 2.1 AA contrast (≥ 4.5:1 for text) against the panel and canvas colours below (NFR-17).
+All colours reach WCAG 2.1 AA contrast (≥ 4.5:1 for text, ≥ 3:1 for control outlines) against the panel and canvas colours below (NFR-17). `packages/ui/src/tokens.test.ts` checks every text token on every surface, including the glass panel over any map from pure black to pure white. The ratios in the tables are on the solid panel.
 
 ### 4.1 Dark theme (default)
 
 | Token | Hex | Use | Contrast on panel `#15171B` |
 |---|---|---|---|
 | `canvas.bg` | `#1B1D21` | 3D background and empty sky in model-only mode (neutral grey so textures read true) | — |
-| `surface.1` | `#15171B` at 82% + 24 px backdrop blur | Panels, dock | — |
+| `surface.1` | `#15171B` at 92% + 24 px backdrop blur | Panels, dock (at 82%, grey text over a bright map fell to 3.2:1) | — |
 | `surface.2` | `#1E2127` | Cards, inputs, hovered rows | — |
 | `border` | `#2C3038` | 1 px hairlines | — |
+| `control.border` | `#737B88` | Outline of inputs and secondary buttons | 4.2:1 |
 | `text.primary` | `#E8EAED` | Main text | 14.9:1 |
 | `text.secondary` | `#A7ADB8` | Labels, metadata | 8.0:1 |
 | `text.tertiary` | `#8A919D` | Hints, placeholders | 5.7:1 |
@@ -181,13 +182,15 @@ All colours were checked for WCAG 2.1 AA contrast (≥ 4.5:1 for text) against t
 | Token | Hex | Contrast on `#FFFFFF` |
 |---|---|---|
 | `canvas.bg` | `#DADDE2` | — |
-| `surface.1` | `#FFFFFF` at 88% + blur | — |
+| `surface.1` | `#FFFFFF` at 92% + blur | — |
+| `control.border` | `#737A85` | 4.3:1 |
 | `text.primary` | `#14161A` | 18.1:1 |
 | `text.secondary` | `#4A515C` | 8.0:1 |
 | `text.tertiary` | `#5E6570` | 5.9:1 |
 | `accent` | `#A3128C` | 7.0:1 |
 | `status.inProduction` | `#8A5A00` | 5.9:1 |
-| `status.current` | `#0F7A47` | 5.4:1 |
+| `status.current`, `ok` | `#0C6B3E` | 6.6:1 |
+| `bad` | `#B8262B` | 6.3:1 |
 | `danger` | `#C0262D` | 5.9:1 |
 
 Status is never colour-only: every badge has an icon and a word (Draft ◌, In production ◐, Current ●, Superseded ⊘).

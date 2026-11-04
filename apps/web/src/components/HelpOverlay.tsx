@@ -10,10 +10,10 @@ export function HelpOverlay() {
   const set = useApp((s) => s.set);
   if (!open) return null;
   const mouse: [string, string][] = [
-    ["Left-drag", t("help.rows.orbit")],
-    ["Right / middle-drag", t("help.rows.pan")],
-    ["Wheel / pinch", t("help.rows.zoom")],
-    ["Double-click", t("help.rows.pivot")],
+    [t("help.input.leftDrag"), t("help.rows.orbit")],
+    [t("help.input.rightDrag"), t("help.rows.pan")],
+    [t("help.input.wheel"), t("help.rows.zoom")],
+    [t("help.input.doubleClick"), t("help.rows.pivot")],
   ];
   const keys: [string, string][] = [
     ["W", t("help.rows.orbit")],
@@ -24,7 +24,7 @@ export function HelpOverlay() {
     ["Z", t("help.rows.focus")],
     ["M", t("help.rows.measure")],
     ["Shift M", t("help.rows.path")],
-    ["G", "Fly mode (W A S D, Q / E)"],
+    ["G", t("help.fly")],
     ["1 – 4", t("help.rows.modes")],
     ["L", t("help.rows.layers")],
     [".", t("help.rows.panel")],

@@ -22,8 +22,9 @@ export function SettingsMenu({ onClose }: { onClose: () => void }) {
             applyLanguage(v);
           }}
           options={[
-            { value: "en", label: "English" },
-            { value: "he", label: "עברית" },
+            // Each language in its own name, marked so screen readers say it right.
+            { value: "en", label: <span lang="en">English</span> },
+            { value: "he", label: <span lang="he">עברית</span> },
           ]}
         />
       </div>
@@ -76,26 +77,26 @@ export function SettingsMenu({ onClose }: { onClose: () => void }) {
           label={t("settings.memory")}
           value={String(s.memoryGb)}
           onChange={(v: string) => s.setPref("memoryGb", Number(v))}
-          options={["1", "2", "4", "8"].map((g) => ({ value: g, label: `${g} GB` }))}
+          options={["1", "2", "4", "8"].map((g) => ({ value: g, label: <span dir="ltr">{g} GB</span> }))}
         />
       </div>
       <div className="my-2 h-px bg-line" />
-      <Toggle label="Fade tools while navigating" value={s.fadeTools} onChange={(v) => s.setPref("fadeTools", v)} />
-      <Toggle label="Lower the resolution while frames are slow" value={s.adaptiveResolution} onChange={(v) => s.setPref("adaptiveResolution", v)} />
-      <Toggle label="Performance overlay (Shift+P)" value={s.perfOpen} onChange={(v) => s.set({ perfOpen: v })} />
+      <Toggle label={t("settings.fadeTools")} value={s.fadeTools} onChange={(v) => s.setPref("fadeTools", v)} />
+      <Toggle label={t("settings.adaptiveResolution")} value={s.adaptiveResolution} onChange={(v) => s.setPref("adaptiveResolution", v)} />
+      <Toggle label={t("settings.perfOverlay")} value={s.perfOpen} onChange={(v) => s.set({ perfOpen: v })} />
       <Toggle label={t("viewer.shadows")} value={s.shadows} onChange={(v) => { s.set({ shadows: v }); engine?.setShadows(v); }} />
       <Toggle label={t("viewer.imagery")} value={s.imagery} onChange={(v) => { s.set({ imagery: v }); engine?.setBaseImagery(v); }} />
-      <Toggle label={`${t("viewer.baseMap")} (globe)`} value={s.globe} onChange={(v) => { s.set({ globe: v }); engine?.setGlobe(v); }} />
+      <Toggle label={t("settings.globe")} value={s.globe} onChange={(v) => { s.set({ globe: v }); engine?.setGlobe(v); }} />
       {s.server && (
         <button type="button" className="btn-secondary mt-2 w-full justify-center" onClick={() => {
           onClose();
           s.set({ adminOpen: true });
         }}>
-          Administration…
+          {t("settings.admin")}
         </button>
       )}
       <p className="mt-2 text-[11px] text-fg3">
-        Base imagery: Natural Earth II, bundled with CesiumJS (works offline). Terrain and the organisation&apos;s orthophotos come with the base map package (RND-11).
+        {t("settings.baseImagery")}
       </p>
     </div>
   );
