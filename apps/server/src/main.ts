@@ -34,7 +34,9 @@ const worker =
           ingest: ingestHandler(db, storage, { clamdscan: process.env.CLAMDSCAN, fbx2gltf: process.env.FBX2GLTF, thumbnails, strictValidation: process.env.STRICT_VALIDATION === "1" }),
           ...(renderer ? { thumbnail: thumbnailHandler(db, storage, renderer) } : {}),
         } as Record<string, Handler>,
-        { onError: (e, job) => app.log.warn({ err: e, job: job.id }, "job failed") },
+        // A job whose worker died goes to another worker (or this one, restarted) when its lease
+        // runs out; the lease is renewed every third of it while the job runs.
+        { leaseSeconds: Number(process.env.JOB_LEASE_SECONDS ?? 300), onError: (e, job) => app.log.warn({ err: e, job: job.id }, "job failed") },
       );
 if (adminPassword === "missing") app.log.warn("No admin password: set ADMIN_PASSWORD and restart to open the admin page");
 if (adminPassword === "kept" && process.env.ADMIN_PASSWORD && process.env.ADMIN_PASSWORD_RESET !== "1") app.log.info("ADMIN_PASSWORD is ignored: a password is already stored (ADMIN_PASSWORD_RESET=1 replaces it)");

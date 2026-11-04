@@ -22,12 +22,13 @@ DATABASE_URL=postgres://… pnpm --filter @viewer/server dev   # a real PostgreS
 | `ADMIN_PASSWORD_RESET` | `0` | `1` replaces the stored admin password with `ADMIN_PASSWORD` and signs everyone out, for a lost password. Remove it after the restart. |
 | `AUDIT_SYSLOG` | none | Sends every audit entry to the SIEM as CEF in syslog (RFC 5424, facility log audit): `udp://host:514`, `tcp://host:514` or `tls://host:6514` (octet-counted framing). Entries go out in order once committed; a SIEM outage or restart loses nothing, as the last sent entry is remembered. Repeats are possible after a crash; `externalId` is the entry number. |
 | `WORKERS` | `1` | `0` runs the API without the conversion worker. |
+| `JOB_LEASE_SECONDS` | `300` | How long a worker holds a job without renewing it. If the worker dies mid-job (power cut, killed process), the job goes back to a worker, this one after a restart, once the lease runs out, and starts again from the upload, which is kept until the job publishes. Shorter means a faster recovery; the lease is renewed every third of it while the job runs. |
 | `SEED_SAMPLES` | `1` | `0` starts with an empty library (classification levels are always seeded once). |
 | `HOST`, `PORT` | `127.0.0.1`, `8787` | Listen address. |
 
 ## API
 
-The OpenAPI description is at `/api/openapi.json`.
+The OpenAPI description is at `/api/openapi.json`; the published copy, and the typed client the web app uses, are in `packages/api-client`.
 
 | Method | Path | What it does |
 |---|---|---|
