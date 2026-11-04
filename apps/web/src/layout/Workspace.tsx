@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useEngine, useSignal } from "../engine";
 import { useApp } from "../state/store";
@@ -114,6 +115,7 @@ export function Workspace() {
 
       <FeaturePopup />
       <LoadingAndError loading={loading} error={error} onBack={close} />
+      <TileProblemsNotice />
     </>
   );
 }
@@ -138,6 +140,27 @@ export function LoadingAndError({ loading, error, onBack }: { loading: boolean; 
         </div>
       )}
     </>
+  );
+}
+
+/** Tiles that failed to load: the model still shows, so this is a notice, not a blocking error. */
+function TileProblemsNotice() {
+  const { t } = useTranslation();
+  const engine = useEngine();
+  const problems = useSignal(engine?.tileProblems, null);
+  const [hidden, setHidden] = useState<number | null>(null);
+  if (!problems || hidden === problems.count) return null;
+  return (
+    <div role="status" className="glass fixed bottom-[92px] start-1/2 z-30 w-[420px] max-w-[calc(100vw-32px)] -translate-x-1/2 rounded-[14px] p-4 rtl:translate-x-1/2">
+      <div className="mb-1 font-semibold">{t("viewer.tileProblems.title", { count: problems.count })}</div>
+      <p className="mb-1 text-fg2">{problems.reason}</p>
+      <p className="mb-2 text-[12px] text-fg3">{t("viewer.tileProblems.body")}</p>
+      <details className="mb-3 text-[12px] text-fg3">
+        <summary className="cursor-pointer">{t("viewer.error.details")}</summary>
+        <pre dir="ltr" className="num mt-1 whitespace-pre-wrap text-start">{problems.files.join("\n")}{problems.count > problems.files.length ? `\n…` : ""}</pre>
+      </details>
+      <button type="button" className="btn-secondary" onClick={() => setHidden(problems.count)}>{t("viewer.tileProblems.dismiss")}</button>
+    </div>
   );
 }
 

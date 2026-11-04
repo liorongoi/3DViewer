@@ -162,6 +162,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@cesium/engine@26.4.0': ca6e152d5baf02b675b206f293f0d0843fad1dca3545e12f7cd0b61e24a34f39
+
 importers:
 
   .:
@@ -2951,7 +2954,7 @@ snapshots:
 
   '@cesium/core@0.1.0': {}
 
-  '@cesium/engine@26.4.0':
+  '@cesium/engine@26.4.0(patch_hash=ca6e152d5baf02b675b206f293f0d0843fad1dca3545e12f7cd0b61e24a34f39)':
     dependencies:
       '@cesium/core': 0.1.0
       '@cesium/wasm-splats': 0.1.0-alpha.2
@@ -2981,7 +2984,7 @@ snapshots:
   '@cesium/widgets@16.3.0':
     dependencies:
       '@cesium/core': 0.1.0
-      '@cesium/engine': 26.4.0
+      '@cesium/engine': 26.4.0(patch_hash=ca6e152d5baf02b675b206f293f0d0843fad1dca3545e12f7cd0b61e24a34f39)
       nosleep.js: 0.12.0
 
   '@electric-sql/pglite@0.5.14': {}
@@ -3813,7 +3816,7 @@ snapshots:
   cesium@1.146.0:
     dependencies:
       '@cesium/core': 0.1.0
-      '@cesium/engine': 26.4.0
+      '@cesium/engine': 26.4.0(patch_hash=ca6e152d5baf02b675b206f293f0d0843fad1dca3545e12f7cd0b61e24a34f39)
       '@cesium/widgets': 16.3.0
       protobufjs: 8.8.1
 

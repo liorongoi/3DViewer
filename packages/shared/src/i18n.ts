@@ -84,6 +84,12 @@ export const en = {
       details: "Technical details",
       backToLibrary: "Back to library",
     },
+    tileProblems: {
+      title_one: "{{count}} tile could not be loaded",
+      title_other: "{{count}} tiles could not be loaded",
+      body: "The rest of the model is shown; there are holes where these tiles should be.",
+      dismiss: "Dismiss",
+    },
   },
   measure: {
     empty: "No measurements yet. Press M and click two points on the model.",
@@ -269,6 +275,12 @@ export const he: Shape<typeof en> = {
       title: "לא ניתן לפתוח את המודל",
       details: "פרטים טכניים",
       backToLibrary: "חזרה לספרייה",
+    },
+    tileProblems: {
+      title_one: "אריח אחד לא נטען",
+      title_other: "{{count}} אריחים לא נטענו",
+      body: "שאר המודל מוצג; במקום האריחים האלה יש חורים.",
+      dismiss: "סגירה",
     },
   },
   measure: {

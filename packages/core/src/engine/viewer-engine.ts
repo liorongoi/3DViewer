@@ -81,6 +81,14 @@ export interface OpenError {
   detail: string;
 }
 
+/** Tiles of the open tileset that could not be loaded; the rest of the tileset still shows. */
+export interface TileProblems {
+  count: number;
+  /** The first few, as "path: reason". */
+  files: string[];
+  reason: string;
+}
+
 const STATUS_COLOURS: Record<UpdateStatus, string> = {
   draft: "#A7ADB8",
   inProduction: "#F2B33D",
@@ -132,6 +140,7 @@ export class ViewerEngine {
   readonly layers = signal<Layer[]>([]);
   readonly loading = signal(false);
   readonly error = signal<OpenError | null>(null);
+  readonly tileProblems = signal<TileProblems | null>(null);
   readonly current = signal<ModelSummary | null>(null);
   readonly viewMode = signal<ViewMode>("shaded");
   readonly viewpoints = signal<Viewpoint[]>([]);
@@ -152,6 +161,7 @@ export class ViewerEngine {
   private cut: { source: DemSource; offset: number; u: Underside } | null = null;
   private cutRefineTimer: ReturnType<typeof setTimeout> | null = null;
   private offTilesLoaded: (() => void) | null = null;
+  private offTileFailed: (() => void) | null = null;
   private cutTimer: ReturnType<typeof setTimeout> | null = null;
   private cutRun = 0;
 
@@ -193,10 +203,30 @@ export class ViewerEngine {
       scene3DOnly: true,
       requestRenderMode: false,
       useBrowserRecommendedResolution: false,
+      // Our own message replaces Cesium's error panel (below).
+      showRenderLoopErrors: false,
       contextOptions: { webgl: { preserveDrawingBuffer: true, powerPreference: "high-performance" } },
     });
     this.baseLayers = [baseLayer];
     const scene = this.widget.scene;
+    // A model that makes drawing fail would stop the whole view: Cesium stops its render loop
+    // on the first error. Instead the open model is closed with a message, and the loop goes on.
+    const widgetOnError = (this.widget as unknown as { _onRenderError?: (...a: unknown[]) => void })._onRenderError;
+    if (widgetOnError) scene.renderError.removeEventListener(widgetOnError);
+    scene.renderError.addEventListener((_s: unknown, e: unknown) => {
+      const summary = this.current.get();
+      if (!summary || this.error.get()) return;
+      const err = e instanceof Error ? e : new Error(String(e));
+      console.error("VIEWER: drawing failed; the model was closed.", err);
+      // Not inside Cesium's frame: close the model once the frame is over.
+      setTimeout(() => {
+        if (this.current.get() !== summary) return;
+        this.close();
+        this.current.set(summary);
+        const why = /too many attributes \(a_target/i.test(err.message) ? " It has more morph targets than the graphics card can draw at once." : "";
+        this.error.set({ file: summary.source.url.split("/").pop() ?? summary.source.url, reason: `VIEWER could not draw this model and closed it.${why} The rest of the view keeps working.`, detail: `${err.name}: ${err.message}` });
+      }, 0);
+    });
     scene.postProcessStages.fxaa.enabled = true;
     scene.postProcessStages.tonemapper = Tonemapper.PBR_NEUTRAL;
     scene.highDynamicRange = true;
@@ -270,6 +300,18 @@ export class ViewerEngine {
           shadows: ShadowMode.ENABLED,
         });
         if (this.current.get()?.id !== summary.id) return tileset.destroy();
+        // A missing or damaged tile leaves a hole; say which, and keep showing the rest.
+        this.offTileFailed = tileset.tileFailed.addEventListener((f: { url: string; message: string }) => {
+          const prev = this.tileProblems.get();
+          const name = decodeURIComponent(String(f.url).split("?")[0]!.split("/").slice(-2).join("/"));
+          const files = prev ? prev.files : [];
+          this.tileProblems.set({
+            count: (prev?.count ?? 0) + 1,
+            files: files.length < 5 ? [...files, `${name}: ${f.message}`] : files,
+            // One reason when they all failed the same way, else a word for both.
+            reason: !prev || prev.reason === friendlyReason(new Error(f.message)) ? friendlyReason(new Error(f.message)) : "Some tiles could not be found, and others are damaged or unreadable.",
+          });
+        });
         scene.primitives.add(tileset);
         this.tileset = tileset;
         // Finer tiles can hold ground the first capture did not see: refine the cut as they load.
@@ -352,6 +394,9 @@ export class ViewerEngine {
     this.cutRun++;
     this.offTilesLoaded?.();
     this.offTilesLoaded = null;
+    this.offTileFailed?.();
+    this.offTileFailed = null;
+    this.tileProblems.set(null);
     if (this.cutRefineTimer) clearTimeout(this.cutRefineTimer);
     if (this.cut) {
       this.cut = null;
@@ -1149,10 +1194,12 @@ function placeMatrix(p: NonNullable<ModelSummary["placement"]>, height: number, 
 }
 
 function friendlyReason(err: Error): string {
+  const ext = /Unsupported glTF Extension: ([\w-]+)/.exec(err.message);
+  if (ext) return `This model needs the glTF extension ${ext[1]}, which VIEWER cannot read.`;
   const m = `${err.name} ${err.message}`.toLowerCase();
   if (m.includes("404") || m.includes("not found")) return "The file, or a file it references, could not be found.";
-  if (m.includes("json") || m.includes("unexpected token")) return "The file is not valid glTF or 3D Tiles JSON.";
-  if (m.includes("magic") || m.includes("glb")) return "The file is not a valid GLB.";
+  if (/json\.parse|unexpected token|in json|not valid json/.test(m)) return "The file is not valid glTF or 3D Tiles JSON.";
+  if (m.includes("magic") || /invalid glb|glb (header|version)/.test(m)) return "The file is not a valid GLB.";
   if (m.includes("version")) return "This file uses a version VIEWER does not support.";
   return "The file is damaged or in a format VIEWER cannot read.";
 }
