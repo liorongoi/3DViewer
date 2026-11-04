@@ -33,15 +33,15 @@ export function CommandPalette({ onOpenModel }: { onOpenModel: (id: string) => v
 
   return (
     <div className="fixed inset-0 z-50 grid items-start justify-center bg-black/30 pt-[14vh]" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <Command label="Command palette" className="glass w-[640px] max-w-[92vw] overflow-hidden rounded-[14px]" shouldFilter loop onKeyDown={(e) => e.key === "Escape" && close()}>
+      <Command label={t("shell.palette")} className="glass w-[640px] max-w-[92vw] overflow-hidden rounded-[14px]" shouldFilter loop onKeyDown={(e) => e.key === "Escape" && close()}>
         <div className="flex items-center gap-2 border-b border-line px-3">
           <Search size={16} className="text-fg3" />
           <Command.Input autoFocus value={q} onValueChange={setQ} placeholder={t("palette.placeholder")} className="h-12 flex-1 bg-transparent text-[14px] outline-none placeholder:text-fg3" />
         </div>
-        <Command.List className="max-h-[50vh] overflow-auto p-1 scrollbar-thin">
+        <Command.List label={t("palette.results")} className="max-h-[50vh] overflow-auto p-1 scrollbar-thin">
           <Command.Empty className="p-4 text-fg3">{t("palette.nothing")}</Command.Empty>
           {coords && (
-            <Command.Group heading="Go to" className={group}>
+            <Command.Group heading={t("palette.goToHeading")} className={group}>
               <Command.Item value={`goto ${q}`} className={item} onSelect={run(() => engine?.flyTo(coords.lat, coords.lon))}>
                 <Crosshair size={16} className="text-accent" />
                 <span dir="ltr" className="num">{t("palette.goTo", { coords: `${coords.lat.toFixed(5)}, ${coords.lon.toFixed(5)}` })}</span>
@@ -52,11 +52,11 @@ export function CommandPalette({ onOpenModel }: { onOpenModel: (id: string) => v
             <Command.Item className={item} onSelect={run(() => void engine?.home())}><House size={16} />{t("viewer.home")}<Shortcut k="H" /></Command.Item>
             <Command.Item className={item} onSelect={run(() => set({ tool: "distance" }))}><Ruler size={16} />{t("viewer.measureDistance")}<Shortcut k="M" /></Command.Item>
             <Command.Item className={item} onSelect={run(() => set({ tool: "path" }))}><Route size={16} />{t("viewer.measurePath")}<Shortcut k="⇧M" /></Command.Item>
-            <Command.Item className={item} onSelect={run(() => set({ tool: "sight" }))}><ScanEye size={16} />Line of sight between points<Shortcut k="I" /></Command.Item>
-            <Command.Item className={item} onSelect={run(() => set({ tool: "viewshed" }))}><Radar size={16} />360° visibility from a point<Shortcut k="V" /></Command.Item>
-            <Command.Item className={item} onSelect={run(() => set({ leftOpen: true, leftTab: "map" }))}><Map size={16} />Base map, terrain and your data</Command.Item>
-            <Command.Item className={item} onSelect={run(() => set({ tool: "fly" }))}><Plane size={16} />Fly mode<Shortcut k="G" /></Command.Item>
-            <Command.Item className={item} onSelect={run(() => engine?.startOrbitTour())}><Orbit size={16} />Fly-by: cinematic orbit</Command.Item>
+            <Command.Item className={item} onSelect={run(() => set({ tool: "sight" }))}><ScanEye size={16} />{t("shell.lineOfSightPoints")}<Shortcut k="I" /></Command.Item>
+            <Command.Item className={item} onSelect={run(() => set({ tool: "viewshed" }))}><Radar size={16} />{t("shell.viewshedPoint")}<Shortcut k="V" /></Command.Item>
+            <Command.Item className={item} onSelect={run(() => set({ leftOpen: true, leftTab: "map" }))}><Map size={16} />{t("shell.mapPanel")}</Command.Item>
+            <Command.Item className={item} onSelect={run(() => set({ tool: "fly" }))}><Plane size={16} />{t("shell.flyMode")}<Shortcut k="G" /></Command.Item>
+            <Command.Item className={item} onSelect={run(() => engine?.startOrbitTour())}><Orbit size={16} />{t("shell.flyBy")}</Command.Item>
             {(["shaded", "edges", "wireframe", "unlit"] as const).map((m, i) => (
               <Command.Item key={m} className={item} onSelect={run(() => engine?.setViewMode(m))}><Box size={16} />{t(`viewer.modes.${m}`)}<Shortcut k={String(i + 1)} /></Command.Item>
             ))}
@@ -77,7 +77,7 @@ export function CommandPalette({ onOpenModel }: { onOpenModel: (id: string) => v
             <Command.Group heading={t("palette.layers")} className={group}>
               {flatLayers.slice(0, 200).map((l) => (
                 <Command.Item key={l.id} value={`layer ${l.name} ${l.id}`} className={item} onSelect={run(() => void engine?.focusLayer(l.id))}>
-                  <Eye size={16} />{l.name}
+                  <Eye size={16} /><span data-content>{l.name}</span>
                 </Command.Item>
               ))}
             </Command.Group>
@@ -86,8 +86,8 @@ export function CommandPalette({ onOpenModel }: { onOpenModel: (id: string) => v
             {library.map((m) => (
               <Command.Item key={m.id} value={`model ${m.name} ${m.project} ${m.operation}`} className={item} onSelect={run(() => onOpenModel(m.id))}>
                 <Box size={16} />
-                <span className="flex-1 truncate">{m.name}</span>
-                <span className="text-[12px] text-fg3">{m.project}</span>
+                <span className="flex-1 truncate" dir="auto" data-content>{m.name}</span>
+                <span className="text-[12px] text-fg3" data-content>{m.project}</span>
               </Command.Item>
             ))}
           </Command.Group>

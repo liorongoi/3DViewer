@@ -267,7 +267,7 @@ export function UploadWizard() {
                   <input type="file" multiple className="hidden" accept=".glb,.gltf,.bin,.png,.jpg,.jpeg,.webp,.ktx2,.zip,.json,.b3dm,.i3dm,.pnts,.cmpt,.fbx" onChange={(e) => setFiles(fromInput(e.target.files))} />
                 </label>
                 <button type="button" className="btn-secondary" onClick={() => folderInput.current?.click()}>
-                  <FolderOpen size={14} /> Choose folder
+                  <FolderOpen size={14} /> {t("shell.chooseFolder")}
                 </button>
                 <input
                   ref={(el) => {

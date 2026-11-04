@@ -82,14 +82,14 @@ button { font: inherit; color: inherit; }
 }
 .btn-primary { background: var(--accent); color: var(--accent-on); }
 .btn-primary:hover { filter: brightness(1.08); }
-.btn-secondary { background: var(--surface-3); color: var(--text-primary); border: 1px solid var(--border-strong); }
+.btn-secondary { background: var(--surface-3); color: var(--text-primary); border: 1px solid var(--control-border); }
 .btn-secondary:hover { background: color-mix(in oklab, var(--surface-3), white 6%); }
 .btn-ghost { color: var(--text-secondary); }
 .btn-ghost:hover { background: var(--surface-3); color: var(--text-primary); }
 .btn-primary:disabled, .btn-secondary:disabled { opacity: 0.4; pointer-events: none; }
 .input {
   height: 36px; width: 100%; padding: 0 10px; border-radius: 8px;
-  background: var(--surface-2); border: 1px solid var(--border-strong); color: var(--text-primary); outline: none;
+  background: var(--surface-2); border: 1px solid var(--control-border); color: var(--text-primary); outline: none;
 }
 .input:focus { border-color: var(--accent); }
 @keyframes load { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }

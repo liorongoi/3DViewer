@@ -160,11 +160,12 @@ export function ModelCard({ m, onOpen, dense }: { m: ModelSummary; onOpen: () =>
       }}
       onPointerLeave={() => setFrame(null)}
     >
-      {cls && <span aria-label={cls.label} className="absolute inset-x-0 top-0 z-10 h-1.5" style={{ background: cls.color }} />}
+      {cls && <span aria-label={cls.label} data-content className="absolute inset-x-0 top-0 z-10 h-1.5" style={{ background: cls.color }} />}
       <div className={cx("relative overflow-hidden bg-[radial-gradient(120%_90%_at_50%_30%,#2a2e36,#121417)]", dense ? "h-20 w-28 shrink-0" : "aspect-[16/9] w-full")}>
         {thumbOk ? (
           <div
             role="img"
+            data-content
             aria-label={m.name}
             className="absolute inset-0 bg-no-repeat"
             style={{
@@ -188,8 +189,8 @@ export function ModelCard({ m, onOpen, dense }: { m: ModelSummary; onOpen: () =>
         )}
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-1 p-3">
-        <div className="line-clamp-2 font-semibold leading-5 text-fg">{m.name}</div>
-        <div className="truncate text-[12px] text-fg3">
+        <div className="line-clamp-2 font-semibold leading-5 text-fg" dir="auto" data-content>{m.name}</div>
+        <div className="truncate text-[12px] text-fg3" data-content>
           {m.project} · {m.operation}
         </div>
         <div className="mt-1 flex items-center justify-between gap-2">

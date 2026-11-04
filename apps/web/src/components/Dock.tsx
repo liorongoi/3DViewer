@@ -49,7 +49,7 @@ export function Dock({ className, compact }: { className?: string; compact?: boo
 
   return (
     <div className={cx("relative", className)}>
-      <div role="toolbar" aria-label="Tools" className="glass flex items-center gap-0.5 rounded-[14px] p-1.5">
+      <div role="toolbar" aria-label={t("shell.tools")} className="glass flex items-center gap-0.5 rounded-[14px] p-1.5">
         {compact && (
           <>
             <IconButton label={t("viewer.layers")} shortcut="L" active={leftOpen} onClick={() => set({ leftOpen: !leftOpen })}>
@@ -77,7 +77,7 @@ export function Dock({ className, compact }: { className?: string; compact?: boo
         <IconButton label={t("viewer.pan")} shortcut="E" active={tool === "none" && leftDrag === "pan"} onClick={() => setDrag("pan")}>
           <Move size={18} />
         </IconButton>
-        <IconButton label="Fly mode" shortcut="G" active={tool === "fly"} onClick={() => set({ tool: tool === "fly" ? "none" : "fly" })}>
+        <IconButton label={t("shell.flyMode")} shortcut="G" active={tool === "fly"} onClick={() => set({ tool: tool === "fly" ? "none" : "fly" })}>
           <Plane size={18} />
         </IconButton>
         <Divider vertical />
@@ -91,10 +91,10 @@ export function Dock({ className, compact }: { className?: string; compact?: boo
         <IconButton label={t("viewer.measurePath")} shortcut="Shift+M" active={tool === "path"} onClick={() => set({ tool: tool === "path" ? "none" : "path" })}>
           <Route size={18} />
         </IconButton>
-        <IconButton label="Line of sight" shortcut="I" active={tool === "sight"} onClick={() => set({ tool: tool === "sight" ? "none" : "sight" })}>
+        <IconButton label={t("shell.lineOfSight")} shortcut="I" active={tool === "sight"} onClick={() => set({ tool: tool === "sight" ? "none" : "sight" })}>
           <ScanEye size={18} />
         </IconButton>
-        <IconButton label="360° visibility" shortcut="V" active={tool === "viewshed"} onClick={() => set({ tool: tool === "viewshed" ? "none" : "viewshed", rightOpen: true, rightTab: "analysis" })}>
+        <IconButton label={t("shell.viewshed")} shortcut="V" active={tool === "viewshed"} onClick={() => set({ tool: tool === "viewshed" ? "none" : "viewshed", rightOpen: true, rightTab: "analysis" })}>
           <Radar size={18} />
         </IconButton>
         <IconButton label={t("viewer.section")} disabled>

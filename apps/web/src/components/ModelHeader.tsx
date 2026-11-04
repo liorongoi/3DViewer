@@ -27,7 +27,7 @@ export function ModelHeader({ onBack, backLabel, className, compact }: { onBack:
       </button>
       <span className="h-6 w-px bg-line" />
       <div className="min-w-0 px-1">
-        <div className="truncate font-semibold text-fg max-w-[340px]">{model.name}</div>
+        <div className="truncate font-semibold text-fg max-w-[340px]" dir="auto" data-content>{model.name}</div>
       </div>
       <StatusBadge status={model.status} compact />
       <button type="button" className="inline-flex h-7 items-center gap-1 rounded-[6px] border border-line-strong px-2 text-[12px] text-fg2 hover:text-fg num" title={t("viewer.version")}>
@@ -40,11 +40,11 @@ export function ModelHeader({ onBack, backLabel, className, compact }: { onBack:
         </span>
       )}
       <span className="h-6 w-px bg-line" />
-      <IconButton label="Command palette" shortcut="Ctrl+K" onClick={() => set({ paletteOpen: true })} className="tip-below">
+      <IconButton label={t("shell.palette")} shortcut="Ctrl+K" onClick={() => set({ paletteOpen: true })} className="tip-below">
         <Command size={16} />
       </IconButton>
       <IconButton
-        label="Screenshot with classification"
+        label={t("shell.screenshot")}
         className="tip-below"
         onClick={async () => {
           if (!engine) return;

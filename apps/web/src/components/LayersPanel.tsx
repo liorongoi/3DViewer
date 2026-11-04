@@ -43,7 +43,7 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
         >
           <button
             type="button"
-            aria-label={open ? "Collapse" : "Expand"}
+            aria-label={open ? t("shell.collapse") : t("shell.expand")}
             className={cx("grid h-6 w-5 place-items-center text-fg3", !l.children.length && "invisible")}
             onClick={() =>
               setCollapsed((c) => {
@@ -59,7 +59,7 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
           <button
             type="button"
             aria-label={l.visible ? t("common.hide") : t("common.show")}
-            title={`${l.visible ? t("common.hide") : t("common.show")} · Alt+click: ${t("viewer.isolate")}`}
+            title={`${l.visible ? t("common.hide") : t("common.show")} · ${t("shell.altClick")}: ${t("viewer.isolate")}`}
             disabled={!l.nodeName && l.id !== "tileset" && !l.children.length}
             className={cx("grid h-7 w-7 place-items-center rounded", l.visible ? "text-fg2 hover:text-fg" : "text-fg3", "disabled:opacity-30")}
             onPointerDown={(e) => {
@@ -78,7 +78,7 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
           >
             {l.visible ? <Eye size={15} /> : <EyeOff size={15} />}
           </button>
-          <span className={cx("min-w-0 flex-1 truncate", effective ? "text-fg" : "text-fg3")}>{l.name}</span>
+          <span className={cx("min-w-0 flex-1 truncate", effective ? "text-fg" : "text-fg3")} dir="auto" data-content>{l.name}</span>
           <span className="flex opacity-0 group-hover:opacity-100 focus-within:opacity-100">
             <IconButton size="sm" label={t("viewer.isolate")} onClick={() => solo(l)}>
               <Scan size={14} />
@@ -103,7 +103,7 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
           {(
             [
               ["model", t("viewer.layers")],
-              ["map", "Map & data"],
+              ["map", t("shell.mapData")],
             ] as const
           ).map(([id, label]) => (
             <button

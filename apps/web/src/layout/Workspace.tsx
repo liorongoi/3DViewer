@@ -78,7 +78,7 @@ export function Workspace() {
           )
         ) : (
           <>
-            <ModelHeader onBack={close} backLabel="Earth" className={cx("pointer-events-auto", fade.panel)} />
+            <ModelHeader onBack={close} backLabel={t("shell.earth")} className={cx("pointer-events-auto", fade.panel)} />
             {leftOpen && <LayersPanel className={cx("pointer-events-auto min-h-0 !w-[300px]", fade.panel)} onClose={() => set({ leftOpen: false })} />}
           </>
         )}

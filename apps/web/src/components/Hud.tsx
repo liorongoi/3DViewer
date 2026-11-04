@@ -20,7 +20,7 @@ export function CoordinatesHud({ className }: { className?: string }) {
       <button
         type="button"
         className="h-6 rounded-[6px] px-2 font-medium text-fg2 hover:bg-s3 hover:text-fg"
-        aria-label={t("coords.system")}
+        aria-label={`${system === "wgs84" ? t("coords.wgs84") : t("coords.utm")} · ${t("coords.system")}`}
         onClick={() => setPref("coordSystem", system === "wgs84" ? "utm" : "wgs84")}
       >
         {system === "wgs84" ? t("coords.wgs84") : t("coords.utm")}
@@ -43,7 +43,7 @@ export function CoordinatesHud({ className }: { className?: string }) {
       >
         {copied ? t("common.copied") : f ? f.parts.join("   ") : "—"}
       </button>
-      <span className="num ms-2 text-fg3" title="Frames per second">
+      <span className="num ms-2 text-fg3" title={t("shell.fps")}>
         {fps} fps
       </span>
     </div>
@@ -59,6 +59,7 @@ function niceLength(max: number): number {
 }
 
 export function ScaleBar({ className }: { className?: string }) {
+  const { t } = useTranslation();
   const engine = useEngine();
   const info = useSignal(engine?.cameraInfo, { heading: 0, pitch: 0, metresPerPixel: 1, height: 0 });
   const maxPx = 120;
@@ -66,7 +67,7 @@ export function ScaleBar({ className }: { className?: string }) {
   const px = metres / info.metresPerPixel;
   const label = metres >= 1000 ? `${metres / 1000} km` : metres >= 1 ? `${metres} m` : `${Math.round(metres * 100)} cm`;
   return (
-    <div className={cx("flex flex-col items-start gap-0.5 text-[11px] text-fg2 [text-shadow:0_1px_2px_rgb(0_0_0/0.8)]", className)} dir="ltr" aria-label={`Scale ${label}`}>
+    <div className={cx("flex flex-col items-start gap-0.5 text-[11px] text-fg2 [text-shadow:0_1px_2px_rgb(0_0_0/0.8)]", className)} dir="ltr" aria-label={t("shell.scale", { label })}>
       <span className="num">{label}</span>
       <span className="h-1.5 border-x-2 border-b-2 border-fg/80" style={{ width: Math.max(8, Math.min(px, 200)) }} />
     </div>
@@ -78,6 +79,7 @@ export function ScaleBar({ className }: { className?: string }) {
  * Never mirrored in RTL (UI spec §2).
  */
 export function ViewCube({ className }: { className?: string }) {
+  const { t } = useTranslation();
   const engine = useEngine();
   const info = useSignal(engine?.cameraInfo, { heading: 0, pitch: -0.5, metresPerPixel: 1, height: 0 });
   const hDeg = (info.heading * 180) / Math.PI;
@@ -91,7 +93,7 @@ export function ViewCube({ className }: { className?: string }) {
         [-1, 0, 1].map((c) => {
           const d: V = [0, 1, 2].map((k) => n[k]! + c * right[k]! - r * up[k]!) as V;
           const centre = r === 0 && c === 0;
-          const name = centre ? `${label} view` : `${label} ${r === 0 || c === 0 ? "edge" : "corner"} view`;
+          const name = t(centre ? "shell.cubeView" : r === 0 || c === 0 ? "shell.cubeEdge" : "shell.cubeCorner", { face: label });
           return (
             <button
               key={`${r}${c}`}
@@ -134,8 +136,8 @@ export function ViewCube({ className }: { className?: string }) {
       </div>
       <button
         type="button"
-        aria-label="Isometric view"
-        title="Isometric"
+        aria-label={`ISO · ${t("viewer.isometric")}`}
+        title={t("viewer.isometric")}
         onClick={() => void engine?.preset("iso")}
         className="absolute -bottom-1 right-0 grid h-6 w-6 place-items-center rounded-full bg-s3 text-[9px] font-semibold text-fg2 hover:bg-accent hover:text-accent-on"
       >
@@ -155,7 +157,7 @@ export function HintLine({ className }: { className?: string }) {
   let text = t("viewer.hints.idle");
   if (tool === "distance") text = draft.length === 0 ? t("viewer.hints.distanceFirst") : t("viewer.hints.distanceSecond");
   if (tool === "path") text = draft.length === 0 ? t("viewer.hints.distanceFirst") : t("viewer.hints.pathNext");
-  if (tool === "fly") text = `Fly mode · W A S D move · Q / E down / up · drag to look · Shift faster · Esc to exit${speed ? ` · ${speed} m/s` : ""}`;
+  if (tool === "fly") text = `${t("shell.flyHint")}${speed ? ` · ${speed} m/s` : ""}`;
   return (
     <div
       aria-live="polite"
