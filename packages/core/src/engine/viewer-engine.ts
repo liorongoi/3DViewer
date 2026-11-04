@@ -616,6 +616,10 @@ export class ViewerEngine {
     let best: Underside | null = null;
     for (let i = 0; i < 4 && current(); i++) {
       await this.afterFrames(2);
+      // Not during a camera flight: the capture's orthographic camera makes the flight's next
+      // step pick against the last frame's commands, which can hold the previous model's
+      // destroyed buffers (seen when one upload replaced another).
+      for (let w = 0; w < 50 && (this.widget.scene as unknown as { tweens: { length: number } }).tweens.length > 0 && current(); w++) await this.afterFrames(1);
       if (!current()) break;
       const u = captureUnderside(this.widget.scene, target, () => this.widget.render());
       if (coverage(u) > coverage(best)) best = u;

@@ -99,8 +99,10 @@ function filesFor(c, pt) {
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || undefined, args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   await ctx.addInitScript(() => localStorage.setItem("viewer.lang", "en"));
+  if (process.env.DEBUG_ERRORS) await ctx.addInitScript(() => { Error.stackTraceLimit = 60; window.addEventListener("unhandledrejection", (e) => console.error("REJECT", typeof e.reason, e.reason && e.reason.constructor && e.reason.constructor.name, JSON.stringify(e.reason), e.reason && e.reason.stack)); window.addEventListener("error", (e) => console.error("ERR", e.message, e.filename, e.lineno, e.error && e.error.stack)); });
   const page = await ctx.newPage();
   const pageErrors = [];
+  page.on("console", (m) => process.env.DEBUG_ERRORS && m.type() === "error" && console.log("console:", m.text().slice(0, 3000)));
   page.on("pageerror", (e) => {
     pageErrors.push(e.message);
     console.log(`page error: ${e.message}\n${e.stack ?? ""}`);
@@ -111,7 +113,8 @@ function filesFor(c, pt) {
   let failed = 0;
   let worstAll = 0;
   const rows = [];
-  for (const c of CASES) {
+  const only = process.env.ONLY?.split(",");
+  for (const c of CASES.filter((x) => !only || only.includes(x.id))) {
     let worst = 0;
     for (const [i, pt] of corners(c.s).entries()) {
       const dialog = page.getByRole("dialog", { name: "Upload a model" });
