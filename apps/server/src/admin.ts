@@ -7,6 +7,7 @@ import type { BaseMapConfig } from "@viewer/shared/model";
 import { audit } from "./audit.ts";
 import type { Db, Queryable } from "./db.ts";
 import { enqueue } from "./jobs.ts";
+import { bool, closed, int, iso, num, ref, text } from "./schemas.ts";
 import type { Storage } from "./storage.ts";
 
 /**
@@ -162,14 +163,14 @@ export function registerAdmin(app: FastifyInstance, db: Db, opts: AdminOptions):
     if (!(await session(req))) return reply.status(401).send({ error: "Sign in as administrator first." });
   };
 
-  app.get("/api/admin/status", { schema: { tags: ["admin"] } }, async (req) => ({
+  app.get("/api/admin/status", { schema: { tags: ["admin"], response: { 200: closed({ passwordSet: bool, signedIn: bool }, ["passwordSet", "signedIn"]) } } }, async (req) => ({
     passwordSet: !!(await getSetting<string>(db, "admin.password")),
     signedIn: !!(await session(req)),
   }));
 
   app.post<{ Body: { password: string } }>(
     "/api/admin/login",
-    { schema: { tags: ["admin"], body: { type: "object", required: ["password"], properties: { password: { type: "string", maxLength: 500 } }, additionalProperties: false } } },
+    { schema: { tags: ["admin"], body: { type: "object", required: ["password"], properties: { password: { type: "string", maxLength: 500 } }, additionalProperties: false }, response: { 200: closed({ token: text, expiresAt: iso }, ["token", "expiresAt"]) } } },
     async (req, reply) => {
       const w = await opts.who(req);
       const f = fails.get(req.ip);
@@ -198,7 +199,7 @@ export function registerAdmin(app: FastifyInstance, db: Db, opts: AdminOptions):
     },
   );
 
-  app.post("/api/admin/logout", { schema: { tags: ["admin"] }, onRequest: guard }, async (req) => {
+  app.post("/api/admin/logout", { schema: { tags: ["admin"], response: { 200: ref("Ok") } }, onRequest: guard }, async (req) => {
     const h = await session(req);
     await db.tx(async (q) => {
       await q.query("DELETE FROM admin_sessions WHERE token_hash = $1", [h]);
@@ -214,6 +215,7 @@ export function registerAdmin(app: FastifyInstance, db: Db, opts: AdminOptions):
       schema: {
         tags: ["admin"],
         body: { type: "object", required: ["current", "next"], properties: { current: { type: "string", maxLength: 500 }, next: { type: "string", minLength: MIN_PASSWORD, maxLength: 500 } }, additionalProperties: false },
+        response: { 200: ref("Ok") },
       },
     },
     async (req, reply) => {
@@ -246,6 +248,8 @@ export function registerAdmin(app: FastifyInstance, db: Db, opts: AdminOptions):
           properties: { label: { type: "string", minLength: 1, maxLength: 100 }, color: hex, textColor: hex, order: { type: "integer", minimum: 0, maximum: 1000 } },
           additionalProperties: false,
         },
+        // The level as saved, and how many thumbnails will be rendered again with the new band.
+        response: { "2xx": closed({ id: text, label: text, color: text, textColor: text, order: int, thumbnailsQueued: int }, ["id", "label", "color", "textColor", "order", "thumbnailsQueued"]) },
       },
     },
     async (req, reply) => {
@@ -277,7 +281,7 @@ export function registerAdmin(app: FastifyInstance, db: Db, opts: AdminOptions):
 
   app.delete<{ Params: { id: string } }>(
     "/api/admin/classifications/:id",
-    { onRequest: guard, schema: { tags: ["admin"], params: { type: "object", required: ["id"], properties: { id: { type: "string", maxLength: 100 } } } } },
+    { onRequest: guard, schema: { tags: ["admin"], params: { type: "object", required: ["id"], properties: { id: { type: "string", maxLength: 100 } } }, response: { 200: ref("Ok") } } },
     async (req, reply) => {
       const id = req.params.id;
       const [{ n }] = (await db.query<{ n: number }>("SELECT count(*)::int AS n FROM models WHERE classification_id = $1", [id])) as [{ n: number }];
@@ -306,6 +310,7 @@ export function registerAdmin(app: FastifyInstance, db: Db, opts: AdminOptions):
         tags: ["admin"],
         params: { type: "object", required: ["id"], properties: { id: { type: "string", maxLength: 200 } } },
         body: { type: "object", required: ["confirm"], properties: { confirm: { type: "string", maxLength: 300 } }, additionalProperties: false },
+        response: { 200: closed({ ok: bool, name: text, classificationId: text, versions: int, bytes: num }, ["ok", "name", "classificationId", "versions", "bytes"]) },
       },
     },
     async (req, reply) => {
@@ -334,7 +339,7 @@ export function registerAdmin(app: FastifyInstance, db: Db, opts: AdminOptions):
   );
 
   // Storage quota and usage (ADM-02).
-  app.get("/api/admin/storage", { onRequest: guard, schema: { tags: ["admin"] } }, async () => {
+  app.get("/api/admin/storage", { onRequest: guard, schema: { tags: ["admin"], response: { 200: closed({ publishedBytes: num, uploadingBytes: num, usedBytes: num, models: int, versions: int, quotaBytes: { type: ["number", "null"] }, disk: { anyOf: [closed({ freeBytes: num, totalBytes: num }, ["freeBytes", "totalBytes"]), { type: "null" }] } }, ["publishedBytes", "uploadingBytes", "usedBytes", "models", "versions", "quotaBytes", "disk"]) } } }, async () => {
     const usage = await storageUsage(db);
     const quotaBytes = (await getSetting<number | null>(db, "storage.quotaBytes")) ?? null;
     let disk: { freeBytes: number; totalBytes: number } | null = null;
@@ -349,7 +354,7 @@ export function registerAdmin(app: FastifyInstance, db: Db, opts: AdminOptions):
     "/api/admin/storage",
     {
       onRequest: guard,
-      schema: { tags: ["admin"], body: { type: "object", required: ["quotaBytes"], properties: { quotaBytes: { type: ["integer", "null"], minimum: 0 } }, additionalProperties: false } },
+      schema: { tags: ["admin"], body: { type: "object", required: ["quotaBytes"], properties: { quotaBytes: { type: ["integer", "null"], minimum: 0 } }, additionalProperties: false }, response: { 200: closed({ quotaBytes: { type: ["number", "null"] } }, ["quotaBytes"]) } },
     },
     async (req) => {
       const w = await opts.who(req);
@@ -363,9 +368,9 @@ export function registerAdmin(app: FastifyInstance, db: Db, opts: AdminOptions):
   );
 
   // Base map sources (RND-11). Everyone reads them; only the admin changes them.
-  app.get("/api/basemaps", { schema: { tags: ["library"] } }, async () => (await getSetting<BaseMapConfig>(db, "basemaps")) ?? { sources: [] });
+  app.get("/api/basemaps", { schema: { tags: ["library"], response: { 200: ref("BaseMapConfig") } } }, async () => (await getSetting<BaseMapConfig>(db, "basemaps")) ?? { sources: [] });
 
-  app.put<{ Body: BaseMapConfig }>("/api/admin/basemaps", { onRequest: guard, schema: { tags: ["admin"], body: baseMapSchema } }, async (req, reply) => {
+  app.put<{ Body: BaseMapConfig }>("/api/admin/basemaps", { onRequest: guard, schema: { tags: ["admin"], body: baseMapSchema, response: { 200: ref("BaseMapConfig") } } }, async (req, reply) => {
     const problems = baseMapProblems(req.body);
     if (problems.length) return reply.status(400).send({ error: problems.join(" "), problems });
     const w = await opts.who(req);

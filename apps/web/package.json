@@ -12,6 +12,7 @@
     "e2e": "playwright test"
   },
   "dependencies": {
+    "@viewer/api-client": "workspace:*",
     "@viewer/core": "workspace:*",
     "@viewer/shared": "workspace:*",
     "@viewer/ui": "workspace:*",

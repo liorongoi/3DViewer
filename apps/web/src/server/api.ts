@@ -1,3 +1,4 @@
+import { createApiClient, must, type ApiClient, type paths, type Schemas } from "@viewer/api-client";
 import type { CheckReport, LocalFile } from "@viewer/core";
 import type { BaseMapConfig, ClassificationLevel, ModelSummary } from "@viewer/shared";
 
@@ -29,12 +30,12 @@ export async function findServer(timeoutMs = 2500): Promise<ServerInfo | null> {
   }
 }
 
-export async function call<T>(srv: ServerInfo, path: string, init?: RequestInit): Promise<T> {
-  const headers: Record<string, string> = init?.body ? { "content-type": "application/json" } : {};
-  const r = await fetch(`${srv.base}${path}`, { ...init, headers: { ...headers, ...((init?.headers as Record<string, string>) ?? {}) } });
-  const body = r.status === 204 ? null : await r.json().catch(() => null);
-  if (!r.ok) throw new Error((body as { error?: string } | null)?.error ?? `The server answered ${r.status}.`);
-  return body as T;
+const clients = new WeakMap<ServerInfo, ApiClient>();
+/** The generated, typed client for this server (WP 3.1). */
+export function apiFor(srv: ServerInfo): ApiClient {
+  let c = clients.get(srv);
+  if (!c) clients.set(srv, (c = createApiClient(srv.base)));
+  return c;
 }
 
 /** Published file URLs are relative to the server ("files/…"); the engine needs them absolute. */
@@ -44,17 +45,17 @@ function absolute(srv: ServerInfo, m: ModelSummary): ModelSummary {
 }
 
 export async function listModels(srv: ServerInfo): Promise<ModelSummary[]> {
-  return (await call<ModelSummary[]>(srv, "/api/models")).map((m) => absolute(srv, m));
+  return must(await apiFor(srv).GET("/api/models")).map((m) => absolute(srv, m));
 }
 
 /** The admin's classification levels, lowest first. */
-export function listLevels(srv: ServerInfo): Promise<ClassificationLevel[]> {
-  return call<ClassificationLevel[]>(srv, "/api/classifications");
+export async function listLevels(srv: ServerInfo): Promise<ClassificationLevel[]> {
+  return must(await apiFor(srv).GET("/api/classifications"));
 }
 
 /** This site's base map sources (WP 3.9). */
-export function getBaseMaps(srv: ServerInfo): Promise<BaseMapConfig> {
-  return call<BaseMapConfig>(srv, "/api/basemaps");
+export async function getBaseMaps(srv: ServerInfo): Promise<BaseMapConfig> {
+  return must(await apiFor(srv).GET("/api/basemaps"));
 }
 
 /** Reading a model records a view in the audit log (NFR-11). */
@@ -62,25 +63,15 @@ export function recordView(srv: ServerInfo, id: string): void {
   void fetch(`${srv.base}/api/models/${encodeURIComponent(id)}`).catch(() => undefined);
 }
 
-export interface IngestStatus {
-  id: string;
-  state: "uploading" | "queued" | "checking" | "converting" | "ready" | "failed";
-  modelId: string | null;
-  version: number | null;
+/** The published status, with the check report in the shape the shared loaders write it. */
+export type IngestStatus = Omit<Schemas["IngestStatus"], "report" | "job"> & {
   report: CheckReport | null;
-  error: string | null;
-  upload: { files: number; bytes: number; received: number };
-  job: { state: string; progress: { step?: string }; attempts: number; error: string | null } | null;
-}
+  job: (Omit<NonNullable<Schemas["IngestStatus"]["job"]>, "progress"> & { progress: { step?: string } }) | null;
+};
+const asStatus = (s: Schemas["IngestStatus"]) => s as unknown as IngestStatus;
 
-export interface IngestRequest {
-  modelId?: string;
-  model?: { name: string; project?: string; operation?: string; responsibleEntity?: string; description?: string; status: string; classificationId: string };
-  placement?: ModelSummary["placement"];
-  centre?: { lat: number; lon: number };
-  groundFit?: "street" | "surface" | "none";
-  note?: string;
-}
+/** What to make of the files: the upload request without the file list, which comes from the files. */
+export type IngestRequest = Omit<paths["/api/ingests"]["post"]["requestBody"]["content"]["application/json"], "files">;
 
 export interface UploadProgress {
   sent: number;
@@ -139,22 +130,19 @@ async function headOffset(url: string): Promise<number> {
 /** Uploads the files, queues the ingest and waits for the server's result. */
 export async function uploadAndIngest(srv: ServerInfo, files: LocalFile[], req: IngestRequest, onProgress: (p: UploadProgress) => void, signal?: AbortSignal): Promise<IngestStatus> {
   const total = files.reduce((s, f) => s + f.size, 0);
-  const created = await call<{ id: string; uploads: { path: string; url: string }[] }>(srv, "/api/ingests", {
-    method: "POST",
-    body: JSON.stringify({ ...req, files: files.map((f) => ({ path: f.path, size: f.size })) }),
-    signal,
-  });
+  const api = apiFor(srv);
+  const created = must(await api.POST("/api/ingests", { body: { ...req, files: files.map((f) => ({ path: f.path, size: f.size })) }, signal }));
   let sent = 0;
   onProgress({ sent, total, step: "upload" });
   const byPath = new Map(files.map((f) => [f.path, f]));
   for (const u of created.uploads) {
     await sendFile(srv, u.url, byPath.get(u.path)!, (n) => onProgress({ sent: (sent += n), total, step: "upload" }), signal);
   }
-  let status = await call<IngestStatus>(srv, `/api/ingests/${created.id}/submit`, { method: "POST", signal });
+  let status = asStatus(must(await api.POST("/api/ingests/{id}/submit", { params: { path: { id: created.id } }, signal })));
   for (;;) {
     onProgress({ sent: total, total, step: status.job?.progress?.step ?? status.state });
     if (status.state === "ready" || status.state === "failed") return status;
     await new Promise((res) => setTimeout(res, 800));
-    status = await call<IngestStatus>(srv, `/api/ingests/${created.id}`, { signal });
+    status = asStatus(must(await api.GET("/api/ingests/{id}", { params: { path: { id: created.id } }, signal })));
   }
 }
