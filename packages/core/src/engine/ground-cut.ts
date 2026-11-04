@@ -166,7 +166,6 @@ export function captureUnderside(scene: Scene, target: Target, render: () => voi
     cull: target.backFaceCulling,
     edl: "pointCloudShading" in target ? target.pointCloudShading.eyeDomeLighting : undefined,
     freeze: "debugFreezeFrame" in target ? target.debugFreezeFrame : undefined,
-    envMap: target.environmentMapManager?.enabled,
   };
   const stages = scene.postProcessStages;
   const sscc = scene.screenSpaceCameraController;
@@ -210,11 +209,6 @@ export function captureUnderside(scene: Scene, target: Target, render: () => voi
     // capture's own camera could pick ones that are not, leaving holes. What the user has not
     // looked at yet comes in later captures, merged in as its tiles load.
     if ("debugFreezeFrame" in target) target.debugFreezeFrame = true;
-    // Hiding the sky and the globe makes Cesium rebuild the model's environment map from the
-    // sky, and its rebuild work queued from the frames before then drew with freed buffers,
-    // which stopped all drawing ("This object was destroyed"). The capture is unlit, so it needs
-    // no environment map: leave it as it was until the capture is over.
-    if (target.environmentMapManager) target.environmentMapManager.enabled = false;
 
     // Cesium keeps the camera above the terrain; from below the ground that would move it up
     // and widen the frustum, so the model came out as a dot.
@@ -270,7 +264,6 @@ export function captureUnderside(scene: Scene, target: Target, render: () => voi
     target.backFaceCulling = saved.cull;
     if ("pointCloudShading" in target && saved.edl !== undefined) target.pointCloudShading.eyeDomeLighting = saved.edl;
     if ("debugFreezeFrame" in target && saved.freeze !== undefined) target.debugFreezeFrame = saved.freeze;
-    if (target.environmentMapManager && saved.envMap !== undefined) target.environmentMapManager.enabled = saved.envMap;
     // Draw the normal frame now, so the capture is never what the user sees.
     render();
   }
