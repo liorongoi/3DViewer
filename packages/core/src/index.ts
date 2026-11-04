@@ -15,5 +15,6 @@ export { UserLayers, type UserLayer, type UserLayerSource, type PickedFeature } 
 export type { WmtsLayerInfo, WmsLayerInfo } from "./engine/ogc";
 export { LodInspector, type LodStats, type LodSettings } from "./engine/lod-inspector";
 export { checkFiles, prepareFiles, fromBytes, fmtBytes, type CheckReport, type CheckItem, type LocalFile, type Prepared } from "./loaders";
-export { converterForEpsg, type CrsConverter } from "./geo/crs";
+export { converterForEpsg, epsgDef, type CrsConverter } from "./geo/crs";
+export { gridFactors, placementFrame, placementFromGrid, transformPoint, type GridFactors, type GridPosition, type Placement } from "./geo/place";
 export { ENVIRONMENTS, type EnvironmentId } from "./engine/environments";

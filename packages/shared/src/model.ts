@@ -28,6 +28,8 @@ export interface ModelSource {
   clipTerrain?: boolean;
   /** The tileset is in local coordinates and is placed by the model's placement, like a GLB. */
   localFrame?: boolean;
+  /** A GLB that carries its own Earth position (CESIUM_RTC or an Earth-centred node); it has no placement. */
+  georeferenced?: boolean;
   /** Licence and origin, shown in Properties. */
   attribution?: string;
 }
@@ -60,6 +62,11 @@ export interface ModelSummary {
     scale?: number;
     /** The file's up axis. glTF is y-up; many CAD and FBX exports are z-up and would lie on their side. */
     upAxis?: "y" | "z";
+    /**
+     * The position as entered in a projected grid (ITM, UTM…). Grid north and grid scale are
+     * already folded into headingDeg and scale; these are kept to show what was entered.
+     */
+    grid?: { epsg: number; x: number; y: number; northDeg: number; groundPerGrid: number };
   };
   thumbnail?: string;
   sizeBytes: number;

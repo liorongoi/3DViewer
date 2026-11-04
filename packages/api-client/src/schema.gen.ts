@@ -976,6 +976,13 @@ export type paths = {
                         note?: string;
                         placement?: {
                             aboveGround?: number;
+                            grid?: {
+                                epsg: number;
+                                groundPerGrid: number;
+                                northDeg: number;
+                                x: number;
+                                y: number;
+                            };
                             headingDeg?: number;
                             height: number;
                             lat: number;
@@ -1215,6 +1222,13 @@ export type paths = {
                         operation?: string;
                         placement?: {
                             aboveGround?: number;
+                            grid?: {
+                                epsg: number;
+                                groundPerGrid: number;
+                                northDeg: number;
+                                x: number;
+                                y: number;
+                            };
                             headingDeg?: number;
                             height: number;
                             lat: number;
@@ -1229,6 +1243,7 @@ export type paths = {
                         source: {
                             attribution?: string;
                             clipTerrain?: boolean;
+                            georeferenced?: boolean;
                             /** @enum {unknown} */
                             groundFit?: "street" | "surface" | "none";
                             /** @enum {unknown} */
@@ -1413,6 +1428,13 @@ export type paths = {
                         note?: string;
                         placement?: {
                             aboveGround?: number;
+                            grid?: {
+                                epsg: number;
+                                groundPerGrid: number;
+                                northDeg: number;
+                                x: number;
+                                y: number;
+                            };
                             headingDeg?: number;
                             height: number;
                             lat: number;
@@ -1425,6 +1447,7 @@ export type paths = {
                         source: {
                             attribution?: string;
                             clipTerrain?: boolean;
+                            georeferenced?: boolean;
                             /** @enum {unknown} */
                             groundFit?: "street" | "surface" | "none";
                             /** @enum {unknown} */
@@ -1627,6 +1650,7 @@ export type components = {
         ModelSource: {
             attribution?: string;
             clipTerrain?: boolean;
+            georeferenced?: boolean;
             /** @enum {unknown} */
             groundFit?: "street" | "surface" | "none";
             /** @enum {unknown} */
@@ -1663,6 +1687,13 @@ export type components = {
         };
         Placement: {
             aboveGround?: number;
+            grid?: {
+                epsg: number;
+                groundPerGrid: number;
+                northDeg: number;
+                x: number;
+                y: number;
+            };
             headingDeg?: number;
             height: number;
             lat: number;

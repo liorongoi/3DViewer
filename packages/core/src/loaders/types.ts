@@ -30,8 +30,13 @@ export interface CheckReport {
   };
   /** Node names for the Layers step. */
   nodes: string[];
-  /** Position found in the file, if any. */
+  /** Earth position the model carries itself (3D Tiles transform, CESIUM_RTC, ECEF node), if any. */
   georef: { lat: number; lon: number; height: number } | null;
+  /**
+   * Position for the Place step read from a file beside the model (ContextCapture metadata.xml):
+   * the model origin in a coordinate system, with the model's axes along that system's grid.
+   */
+  filePosition?: { epsg: number; x: number; y: number; height: number; source: string } | null;
 }
 
 export interface Prepared {

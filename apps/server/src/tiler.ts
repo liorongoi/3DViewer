@@ -93,10 +93,10 @@ async function flatten(file: string, opts: TileOptions) {
         (a[5]! * a[6]! - a[3]! * a[8]!) / det, (a[0]! * a[8]! - a[2]! * a[6]!) / det, (a[2]! * a[3]! - a[0]! * a[5]!) / det,
         (a[3]! * a[7]! - a[4]! * a[6]!) / det, (a[1]! * a[6]! - a[0]! * a[7]!) / det, (a[0]! * a[4]! - a[1]! * a[3]!) / det,
       ];
-      // The orientation the viewer gives the same file as one model (Cesium's forward-axis turn
-      // included; see placeMatrix in packages/core/src/engine/viewer-engine.ts), in the y-up
-      // frame of the tile content.
-      const out = (x: number, y: number, z: number): Vec3 => (zUp ? [-y, z, -x] : [z, y, -x]);
+      // Tile content is Y-up glTF with east +X and north −Z, as the viewer reads a single model
+      // (packages/core/src/geo/place.ts), so a Y-up file passes through and a Z-up file
+      // (east +X, north +Y) is stood up.
+      const out = (x: number, y: number, z: number): Vec3 => (zUp ? [x, z, -y] : [x, y, z]);
       for (const prim of mesh.listPrimitives()) {
         if (prim.getMode() !== 4) {
           skipped++;

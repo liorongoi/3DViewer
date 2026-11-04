@@ -3,7 +3,6 @@ import {
   BoundingSphere,
   Cartesian2,
   Cartesian3,
-  Matrix3,
   ImageBasedLighting,
   Cartographic,
   Cesium3DTileset,
@@ -13,7 +12,6 @@ import {
   Color,
   CustomShader,
   HeadingPitchRange,
-  HeadingPitchRoll,
   ImageryLayer,
   Ion,
   JulianDate,
@@ -33,7 +31,6 @@ import {
   sampleTerrain,
   sampleTerrainMostDetailed,
   Tonemapper,
-  Transforms,
   HorizontalOrigin,
   VerticalOrigin,
   LabelStyle,
@@ -56,6 +53,7 @@ import { SightlineTool } from "./sightline";
 import { Viewshed } from "./viewshed";
 import { UserLayers } from "./user-layers";
 import { LodInspector } from "./lod-inspector";
+import { placementFrame } from "../geo/place";
 
 export type ViewMode = "shaded" | "edges" | "wireframe" | "unlit";
 export type Quality = "low" | "balanced" | "high" | "ultra";
@@ -325,17 +323,19 @@ export class ViewerEngine {
           tileset.modelMatrix = placeMatrix(summary.placement, this.modelBaseHeight);
         } else void this.fitTilesetToGround(tileset, summary).then(() => this.updateGroundCut());
       } else {
+        // A GLB with its own Earth position (CESIUM_RTC, an Earth-centred node) is drawn as it is.
+        const own = summary.source.georeferenced && !summary.placement;
         const place = summary.placement ?? { ...summary.centre, height: 0 };
-        const height = await this.placementHeight(place);
+        const height = own ? 0 : await this.placementHeight(place);
         this.modelBaseHeight = height;
         this.groundOffset.set(0);
         let gltfJson: unknown = null;
         const model = await Model.fromGltfAsync({
           url: summary.source.url,
-          modelMatrix: placeMatrix(place, height, place.upAxis === "z"),
-          scale: place.scale ?? 1,
-          upAxis: place.upAxis === "z" ? Axis.Z : Axis.Y,
-          forwardAxis: place.upAxis === "z" ? Axis.X : Axis.Z,
+          modelMatrix: own ? Matrix4.IDENTITY : placeMatrix(place, height),
+          scale: own ? 1 : (place.scale ?? 1),
+          upAxis: !own && place.upAxis === "z" ? Axis.Z : Axis.Y,
+          forwardAxis: Axis.X,
           shadows: ShadowMode.ENABLED,
           enableDebugWireframe: true,
           imageBasedLighting: this.makeIbl(),
@@ -616,6 +616,10 @@ export class ViewerEngine {
     let best: Underside | null = null;
     for (let i = 0; i < 4 && current(); i++) {
       await this.afterFrames(2);
+      // Not during a camera flight: the capture's orthographic camera makes the flight's next
+      // step pick against the last frame's commands, which can hold the previous model's
+      // destroyed buffers (seen when one upload replaced another).
+      for (let w = 0; w < 50 && (this.widget.scene as unknown as { tweens: { length: number } }).tweens.length > 0 && current(); w++) await this.afterFrames(1);
       if (!current()) break;
       const u = captureUnderside(this.widget.scene, target, () => this.widget.render());
       if (coverage(u) > coverage(best)) best = u;
@@ -776,11 +780,11 @@ export class ViewerEngine {
     const m = this.current.get();
     const placed = this.model ?? (m?.source.localFrame ? this.tileset : null);
     if (placed && m?.placement) {
-      placed.modelMatrix = placeMatrix(m.placement, this.modelBaseHeight + metres, placed === this.model && m.placement.upAxis === "z");
+      placed.modelMatrix = placeMatrix(m.placement, this.modelBaseHeight + metres);
       this.widget.scene.requestRender();
       return;
     }
-    const t = this.tileset;
+    const t = this.tileset ?? this.model;
     if (!t) return;
     const c = t.boundingSphere.center;
     const up = Cartesian3.normalize(c, new Cartesian3());
@@ -1182,15 +1186,13 @@ export interface SharedView {
 }
 
 /**
- * Where a model or local-frame tileset stands. For a model loaded Z-up (`zUpModel`) Cesium is
- * given forward X, since its default glTF forward axis (Z) would turn the model onto its side;
- * the quarter turn here then makes a Z-up file face the same way as the same file in Y-up,
- * so switching the up axis in the Place step stands a model up without spinning it.
- * The tiler bakes the same orientation into tiles (apps/server/src/tiler.ts).
+ * Where a model or local-frame tileset stands: x east, y north, z up, turned by the heading
+ * (packages/core/src/geo/place.ts). Models load with Cesium's forward axis X, so a Y-up glTF
+ * has east +X and north −Z, and a Z-up file east +X and north +Y, as the tools that wrote them
+ * meant; the tiler bakes the same orientation into tiles (apps/server/src/tiler.ts).
  */
-function placeMatrix(p: NonNullable<ModelSummary["placement"]>, height: number, zUpModel = false): Matrix4 {
-  const m = Transforms.headingPitchRollToFixedFrame(Cartesian3.fromDegrees(p.lon, p.lat, height), new HeadingPitchRoll(CMath.toRadians(p.headingDeg ?? 0), 0, 0));
-  return zUpModel ? Matrix4.multiply(m, Matrix4.fromRotation(Matrix3.fromRotationZ(CMath.PI_OVER_TWO)), m) : m;
+function placeMatrix(p: NonNullable<ModelSummary["placement"]>, height: number): Matrix4 {
+  return Matrix4.fromArray(placementFrame(p, height));
 }
 
 function friendlyReason(err: Error): string {

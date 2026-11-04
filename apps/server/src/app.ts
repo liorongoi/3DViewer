@@ -35,13 +35,13 @@ const centre = { type: "object", required: ["lat", "lon"], properties: { lat: { 
 const source = {
   type: "object",
   required: ["kind", "url"],
-  properties: { kind: { enum: ["glb", "3dtiles"] }, url: { type: "string", maxLength: 4000 }, groundFit: { enum: ["street", "surface", "none"] }, clipTerrain: { type: "boolean" }, localFrame: { type: "boolean" }, attribution: str },
+  properties: { kind: { enum: ["glb", "3dtiles"] }, url: { type: "string", maxLength: 4000 }, groundFit: { enum: ["street", "surface", "none"] }, clipTerrain: { type: "boolean" }, localFrame: { type: "boolean" }, georeferenced: { type: "boolean" }, attribution: str },
   additionalProperties: false,
 } as const;
 const placement = {
   type: "object",
   required: ["lat", "lon", "height"],
-  properties: { lat: { type: "number" }, lon: { type: "number" }, height: { type: "number" }, aboveGround: { type: "number" }, headingDeg: { type: "number" }, scale: { type: "number", exclusiveMinimum: 0 }, upAxis: { enum: ["y", "z"] } },
+  properties: { lat: { type: "number" }, lon: { type: "number" }, height: { type: "number" }, aboveGround: { type: "number" }, headingDeg: { type: "number" }, scale: { type: "number", exclusiveMinimum: 0 }, upAxis: { enum: ["y", "z"] }, grid: { type: "object", required: ["epsg", "x", "y", "northDeg", "groundPerGrid"], properties: { epsg: { type: "integer" }, x: { type: "number" }, y: { type: "number" }, northDeg: { type: "number" }, groundPerGrid: { type: "number", exclusiveMinimum: 0 } }, additionalProperties: false } },
   additionalProperties: false,
 } as const;
 const idParam = { type: "object", required: ["id"], properties: { id: { type: "string", maxLength: 200 } } } as const;

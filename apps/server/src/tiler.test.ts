@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { Document, NodeIO } from "@gltf-transform/core";
 import { describe, expect, it } from "vitest";
 import { gridGlb } from "./test-models.ts";
 import { tileModel } from "./tiler.ts";
@@ -69,5 +70,29 @@ describe("tiler (WP 3.4)", () => {
     expect(bz[3]).toBeCloseTo(0.5, 4);
     expect(bz[7]).toBeCloseTo(0.5, 4);
     expect(bz[11]).toBeLessThan(0.021);
+  }, 60_000);
+
+  it("keeps east, north and up where the viewer puts them for a single model", async () => {
+    // One small triangle 30 m east, 70 m north and 5 m up, written Y-up (north is −Z) and Z-up.
+    const marker = async (p: [number, number, number]) => {
+      const doc = new Document();
+      const buf = doc.createBuffer();
+      const d = 0.5;
+      const pos = doc.createAccessor().setType("VEC3").setBuffer(buf).setArray(new Float32Array([p[0] - d, p[1] - d, p[2] - d, p[0] + d, p[1] - d, p[2] + d, p[0], p[1] + d, p[2]]));
+      const idx = doc.createAccessor().setType("SCALAR").setBuffer(buf).setArray(new Uint32Array([0, 1, 2]));
+      const mesh = doc.createMesh().addPrimitive(doc.createPrimitive().setAttribute("POSITION", pos).setIndices(idx));
+      doc.createScene().addChild(doc.createNode().setMesh(mesh));
+      const dir = mkdtempSync(path.join(tmpdir(), "tile-"));
+      await new NodeIO().write(path.join(dir, "in.glb"), doc);
+      return { input: path.join(dir, "in.glb"), out: path.join(dir, "out") };
+    };
+    const y = await marker([30, 5, -70]);
+    const z = await marker([30, 70, 5]);
+    await tileModel(y.input, y.out, {});
+    await tileModel(z.input, z.out, { upAxis: "z" });
+    for (const o of [y.out, z.out]) {
+      const box = JSON.parse(readFileSync(path.join(o, "tileset.json"), "utf8")).root.boundingVolume.box as number[];
+      expect(box.slice(0, 3).map((v) => Math.round(v))).toEqual([30, 70, 5]);
+    }
   }, 60_000);
 });

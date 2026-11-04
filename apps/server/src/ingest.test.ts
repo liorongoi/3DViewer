@@ -459,3 +459,31 @@ describe("job queue", () => {
     expect(b!.state).toBe("failed");
   });
 });
+
+describe("georeference (WP 1.3)", () => {
+  it("places an upload from the metadata.xml beside it, grid north and scale included", async () => {
+    const xml = enc("<ModelMetadata version=\"1\"><SRS>EPSG:2039</SRS><SRSOrigin>280171.881,813577.484,2000</SRSOrigin></ModelMetadata>");
+    const ing = await upload([{ path: "hermon/Data/site.glb", data: glb(triangle) }, { path: "hermon/metadata.xml", data: xml }], { model });
+    const done = await submitAndRun(ing.id);
+    expect(done, JSON.stringify(done.report?.items)).toMatchObject({ state: "ready" });
+    const m = (await app.inject(`/api/models/${done.modelId}`)).json();
+    expect(m.placement.lat).toBeCloseTo(33.4163, 6);
+    expect(m.placement.lon).toBeCloseTo(35.8572, 6);
+    expect(m.placement).toMatchObject({ height: 2000, grid: { epsg: 2039, x: 280171.881, y: 813577.484 } });
+    // Grid north on Mount Hermon is 0.36° east of true north.
+    expect(m.placement.headingDeg).toBeCloseTo(0.3595, 3);
+    expect(m.centre.lat).toBeCloseTo(33.4163, 6);
+  });
+
+  it("publishes a GLB with its own Earth position as it is, with no placement", async () => {
+    // Haifa, in ECEF metres, as a CESIUM_RTC centre.
+    const own = { ...triangle, extensionsUsed: ["CESIUM_RTC"], extensions: { CESIUM_RTC: { center: [4396858.842, 3077524.467, 3434781.512] } } };
+    const ing = await upload([{ path: "port.glb", data: glb(own) }], { model });
+    const done = await submitAndRun(ing.id);
+    expect(done, JSON.stringify(done.report?.items)).toMatchObject({ state: "ready" });
+    const m = (await app.inject(`/api/models/${done.modelId}`)).json();
+    expect(m.placement).toBeUndefined();
+    expect(m.source.georeferenced).toBe(true);
+    expect(m.centre.lat).toBeCloseTo(32.79, 1);
+  });
+});

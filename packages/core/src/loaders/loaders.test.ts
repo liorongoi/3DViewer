@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { zipSync } from "fflate";
-import { checkFiles, fromBytes, resolvePath } from "./index";
+import { checkFiles, fromBytes, parseMetadataXml, resolvePath } from "./index";
+import { geodeticToEcef } from "../geo/wgs84";
 
 const enc = (s: string) => new TextEncoder().encode(s);
 
@@ -164,5 +165,57 @@ describe("model size", () => {
     expect(s[2]).toBeCloseTo(100);
     const { report } = await checkFiles([fromBytes("tri.glb", glb({ ...triangle, accessors: [{ count: 3, min: [0, 0, 0], max: [4, 3, 0] }] }))]);
     expect(report.stats.size).toEqual([4, 3, 0]);
+  });
+});
+
+describe("position carried by the file (WP 1.3)", () => {
+  // Jerusalem at 800 m, in ECEF.
+  const o = geodeticToEcef({ lat: 31.7767, lon: 35.2345, height: 800 });
+  const box = { count: 3, min: [-5, -1, -5], max: [5, 1, 5] };
+  const at = (g: object) => checkFiles([fromBytes("m.glb", glb({ ...triangle, accessors: [box], ...g }))]).then((r) => r.report);
+
+  it("reads a CESIUM_RTC centre", async () => {
+    const r = await at({ extensionsUsed: ["CESIUM_RTC"], extensions: { CESIUM_RTC: { center: [o.x, o.y, o.z] } } });
+    expect(r.georef!.lat).toBeCloseTo(31.7767, 7);
+    expect(r.georef!.lon).toBeCloseTo(35.2345, 7);
+    expect(r.georef!.height).toBeCloseTo(800, 3);
+    expect(r.items.find((i) => i.id === "georef")).toMatchObject({ severity: "ok", title: "Georeferenced" });
+  });
+
+  it("reads an Earth-centred node offset, Y-up as Cesium draws it", async () => {
+    const r = await at({ nodes: [{ mesh: 0, translation: [o.x, o.z, -o.y] }] });
+    expect(r.georef!.lat).toBeCloseTo(31.7767, 6);
+    expect(r.georef!.lon).toBeCloseTo(35.2345, 6);
+    expect(r.items.some((i) => i.title.startsWith("Vertex positions"))).toBe(false);
+  });
+
+  it("warns when the vertices themselves are Earth-centred", async () => {
+    const r = await at({ accessors: [{ count: 3, min: [o.x - 5, o.z - 5, -o.y - 5], max: [o.x + 5, o.z + 5, -o.y + 5] }] });
+    expect(r.georef).not.toBeNull();
+    expect(r.items.find((i) => i.title.startsWith("Vertex positions"))).toMatchObject({ severity: "warning", title: "Vertex positions are only accurate to about 26 cm" });
+  });
+
+  it("leaves a model near the origin unplaced", async () => {
+    const r = await at({});
+    expect(r.georef).toBeNull();
+    expect(r.filePosition).toBeUndefined();
+  });
+
+  it("takes the position from a ContextCapture metadata.xml beside the model", async () => {
+    const xml = '<?xml version="1.0" encoding="utf-8"?>\n<ModelMetadata version="1">\n\t<SRS>EPSG:2039</SRS>\n\t<SRSOrigin>222303.615,631557.918,780.5</SRSOrigin>\n\t<Texture><ColorSource>Visible</ColorSource></Texture>\n</ModelMetadata>';
+    const { report } = await checkFiles([fromBytes("site/Data/m.glb", glb(triangle)), fromBytes("site/metadata.xml", enc(xml))]);
+    expect(report.georef).toBeNull();
+    expect(report.filePosition).toEqual({ epsg: 2039, x: 222303.615, y: 631557.918, height: 780.5, source: "metadata.xml" });
+    expect(report.items.filter((i) => i.id === "georef")).toEqual([{ id: "georef", severity: "ok", title: "Position from the export's metadata", detail: "metadata.xml: EPSG:2039, origin 222303.615, 631557.918, 780.5" }]);
+  });
+
+  it("reads ENU and compound systems, and names what it cannot use", () => {
+    const enu = parseMetadataXml("<ModelMetadata><SRS>ENU:31.7767,35.2345</SRS><SRSOrigin>0,0,0</SRSOrigin></ModelMetadata>");
+    expect(enu.position).toMatchObject({ epsg: 4326 });
+    expect(enu.position!.x).toBeCloseTo(35.2345, 9);
+    expect(enu.position!.y).toBeCloseTo(31.7767, 9);
+    expect(parseMetadataXml("<SRS>EPSG:32636+5773</SRS><SRSOrigin>711594,3517858,0</SRSOrigin>").position).toMatchObject({ epsg: 32636, x: 711594 });
+    expect(parseMetadataXml("<SRS>EPSG:9999</SRS>").items[0]).toMatchObject({ severity: "warning", detail: expect.stringContaining("EPSG:9999") });
+    expect(parseMetadataXml('<SRS>PROJCS["x"]</SRS>').position).toBeNull();
   });
 });
