@@ -8,6 +8,7 @@ import type { Db } from "./db.ts";
 import { registerIngest } from "./ingest.ts";
 import { enqueue } from "./jobs.ts";
 import { registerFiles, type Storage } from "./storage.ts";
+import { addSchemas, arrayOf, bool, closed, int, ref, text, checkContract } from "./schemas.ts";
 import { addVersion, createModel, getModel, listModels, listVersions, updateModel, type LibraryFilter, type ModelPatch, type NewModel } from "./library.ts";
 
 export interface AppOptions {
@@ -21,6 +22,11 @@ export interface AppOptions {
   corsOrigins?: string[];
   /** A thumbnail worker runs, so a classification change re-renders the band on the thumbnail. */
   thumbnails?: boolean;
+  /**
+   * Check every JSON answer against the published contract and fail it with a 500 if it does
+   * not match, instead of trimming it to the schema. On in tests (WP 3.1 contract tests).
+   */
+  contract?: boolean;
 }
 
 const FORMATS = ["glb", "gltf", "fbx", "3dtiles"];
@@ -46,7 +52,16 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: opts.logger ?? false, trustProxy: true, bodyLimit: 1024 * 1024 });
   await app.register(swagger, {
     openapi: { info: { title: "VIEWER library API", version: "0.1.0", description: "Library, versions and audit for the 3D Intelligence Model Viewer." } },
+    // Shared schemas keep their names in the published document (components/schemas/ModelSummary…).
+    refResolver: { buildLocalReference: (json, _base, _frag, i) => (typeof json.$id === "string" ? json.$id : `def-${i}`) },
   });
+  addSchemas(app);
+  // Every API route can answer with an error object; say so once here rather than on each route.
+  app.addHook("onRoute", (r) => {
+    if (!r.url.startsWith("/api/") || (r.schema as { hide?: boolean } | undefined)?.hide) return;
+    r.schema = { ...r.schema, response: { "4xx": ref("Error"), "5xx": ref("Error"), ...((r.schema?.response as object) ?? {}) } };
+  });
+  if (opts.contract ?? !!process.env.VITEST) await checkContract(app);
 
   const cors = opts.corsOrigins ?? [];
   if (cors.length) {
@@ -86,9 +101,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     reply.status(status).send({ error: status >= 500 ? "The server could not complete the request." : err.message, code: err.code });
   });
 
-  app.get("/api/health", { schema: { tags: ["system"] } }, async () => ({ ok: true, db: db.kind }));
+  app.get("/api/health", { schema: { tags: ["system"], response: { 200: closed({ ok: bool, db: text }, ["ok", "db"]) } } }, async () => ({ ok: true, db: db.kind }));
 
-  app.get("/api/classifications", { schema: { tags: ["library"] } }, async () =>
+  app.get("/api/classifications", { schema: { tags: ["library"], response: { 200: arrayOf("Classification") } } }, async () =>
     (await db.query<{ id: string; label: string; color: string; text_color: string; ord: number }>("SELECT * FROM classifications ORDER BY ord")).map((c) => ({
       id: c.id,
       label: c.label,
@@ -104,12 +119,13 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       schema: {
         tags: ["library"],
         querystring: { type: "object", properties: { q: str, project: str, operation: str, status: { enum: UPDATE_STATUSES }, entity: str, classification: str } },
+        response: { 200: arrayOf("ModelSummary") },
       },
     },
     async (req) => listModels(db, req.query),
   );
 
-  app.get<{ Params: { id: string } }>("/api/models/:id", { schema: { tags: ["library"], params: idParam } }, async (req, reply) => {
+  app.get<{ Params: { id: string } }>("/api/models/:id", { schema: { tags: ["library"], params: idParam, response: { 200: ref("ModelDetail") } } }, async (req, reply) => {
     const m = await getModel(db, req.params.id);
     if (!m) return reply.status(404).send({ error: "No model with this id." });
     await audit(db, { ...(await who(req)), action: "model.view", target: m.id, detail: { version: m.version } });
@@ -140,6 +156,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
           },
           additionalProperties: false,
         },
+        response: { 201: ref("ModelSummary") },
       },
     },
     async (req, reply) => {
@@ -167,6 +184,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
           properties: { name: { type: "string", minLength: 1, maxLength: 300 }, project: str, operation: str, responsibleEntity: str, description: { type: "string", maxLength: 20000 }, status: { enum: UPDATE_STATUSES }, classificationId: { type: "string", minLength: 1 } },
           additionalProperties: false,
         },
+        response: { 200: ref("ModelSummary") },
       },
     },
     async (req, reply) => {
@@ -196,6 +214,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
         tags: ["library"],
         params: idParam,
         body: { type: "object", required: ["source"], properties: { source, placement, sizeBytes: { type: "integer", minimum: 0 }, note: str }, additionalProperties: false },
+        response: { 201: ref("ModelSummary") },
       },
     },
     async (req, reply) => {
@@ -230,15 +249,15 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     return db.query<AuditRow>(`SELECT * FROM audit_events${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY seq DESC LIMIT $${p.length}`, p);
   };
 
-  app.get<{ Querystring: AuditQ }>("/api/audit", { onRequest: admin, schema: { tags: ["audit"], querystring: auditQuery } }, async (req) =>
+  app.get<{ Querystring: AuditQ }>("/api/audit", { onRequest: admin, schema: { tags: ["audit"], querystring: auditQuery, response: { 200: arrayOf("AuditEvent") } } }, async (req) =>
     (await auditRows(req.query)).map((r) => ({ ...r, seq: Number(r.seq), at: new Date(r.at).toISOString() })),
   );
-  app.get<{ Querystring: AuditQ }>("/api/audit.csv", { onRequest: admin, schema: { tags: ["audit"], querystring: auditQuery } }, async (req, reply) => {
+  app.get<{ Querystring: AuditQ }>("/api/audit.csv", { onRequest: admin, schema: { tags: ["audit"], querystring: auditQuery, response: { 200: { description: "The log as CSV (UTF-8 with BOM), oldest first.", content: { "text/csv": { schema: { type: "string" } } } } } } }, async (req, reply) => {
     await audit(db, { ...(await who(req)), action: "audit.export", detail: { ...req.query } });
     reply.header("content-type", "text/csv; charset=utf-8").header("content-disposition", 'attachment; filename="viewer-audit.csv"');
     return "﻿" + auditCsv((await auditRows(req.query)).reverse());
   });
-  app.get("/api/audit/verify", { onRequest: admin, schema: { tags: ["audit"] } }, async () => verifyAudit(db));
+  app.get("/api/audit/verify", { onRequest: admin, schema: { tags: ["audit"], response: { 200: closed({ ok: bool, count: int, brokenAt: text, firstSeq: int }, ["ok", "count"]) } } }, async () => verifyAudit(db));
 
   if (opts.storage) {
     registerFiles(app, opts.storage);

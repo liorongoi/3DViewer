@@ -1,5 +1,6 @@
 import type { BaseMapConfig, ClassificationLevel } from "@viewer/shared";
-import { call, type ServerInfo } from "./api";
+import { createApiClient, must, type ApiClient, type paths, type Schemas } from "@viewer/api-client";
+import type { ServerInfo } from "./api";
 
 /**
  * The admin API (WP 3.9). The sign-in token lives in this tab's session storage, so it ends
@@ -23,94 +24,78 @@ function keep(token: string | null): void {
   }
 }
 
-export interface StorageInfo {
-  publishedBytes: number;
-  uploadingBytes: number;
-  usedBytes: number;
-  models: number;
-  versions: number;
-  quotaBytes: number | null;
-  disk: { freeBytes: number; totalBytes: number } | null;
-}
-
-export interface AuditEntry {
-  seq: number;
-  at: string;
-  ip: string;
-  host: string;
-  action: string;
-  target: string;
-  detail: Record<string, unknown>;
-  hash: string;
-}
+export type StorageInfo = paths["/api/admin/storage"]["get"]["responses"][200]["content"]["application/json"];
+export type AuditEntry = Schemas["AuditEvent"];
+type AuditQuery = NonNullable<paths["/api/audit"]["get"]["parameters"]["query"]>;
 
 export class AdminApi {
+  private readonly api: ApiClient;
   constructor(
     readonly srv: ServerInfo,
     private token: string | null = savedToken(),
-  ) {}
-
-  private as<T>(path: string, init: RequestInit = {}): Promise<T> {
-    return call<T>(this.srv, path, { ...init, headers: { ...(init.headers as Record<string, string>), ...(this.token ? { authorization: `Bearer ${this.token}` } : {}) } });
+  ) {
+    // Its own client, so the sign-in token goes only on admin calls.
+    this.api = createApiClient(srv.base);
+    this.api.use({
+      onRequest: ({ request }) => {
+        if (this.token) request.headers.set("authorization", `Bearer ${this.token}`);
+        return request;
+      },
+    });
   }
-  private json<T>(method: string, path: string, body: unknown): Promise<T> {
-    return this.as<T>(path, { method, body: JSON.stringify(body) });
-  }
 
-  status(): Promise<{ passwordSet: boolean; signedIn: boolean }> {
-    return this.as("/api/admin/status");
+  async status() {
+    return must(await this.api.GET("/api/admin/status"));
   }
   async login(password: string): Promise<void> {
-    const r = await call<{ token: string }>(this.srv, "/api/admin/login", { method: "POST", body: JSON.stringify({ password }) });
+    const r = must(await this.api.POST("/api/admin/login", { body: { password } }));
     this.token = r.token;
     keep(r.token);
   }
   async logout(): Promise<void> {
-    await this.as("/api/admin/logout", { method: "POST" }).catch(() => undefined);
+    await this.api.POST("/api/admin/logout").catch(() => undefined);
     this.token = null;
     keep(null);
   }
-  changePassword(current: string, next: string): Promise<unknown> {
-    return this.json("POST", "/api/admin/password", { current, next });
+  async changePassword(current: string, next: string) {
+    return must(await this.api.POST("/api/admin/password", { body: { current, next } }));
   }
 
-  saveLevel(l: ClassificationLevel): Promise<ClassificationLevel & { thumbnailsQueued: number }> {
-    return this.json("PUT", `/api/admin/classifications/${encodeURIComponent(l.id)}`, { label: l.label, color: l.color, textColor: l.textColor, order: l.order });
+  async saveLevel(l: ClassificationLevel) {
+    return must(await this.api.PUT("/api/admin/classifications/{id}", { params: { path: { id: l.id } }, body: { label: l.label, color: l.color, textColor: l.textColor, order: l.order } }));
   }
-  removeLevel(id: string): Promise<unknown> {
-    return this.as(`/api/admin/classifications/${encodeURIComponent(id)}`, { method: "DELETE" });
-  }
-
-  deleteModel(id: string, confirm: string): Promise<{ name: string; versions: number; bytes: number }> {
-    return this.json("DELETE", `/api/admin/models/${encodeURIComponent(id)}`, { confirm });
+  async removeLevel(id: string) {
+    return must(await this.api.DELETE("/api/admin/classifications/{id}", { params: { path: { id } } }));
   }
 
-  storage(): Promise<StorageInfo> {
-    return this.as("/api/admin/storage");
-  }
-  setQuota(quotaBytes: number | null): Promise<unknown> {
-    return this.json("PUT", "/api/admin/storage", { quotaBytes });
+  async deleteModel(id: string, confirm: string) {
+    return must(await this.api.DELETE("/api/admin/models/{id}", { params: { path: { id } }, body: { confirm } }));
   }
 
-  saveBaseMaps(cfg: BaseMapConfig): Promise<BaseMapConfig> {
-    return this.json("PUT", "/api/admin/basemaps", cfg);
+  async storage(): Promise<StorageInfo> {
+    return must(await this.api.GET("/api/admin/storage"));
+  }
+  async setQuota(quotaBytes: number | null) {
+    return must(await this.api.PUT("/api/admin/storage", { body: { quotaBytes } }));
   }
 
-  audit(q: { action?: string; from?: string; to?: string; target?: string; limit?: number }): Promise<AuditEntry[]> {
-    return this.as(`/api/audit?${query(q)}`);
+  async saveBaseMaps(cfg: BaseMapConfig): Promise<BaseMapConfig> {
+    return must(await this.api.PUT("/api/admin/basemaps", { body: cfg }));
   }
-  async auditCsv(q: { action?: string; from?: string; to?: string; target?: string }): Promise<string> {
-    const r = await fetch(`${this.srv.base}/api/audit.csv?${query({ ...q, limit: 100000 })}`, { headers: this.token ? { authorization: `Bearer ${this.token}` } : {} });
-    if (!r.ok) throw new Error(`The server answered ${r.status}.`);
-    return (await r.text()).replace(/^﻿/, "");
+
+  async audit(q: AuditQuery): Promise<AuditEntry[]> {
+    return must(await this.api.GET("/api/audit", { params: { query: clean(q) } }));
   }
-  verifyAudit(): Promise<{ ok: boolean; count: number; brokenAt?: number }> {
-    return this.as("/api/audit/verify");
+  async auditCsv(q: Omit<AuditQuery, "limit">): Promise<string> {
+    const r = must(await this.api.GET("/api/audit.csv", { params: { query: clean({ ...q, limit: 100000 }) }, parseAs: "text" }));
+    return r.replace(/^\uFEFF/, "");
+  }
+  async verifyAudit() {
+    return must(await this.api.GET("/api/audit/verify"));
   }
 }
 
-function query(q: Record<string, string | number | undefined>): string {
-  const p = new URLSearchParams();
-  for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== "") p.set(k, String(v));
-  return p.toString();
+/** Empty filter fields are left out rather than sent as "". */
+function clean<T extends Record<string, string | number | undefined>>(q: T): T {
+  return Object.fromEntries(Object.entries(q).filter(([, v]) => v !== undefined && v !== "")) as T;
 }

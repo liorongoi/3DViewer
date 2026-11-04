@@ -13,6 +13,7 @@ import { audit } from "./audit.ts";
 import type { Db, Queryable } from "./db.ts";
 import { enqueue, PermanentError, type Handler } from "./jobs.ts";
 import { addVersion, createModel, type NewModel } from "./library.ts";
+import { closed, int, ref, text } from "./schemas.ts";
 import { Storage, validRelPath } from "./storage.ts";
 import { TILE_IF, tileModel } from "./tiler.ts";
 import { validateOfficial } from "./validate.ts";
@@ -137,6 +138,10 @@ export function registerIngest(
           },
           additionalProperties: false,
         },
+        // Where to send each file with tus.
+        response: {
+          201: closed({ id: text, state: { enum: ["uploading"] }, uploads: { type: "array", items: closed({ path: text, size: int, url: text }, ["path", "size", "url"]) } }, ["id", "state", "uploads"]),
+        },
       },
     },
     async (req, reply) => {
@@ -177,7 +182,7 @@ export function registerIngest(
   };
   const tusParams = { type: "object", required: ["id"], properties: { id: { type: "string", format: "uuid" } } } as const;
 
-  app.head<{ Params: { id: string } }>("/api/tus/:id", { schema: { tags: ["upload"], params: tusParams } }, async (req, reply) => {
+  app.head<{ Params: { id: string } }>("/api/tus/:id", { schema: { tags: ["upload"], params: tusParams, response: { 200: { description: "Upload-Offset and Upload-Length say how much has arrived.", type: "null" } } } }, async (req, reply) => {
     const u = await uploadById(req.params.id);
     reply.header("tus-resumable", TUS).header("cache-control", "no-store");
     if (!u) return reply.status(404).send();
@@ -186,7 +191,7 @@ export function registerIngest(
 
   app.patch<{ Params: { id: string }; Body: Readable }>(
     "/api/tus/:id",
-    { bodyLimit: LIMITS.file, schema: { tags: ["upload"], params: tusParams } },
+    { bodyLimit: LIMITS.file, schema: { tags: ["upload"], params: tusParams, response: { 204: { description: "Stored; Upload-Offset is the new offset.", type: "null" } } } },
     async (req, reply) => {
       reply.header("tus-resumable", TUS);
       if (req.headers["content-type"] !== "application/offset+octet-stream") return reply.status(415).send({ error: "Send the bytes as application/offset+octet-stream." });
@@ -222,7 +227,7 @@ export function registerIngest(
     },
   );
 
-  app.post<{ Params: { id: string } }>("/api/ingests/:id/submit", { schema: { tags: ["upload"], params: { type: "object", required: ["id"], properties: { id: { type: "string" } } } } }, async (req, reply) => {
+  app.post<{ Params: { id: string } }>("/api/ingests/:id/submit", { schema: { tags: ["upload"], params: { type: "object", required: ["id"], properties: { id: { type: "string" } } }, response: { 202: ref("IngestStatus") } } }, async (req, reply) => {
     const [ing] = await db.query<IngestRow>("SELECT * FROM ingests WHERE id = $1", [req.params.id]);
     if (!ing) return reply.status(404).send({ error: "No upload with this id." });
     if (ing.state !== "uploading") return reply.status(409).send({ error: "This upload is already submitted." });
@@ -239,7 +244,7 @@ export function registerIngest(
     return reply.status(202).send(await ingestStatus(db, storage, ing.id));
   });
 
-  app.get<{ Params: { id: string } }>("/api/ingests/:id", { schema: { tags: ["upload"], params: { type: "object", required: ["id"], properties: { id: { type: "string" } } } } }, async (req, reply) => {
+  app.get<{ Params: { id: string } }>("/api/ingests/:id", { schema: { tags: ["upload"], params: { type: "object", required: ["id"], properties: { id: { type: "string" } } }, response: { 200: ref("IngestStatus") } } }, async (req, reply) => {
     const s = await ingestStatus(db, storage, req.params.id);
     return s ?? reply.status(404).send({ error: "No upload with this id." });
   });
