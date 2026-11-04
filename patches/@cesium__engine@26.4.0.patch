@@ -1,0 +1,70 @@
+diff --git a/Source/Renderer/ComputeEngine.js b/Source/Renderer/ComputeEngine.js
+index 4f84db3c89fd3e39006225bef4a26529052b3bdd..acea16bfe9b00c99f8d6d254d43033febf859c99 100644
+--- a/Source/Renderer/ComputeEngine.js
++++ b/Source/Renderer/ComputeEngine.js
+@@ -63,6 +63,16 @@ function createRenderState(width, height) {
+ }
+ 
+ ComputeEngine.prototype.execute = function (computeCommand) {
++  // A command canceled after it was queued, or one that already ran (the dynamic environment
++  // map can queue the same command twice in a frame), may point at freed resources: skip it,
++  // and let its owner know.
++  if (computeCommand.canceled === true) {
++    if (defined(computeCommand.postExecute)) {
++      computeCommand.postExecute(undefined);
++    }
++    return;
++  }
++
+   //>>includeStart('debug', pragmas.debug);
+   Check.defined("computeCommand", computeCommand);
+   //>>includeEnd('debug');
+diff --git a/Source/Scene/DynamicEnvironmentMapManager.js b/Source/Scene/DynamicEnvironmentMapManager.js
+index 395025c288e5eafd370cbf458ee70d23e408cfc7..96c274c0ecaa9dda93a5d5bd0aa73ce4cf58223f 100644
+--- a/Source/Scene/DynamicEnvironmentMapManager.js
++++ b/Source/Scene/DynamicEnvironmentMapManager.js
+@@ -582,6 +582,8 @@ function updateRadianceMap(manager, frameState) {
+           DynamicEnvironmentMapManager._activeComputeCommandCount--;
+           return;
+         }
++        // Done: a second copy of this command in the frame's list is then skipped.
++        command.canceled = true;
+ 
+         const commands = manager._radianceMapComputeCommands;
+         commands[index] = undefined;
+@@ -657,6 +659,9 @@ function updateSpecularMaps(manager, frameState) {
+       DynamicEnvironmentMapManager._activeComputeCommandCount--;
+       return;
+     }
++    // Done: a second copy of this command in the frame's list is then skipped, not run with
++    // the resources this run frees.
++    command.canceled = true;
+ 
+     // Copy output texture to corresponding face and mipmap level
+     const commands = manager._convolutionComputeCommands;
+@@ -788,6 +793,9 @@ function updateIrradianceResources(manager, frameState) {
+       DynamicEnvironmentMapManager._activeComputeCommandCount--;
+       return;
+     }
++    // Done: a second copy of this command in the frame's list is then skipped, not run with
++    // the resources this run frees.
++    command.canceled = true;
+     manager._irradianceTextureDirty = false;
+     manager._irradianceComputeCommand = undefined;
+     manager._sphericalHarmonicCoefficientsDirty = true;
+diff --git a/Source/Scene/Model/CustomShaderPipelineStage.js b/Source/Scene/Model/CustomShaderPipelineStage.js
+index 1e2c3cd804ddf6fb3c615185ec898d31fd9cb66c..34079e5793e94547cc5c290a5d1e6ce95d2e334f 100644
+--- a/Source/Scene/Model/CustomShaderPipelineStage.js
++++ b/Source/Scene/Model/CustomShaderPipelineStage.js
+@@ -728,6 +728,11 @@ function getAllPropertyIds(primitive, structuralMetadata) {
+   function addUsedPropertyIds(propertyContainerIds, propertyContainers) {
+     for (const id of propertyContainerIds) {
+       const propertyContainer = propertyContainers[id];
++      // A b3dm or i3dm with a batch length but no batch table has a property table with no
++      // class; without this check any custom shader on it stopped rendering.
++      if (!defined(propertyContainer) || !defined(propertyContainer.class)) {
++        continue;
++      }
+       const classProperties = propertyContainer.class.properties;
+ 
+       Object.keys(classProperties).forEach((propertyId) =>

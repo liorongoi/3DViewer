@@ -7,3 +7,5 @@ minimumReleaseAgeExclude:
 allowBuilds:
   sharp: true
   better-sqlite3: false
+patchedDependencies:
+  '@cesium/engine@26.4.0': patches/@cesium__engine@26.4.0.patch
