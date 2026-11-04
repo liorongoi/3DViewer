@@ -56,6 +56,9 @@ export class CameraController {
     ssc.enableZoom = false;
     ssc.enableTilt = false;
     ssc.enableLook = false;
+    // Touch gestures belong to the view: without this the browser scrolls or zooms the page
+    // and cancels the pointers part-way through a pinch.
+    this.canvas.style.touchAction = "none";
 
     const on = <K extends keyof HTMLElementEventMap>(type: K, fn: (e: HTMLElementEventMap[K]) => void, o?: AddEventListenerOptions) => {
       this.canvas.addEventListener(type, fn as EventListener, o);

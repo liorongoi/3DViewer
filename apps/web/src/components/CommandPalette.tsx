@@ -76,7 +76,7 @@ export function CommandPalette({ onOpenModel }: { onOpenModel: (id: string) => v
           {flatLayers.length > 0 && (
             <Command.Group heading={t("palette.layers")} className={group}>
               {flatLayers.slice(0, 200).map((l) => (
-                <Command.Item key={l.id} value={`layer ${l.name} ${l.id}`} className={item} onSelect={run(() => void engine?.focusLayer(l.id))}>
+                <Command.Item key={l.id} value={`layer ${l.name} ${l.id}`} className={item} onSelect={run(() => (engine?.selectedLayer.set(l.id), void engine?.focusLayer(l.id)))}>
                   <Eye size={16} /><span data-content>{l.name}</span>
                 </Command.Item>
               ))}

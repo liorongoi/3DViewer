@@ -61,7 +61,7 @@ export function Dock({ className, compact }: { className?: string; compact?: boo
         <IconButton label={t("viewer.home")} shortcut="H" onClick={() => void engine?.home()}>
           <House size={18} />
         </IconButton>
-        <IconButton label={t("viewer.focus")} shortcut="Z" onClick={() => void engine?.home(0.8)}>
+        <IconButton label={t("viewer.focus")} shortcut="Z" onClick={() => void engine?.focusSelection()}>
           <Focus size={18} />
         </IconButton>
         <IconButton label={t("viewer.zoomIn")} shortcut="+" onClick={() => engine?.camera.zoomCentre(2)}>
