@@ -296,7 +296,7 @@ async function listTree(root: string, rel = ""): Promise<DiskFile[]> {
  * Unpacks a zip into `dest` without trusting it: every name must stay inside, entries are counted, sizes
  * are measured as they inflate (not taken from the header) and a high expansion ratio stops it.
  */
-export async function unzipGuarded(zipPath: string, dest: string, budget: { files: number; bytes: number }): Promise<void> {
+export async function unzipGuarded(zipPath: string, dest: string, budget: { files: number; bytes: number }, name = path.basename(zipPath)): Promise<void> {
   const unz = new Unzip();
   unz.register(UnzipInflate);
   let failure: Error | null = null;
@@ -333,7 +333,7 @@ export async function unzipGuarded(zipPath: string, dest: string, budget: { file
     }
     if (!failure) unz.push(new Uint8Array(0), true);
   } catch {
-    fail(`${path.basename(zipPath)} is not a readable zip file.`);
+    fail(`${name} is not a readable zip file.`);
   }
   if (failure) throw failure;
 }
@@ -406,7 +406,7 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
       const budget = { files: MAX_FILES, bytes: LIMITS.tileset };
       for (const u of ups) {
         const part = storage.uploadPart(u.id);
-        if (/\.zip$/i.test(u.path)) await unzipGuarded(part, src, budget);
+        if (/\.zip$/i.test(u.path)) await unzipGuarded(part, src, budget, u.path);
         else {
           const dest = Storage.inside(src, u.path);
           if (!dest) throw new PermanentError(`This file name is not allowed: ${u.path}`);
