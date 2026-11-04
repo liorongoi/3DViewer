@@ -48,13 +48,13 @@ export const SCHEMAS = [
   {
     $id: "ModelSource",
     ...closed(
-      { kind: { enum: ["glb", "3dtiles"] }, url: text, groundFit: { enum: ["street", "surface", "none"] }, clipTerrain: bool, localFrame: bool, attribution: text },
+      { kind: { enum: ["glb", "3dtiles"] }, url: text, groundFit: { enum: ["street", "surface", "none"] }, clipTerrain: bool, localFrame: bool, georeferenced: bool, attribution: text },
       ["kind", "url"],
     ),
   },
   {
     $id: "Placement",
-    ...closed({ lat: num, lon: num, height: num, aboveGround: num, headingDeg: num, scale: num, upAxis: { enum: ["y", "z"] } }, ["lat", "lon", "height"]),
+    ...closed({ lat: num, lon: num, height: num, aboveGround: num, headingDeg: num, scale: num, upAxis: { enum: ["y", "z"] }, grid: closed({ epsg: int, x: num, y: num, northDeg: num, groundPerGrid: num }, ["epsg", "x", "y", "northDeg", "groundPerGrid"]) }, ["lat", "lon", "height"]),
   },
   { $id: "ModelSummary", ...closed(MODEL, MODEL_REQUIRED) },
   { $id: "ModelDetail", ...closed({ ...MODEL, history: { type: "array", items: { $ref: "Version#" } } }, [...MODEL_REQUIRED, "history"]) },

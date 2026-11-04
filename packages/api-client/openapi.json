@@ -99,6 +99,9 @@
           "localFrame": {
             "type": "boolean"
           },
+          "georeferenced": {
+            "type": "boolean"
+          },
           "attribution": {
             "type": "string"
           }
@@ -135,6 +138,34 @@
               "y",
               "z"
             ]
+          },
+          "grid": {
+            "type": "object",
+            "properties": {
+              "epsg": {
+                "type": "integer"
+              },
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "northDeg": {
+                "type": "number"
+              },
+              "groundPerGrid": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "epsg",
+              "x",
+              "y",
+              "northDeg",
+              "groundPerGrid"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -877,6 +908,9 @@
                       "localFrame": {
                         "type": "boolean"
                       },
+                      "georeferenced": {
+                        "type": "boolean"
+                      },
                       "attribution": {
                         "type": "string",
                         "maxLength": 2000
@@ -935,6 +969,35 @@
                           "y",
                           "z"
                         ]
+                      },
+                      "grid": {
+                        "type": "object",
+                        "required": [
+                          "epsg",
+                          "x",
+                          "y",
+                          "northDeg",
+                          "groundPerGrid"
+                        ],
+                        "properties": {
+                          "epsg": {
+                            "type": "integer"
+                          },
+                          "x": {
+                            "type": "number"
+                          },
+                          "y": {
+                            "type": "number"
+                          },
+                          "northDeg": {
+                            "type": "number"
+                          },
+                          "groundPerGrid": {
+                            "type": "number",
+                            "exclusiveMinimum": 0
+                          }
+                        },
+                        "additionalProperties": false
                       }
                     },
                     "additionalProperties": false
@@ -1183,6 +1246,9 @@
                       "localFrame": {
                         "type": "boolean"
                       },
+                      "georeferenced": {
+                        "type": "boolean"
+                      },
                       "attribution": {
                         "type": "string",
                         "maxLength": 2000
@@ -1222,6 +1288,35 @@
                           "y",
                           "z"
                         ]
+                      },
+                      "grid": {
+                        "type": "object",
+                        "required": [
+                          "epsg",
+                          "x",
+                          "y",
+                          "northDeg",
+                          "groundPerGrid"
+                        ],
+                        "properties": {
+                          "epsg": {
+                            "type": "integer"
+                          },
+                          "x": {
+                            "type": "number"
+                          },
+                          "y": {
+                            "type": "number"
+                          },
+                          "northDeg": {
+                            "type": "number"
+                          },
+                          "groundPerGrid": {
+                            "type": "number",
+                            "exclusiveMinimum": 0
+                          }
+                        },
+                        "additionalProperties": false
                       }
                     },
                     "additionalProperties": false
@@ -2460,6 +2555,35 @@
                           "y",
                           "z"
                         ]
+                      },
+                      "grid": {
+                        "type": "object",
+                        "required": [
+                          "epsg",
+                          "x",
+                          "y",
+                          "northDeg",
+                          "groundPerGrid"
+                        ],
+                        "properties": {
+                          "epsg": {
+                            "type": "integer"
+                          },
+                          "x": {
+                            "type": "number"
+                          },
+                          "y": {
+                            "type": "number"
+                          },
+                          "northDeg": {
+                            "type": "number"
+                          },
+                          "groundPerGrid": {
+                            "type": "number",
+                            "exclusiveMinimum": 0
+                          }
+                        },
+                        "additionalProperties": false
                       }
                     },
                     "additionalProperties": false

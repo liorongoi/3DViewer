@@ -1,5 +1,6 @@
 import { baseName, ext, resolvePath, type FileSet, type LocalFile } from "./files";
 import type { CheckItem, LoaderPlugin } from "./types";
+import { ecefToGeodetic } from "../geo/wgs84";
 
 /** glTF extensions CesiumJS 1.146 reads. A required extension outside this list blocks the upload. */
 export const SUPPORTED_GLTF_EXTENSIONS = new Set([
@@ -46,6 +47,7 @@ interface Gltf {
   nodes?: { name?: string; mesh?: number; children?: number[]; matrix?: number[]; translation?: number[]; rotation?: number[]; scale?: number[] }[];
   scenes?: { nodes?: number[] }[];
   scene?: number;
+  extensions?: { CESIUM_RTC?: { center?: number[] } };
 }
 
 export interface ParsedGlb {
@@ -127,10 +129,19 @@ function local(n: NonNullable<Gltf["nodes"]>[number]): M4 {
  * the file does not carry bounds.
  */
 export function gltfSize(g: Gltf): [number, number, number] | null {
+  const b = gltfBounds(g);
+  return b ? [b.hi[0] - b.lo[0], b.hi[1] - b.lo[1], b.hi[2] - b.lo[2]] : null;
+}
+
+type V3 = [number, number, number];
+
+/** The scene's box in the file's own coordinates, node transforms applied; largest stored coordinate too. */
+function gltfBounds(g: Gltf): { lo: V3; hi: V3; stored: number } | null {
   const nodes = g.nodes ?? [];
   const roots = g.scenes?.[g.scene ?? 0]?.nodes ?? nodes.map((_, i) => i);
-  const lo = [Infinity, Infinity, Infinity];
-  const hi = [-Infinity, -Infinity, -Infinity];
+  const lo: V3 = [Infinity, Infinity, Infinity];
+  const hi: V3 = [-Infinity, -Infinity, -Infinity];
+  let stored = 0;
   const walk = (i: number, parent: M4, depth: number) => {
     const n = nodes[i];
     if (!n || depth > 64) return;
@@ -138,6 +149,7 @@ export function gltfSize(g: Gltf): [number, number, number] | null {
     for (const p of g.meshes?.[n.mesh ?? -1]?.primitives ?? []) {
       const a = g.accessors?.[p.attributes?.POSITION ?? -1];
       if (!a?.min || !a.max || a.min.length < 3) continue;
+      stored = Math.max(stored, ...a.min.map(Math.abs), ...a.max.map(Math.abs));
       for (let c = 0; c < 8; c++) {
         const v = [0, 1, 2].map((k) => ((c >> k) & 1 ? a.max![k]! : a.min![k]!));
         for (let r = 0; r < 3; r++) {
@@ -150,7 +162,32 @@ export function gltfSize(g: Gltf): [number, number, number] | null {
     for (const ch of n.children ?? []) walk(ch, m, depth + 1);
   };
   for (const r of roots) walk(r, [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], 0);
-  return Number.isFinite(lo[0]) ? [hi[0]! - lo[0]!, hi[1]! - lo[1]!, hi[2]! - lo[2]!] : null;
+  return Number.isFinite(lo[0]) ? { lo, hi, stored } : null;
+}
+
+/**
+ * Earth position a glTF carries itself (plan 4.1): a CESIUM_RTC centre, or node transforms or
+ * vertices in Earth-centred (ECEF) metres. Read the way Cesium draws it: the glTF's Y-up axes
+ * turned to Z-up, (x, y, z) → (x, −z, y), then the RTC centre added.
+ */
+export function gltfGeoref(g: Gltf): { georef: { lat: number; lon: number; height: number } | null; items: CheckItem[] } {
+  const b = gltfBounds(g);
+  const rtc = g.extensions?.CESIUM_RTC?.center;
+  const c = b ? ([0, 1, 2].map((k) => (b.lo[k]! + b.hi[k]!) / 2) as V3) : ([0, 0, 0] as V3);
+  const e = { x: (rtc?.[0] ?? 0) + c[0], y: (rtc?.[1] ?? 0) - c[2], z: (rtc?.[2] ?? 0) + c[1] };
+  if (Math.hypot(e.x, e.y, e.z) < 6.0e6) return { georef: null, items: [] };
+  const geo = ecefToGeodetic(e);
+  const items: CheckItem[] = [];
+  // Vertices are 32-bit floats: far from the origin they snap to a coarse step.
+  const step = b ? b.stored * 2 ** -24 : 0;
+  if (step > 0.02)
+    items.push({
+      id: "georef",
+      severity: "warning",
+      title: `Vertex positions are only accurate to about ${step < 1 ? `${Math.round(step * 100)} cm` : `${step.toFixed(1)} m`}`,
+      detail: "The file stores Earth-centred coordinates in each vertex. Export with CESIUM_RTC or a node offset so the vertices stay small.",
+    });
+  return { georef: { lat: geo.lat, lon: geo.lon, height: geo.height }, items };
 }
 
 function triangles(g: Gltf): number {
@@ -233,11 +270,13 @@ export const gltfLoader: LoaderPlugin = {
     const items = await checkGltfDoc(g, main.path, files, bin ? bin.byteLength : null);
     if (!items.some((i) => i.id === "format"))
       items.unshift({ id: "format", severity: "ok", title: `glTF 2.0 ${ext(main.path) === "glb" ? "binary (GLB)" : "with separate files"}` });
+    const own = gltfGeoref(g);
+    items.push(...own.items);
     return {
       items,
       stats: { files: files.files.length, bytes: files.bytes, triangles: triangles(g), textures: g.textures?.length ?? 0, size: gltfSize(g) ?? undefined },
       nodes: nodeNames(g),
-      georef: null,
+      georef: own.georef,
     };
   },
   async prepare(main, files, url) {

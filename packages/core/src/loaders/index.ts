@@ -1,11 +1,14 @@
 import { FileSet, expandFiles, ext, LoadError, type LocalFile } from "./files";
 import { gltfLoader } from "./gltf";
 import { tiles3dLoader } from "./tiles3d";
+import { readSidecar } from "./sidecar";
 import type { CheckItem, CheckReport, LoaderPlugin, Prepared, UrlMaker } from "./types";
 
 export * from "./types";
 export { fromBytes, expandFiles, resolvePath, type LocalFile } from "./files";
 export { parseGlb, SUPPORTED_GLTF_EXTENSIONS } from "./gltf";
+export { parseMetadataXml } from "./sidecar";
+export { placementFromGrid, type GridPosition, type Placement } from "../geo/place";
 
 /** FBX is read on the server (FBX2glTF); the browser only recognises it. */
 const fbxLoader: LoaderPlugin = {
@@ -68,11 +71,13 @@ export async function checkFiles(input: LocalFile[]): Promise<{ report: CheckRep
     if (p.format !== "3dtiles" && big.length) r.items.push({ id: "size", severity: "error", title: "File is over 2 GB", detail: big.map((f) => f.path).join(", ") });
     else if (set.bytes > LIMITS.tileset) r.items.push({ id: "size", severity: "error", title: "Tileset is over 50 GB" });
     else r.items.push({ id: "size", severity: "ok", title: `${files.length} file${files.length > 1 ? "s" : ""}, ${fmtBytes(set.bytes)}` });
-    r.items.push(
-      r.georef
-        ? { id: "georef", severity: "ok", title: "Georeferenced", detail: `${r.georef.lat.toFixed(5)}°, ${r.georef.lon.toFixed(5)}°` }
-        : { id: "georef", severity: "warning", title: "No position in the file", detail: "Set it in the next step." },
-    );
+    const side = r.georef ? null : await readSidecar(set, main.path);
+    if (side) {
+      r.items.push(...side.items);
+      r.filePosition = side.position;
+    }
+    if (r.georef) r.items.push({ id: "georef", severity: "ok", title: "Georeferenced", detail: `${r.georef.lat.toFixed(5)}°, ${r.georef.lon.toFixed(5)}°` });
+    else if (!r.filePosition) r.items.push({ id: "georef", severity: "warning", title: "No position in the file", detail: "Set it in the next step." });
     const report: CheckReport = { ...r, loader: p.id, format: p.format === "glb" && ext(main.path) === "gltf" ? "gltf" : p.format, mainFile: main.path, ok: !r.items.some((i) => i.severity === "error") };
     return { report, files };
   }

@@ -6,7 +6,7 @@ import { pipeline } from "node:stream/promises";
 import { Transform, type Readable } from "node:stream";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Unzip, UnzipInflate } from "fflate";
-import { checkFiles, LIMITS, type CheckItem, type CheckReport, type LocalFile } from "@viewer/core/loaders";
+import { checkFiles, LIMITS, placementFromGrid, type CheckItem, type CheckReport, type LocalFile } from "@viewer/core/loaders";
 import { UPDATE_STATUSES, type ModelSummary } from "@viewer/shared/model";
 import { quotaError } from "./admin.ts";
 import { audit } from "./audit.ts";
@@ -129,7 +129,7 @@ export function registerIngest(
             placement: {
               type: "object",
               required: ["lat", "lon", "height"],
-              properties: { lat: { type: "number" }, lon: { type: "number" }, height: { type: "number" }, aboveGround: { type: "number" }, headingDeg: { type: "number" }, scale: { type: "number", exclusiveMinimum: 0 }, upAxis: { enum: ["y", "z"] } },
+              properties: { lat: { type: "number" }, lon: { type: "number" }, height: { type: "number" }, aboveGround: { type: "number" }, headingDeg: { type: "number" }, scale: { type: "number", exclusiveMinimum: 0 }, upAxis: { enum: ["y", "z"] }, grid: { type: "object", required: ["epsg", "x", "y", "northDeg", "groundPerGrid"], properties: { epsg: { type: "integer" }, x: { type: "number" }, y: { type: "number" }, northDeg: { type: "number" }, groundPerGrid: { type: "number", exclusiveMinimum: 0 } }, additionalProperties: false } },
               additionalProperties: false,
             },
             centre: latlon,
@@ -452,15 +452,21 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
 
       // Large models stream as 3D Tiles (AD-04); the uploaded file is kept for download.
       const req = ing.request;
+      // The Place step's position wins; else one from a file beside the model (metadata.xml).
+      const fromSide = !report.georef && !req.placement && report.filePosition ? placementFromGrid(report.filePosition) : undefined;
       const limit = opts.tileIf ?? TILE_IF;
       const meshBytes = publish.reduce((t, f) => t + (f.path.startsWith("original/") ? 0 : f.size), 0);
       let tiled = false;
-      if (main && report.format !== "3dtiles" && ((report.stats.triangles ?? 0) > limit.triangles || meshBytes > limit.bytes)) {
+      const big = (report.stats.triangles ?? 0) > limit.triangles || meshBytes > limit.bytes;
+      // The tiler works in a local frame; a GLB in Earth-centred coordinates would lose its precision there.
+      if (big && report.georef && report.format !== "3dtiles")
+        report.items.push({ id: "tiling", severity: "warning", title: "Published as one file, not tiled", detail: "The model carries its own Earth position, which the tiler does not keep yet. Export it in a local frame with a metadata.xml, or as 3D Tiles, to stream it." });
+      if (main && report.format !== "3dtiles" && big && !report.georef) {
         await setState("converting");
         await ctx.progress({ step: "tile" });
         const dir = path.join(work, "tiled");
         try {
-          const t = await tileModel(main.src, dir, { upAxis: req.placement?.upAxis, scale: req.placement?.scale, leafTriangles: opts.leafTriangles }, (done, total) => void ctx.progress({ step: "tile", done, total }));
+          const t = await tileModel(main.src, dir, { upAxis: (req.placement ?? fromSide)?.upAxis, scale: (req.placement ?? fromSide)?.scale, leafTriangles: opts.leafTriangles }, (done, total) => void ctx.progress({ step: "tile", done, total }));
           const kept = publish.map((f) => (f.path.startsWith("original/") ? f : { ...f, path: `original/${f.path}` }));
           publish = [...(await Promise.all(t.files.map(async (f) => diskFile(f, path.join(dir, f), await fileSize(path.join(dir, f)))))), ...kept];
           tiled = true;
@@ -477,9 +483,9 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
 
       // Where it goes and where it stands.
       const georef = report.georef;
-      const centre = georef ? { lat: georef.lat, lon: georef.lon } : req.placement ? { lat: req.placement.lat, lon: req.placement.lon } : req.centre;
+      let placement = georef ? undefined : (req.placement ?? fromSide);
+      const centre = georef ? { lat: georef.lat, lon: georef.lon } : placement ? { lat: placement.lat, lon: placement.lon } : req.centre;
       if (!centre) return reject({ ...report, ok: false, items: [...report.items, { id: "georef", severity: "error", title: "No position", detail: "The file has none and none was set in the Place step." }] }, "No position");
-      let placement = georef ? undefined : req.placement;
       // The tiler baked the up axis and scale into the tiles.
       if (tiled) placement = { ...(placement ?? { ...centre, height: 0 }), upAxis: undefined, scale: undefined };
 
@@ -504,6 +510,7 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
         url: `files/${rel}/${mainPath.split("/").map(encodeURIComponent).join("/")}`,
         ...(report.format === "3dtiles" && req.groundFit ? { groundFit: req.groundFit } : {}),
         ...(isTiles && !georef && placement ? { localFrame: true } : {}),
+        ...(!isTiles && georef ? { georeferenced: true } : {}),
       };
 
       await db.tx(async (q) => {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { checkFiles, converterForEpsg, fmtBytes, prepareFiles, type CheckReport, type LocalFile } from "@viewer/core";
+import { checkFiles, converterForEpsg, fmtBytes, gridFactors, placementFromGrid, prepareFiles, type CheckReport, type LocalFile } from "@viewer/core";
 import { uploadAndIngest, type UploadProgress } from "../server/api";
 import { refreshLibrary } from "../state/library";
 import { UPDATE_STATUSES, type ModelSummary, type UpdateStatus } from "@viewer/shared";
@@ -18,7 +18,13 @@ const CRS = [
   { code: 4326, label: "EPSG:4326 · WGS 84 latitude / longitude", x: "Longitude (°)", y: "Latitude (°)" },
   { code: 2039, label: "EPSG:2039 · Israeli TM Grid (ITM)", x: "Easting (m)", y: "Northing (m)" },
   { code: 32636, label: "EPSG:32636 · WGS 84 / UTM zone 36N", x: "Easting (m)", y: "Northing (m)" },
-] as const;
+  { code: 6991, label: "EPSG:6991 · Israeli Grid 05/12", x: "Easting (m)", y: "Northing (m)" },
+] as { code: number; label: string; x: string; y: string }[];
+
+/** The list, plus the system a sidecar file names when it is another one. */
+const crsList = (extra?: number) => (extra && !CRS.some((c) => c.code === extra) ? [...CRS, { code: extra, label: `EPSG:${extra}`, x: "Easting (m)", y: "Northing (m)" }] : CRS);
+
+const NEW_PLACE: Place = { fromFile: true, fitGround: true, crs: 4326, x: "", y: "", onTerrain: true, height: "0", heading: "0", scale: "1", upAxis: "y", unit: 1 };
 
 interface Place {
   fromFile: boolean;
@@ -53,7 +59,7 @@ export function UploadWizard() {
   const [files, setFiles] = useState<LocalFile[]>([]);
   const [checking, setChecking] = useState(false);
   const [checked, setChecked] = useState<{ report: CheckReport; files: LocalFile[] } | null>(null);
-  const [place, setPlace] = useState<Place>({ fromFile: true, fitGround: true, crs: 4326, x: "", y: "", onTerrain: true, height: "0", heading: "0", scale: "1", upAxis: "y", unit: 1 });
+  const [place, setPlace] = useState<Place>(NEW_PLACE);
   const [meta, setMeta] = useState({ name: "", project: "", operation: "", entity: "", status: "draft" as UpdateStatus, description: "" });
   const [cls, setCls] = useState("");
   const [publishing, setPublishing] = useState(false);
@@ -79,7 +85,9 @@ export function UploadWizard() {
       const top = files[0]!.path.includes("/") ? files[0]!.path.split("/")[0]! : "";
       setMeta((m) => ({ ...m, name: m.name || (stem === "tileset" && top ? top : stem).replace(/[_-]+/g, " ") }));
       const c = engine?.viewCentre();
-      setPlace((p) => ({ ...p, fromFile: !!r.report.georef, crs: 4326, x: c ? c.lon.toFixed(6) : "35.2137", y: c ? c.lat.toFixed(6) : "31.7683" }));
+      const fp = r.report.filePosition;
+      if (fp) setPlace((p) => ({ ...p, fromFile: false, crs: fp.epsg, x: fp.x.toFixed(fp.epsg === 4326 ? 7 : 3), y: fp.y.toFixed(fp.epsg === 4326 ? 7 : 3), height: String(fp.height), onTerrain: false }));
+      else setPlace((p) => ({ ...p, fromFile: !!r.report.georef, crs: 4326, x: c ? c.lon.toFixed(6) : "35.2137", y: c ? c.lat.toFixed(6) : "31.7683" }));
     });
     return () => {
       live = false;
@@ -96,6 +104,8 @@ export function UploadWizard() {
     setChecked(null);
     setCls("");
     setMeta({ name: "", project: "", operation: "", entity: "", status: "draft", description: "" });
+    // The next upload starts from the defaults, not the last model's axis, units or heading.
+    setPlace(NEW_PLACE);
     setPublishError(null);
   };
 
@@ -105,16 +115,26 @@ export function UploadWizard() {
   // The server converts FBX; without it only what the browser opens can be published.
   const canPublish = !!cls && (server ? !!report?.ok : !!browserCanOpen) && meta.name.trim() !== "" && !publishing;
 
+  /** The file's own position, or the Place step's, with grid north and grid scale applied. */
   const position = (r: CheckReport) => {
     const useFile = !!(place.fromFile && r.georef);
-    if (useFile) return { useFile, ...r.georef! };
-    const [lon, lat] = converterForEpsg(place.crs).toLonLat(parseFloat(place.x), parseFloat(place.y));
-    return { useFile, lat, lon, height: parseFloat(place.height) || 0 };
+    if (useFile) return { useFile, lat: r.georef!.lat, lon: r.georef!.lon, placement: undefined };
+    const placement = placementFromGrid({
+      epsg: place.crs,
+      x: parseFloat(place.x),
+      y: parseFloat(place.y),
+      height: parseFloat(place.height) || 0,
+      aboveGround: place.onTerrain ? 0 : undefined,
+      headingDeg: parseFloat(place.heading) || 0,
+      scale: (parseFloat(place.scale) || 1) * place.unit,
+      upAxis: place.upAxis,
+    });
+    return { useFile, lat: placement.lat, lon: placement.lon, placement };
   };
 
   /** With a server: send the files, let it check, scan, convert and publish, then open the result. */
   const publishToServer = async (srv: NonNullable<typeof server>, r: CheckReport) => {
-    const { useFile, lat, lon, height } = position(r);
+    const { useFile, placement } = position(r);
     const status = await uploadAndIngest(
       srv,
       files,
@@ -128,7 +148,7 @@ export function UploadWizard() {
           status: meta.status,
           classificationId: cls,
         },
-        placement: useFile ? undefined : { lat, lon, height, aboveGround: place.onTerrain ? 0 : undefined, headingDeg: parseFloat(place.heading) || 0, scale: (parseFloat(place.scale) || 1) * place.unit, upAxis: place.upAxis === "z" ? "z" : undefined },
+        placement,
         groundFit: r.format === "3dtiles" && useFile ? (place.fitGround ? "street" : "none") : undefined,
       },
       setProgress,
@@ -150,13 +170,7 @@ export function UploadWizard() {
     try {
       if (server) return await publishToServer(server, report);
       const prepared = await prepareFiles(checked.files, report);
-      let lat: number, lon: number, height: number;
-      const useFile = place.fromFile && report.georef;
-      if (useFile) ({ lat, lon, height } = report.georef!);
-      else {
-        [lon, lat] = converterForEpsg(place.crs).toLonLat(parseFloat(place.x), parseFloat(place.y));
-        height = parseFloat(place.height) || 0;
-      }
+      const { useFile, lat, lon, placement } = position(report);
       const id = `upload-${Date.now().toString(36)}`;
       const isTiles = prepared.kind === "3dtiles";
       const m: ModelSummary = {
@@ -172,11 +186,16 @@ export function UploadWizard() {
         version: 1,
         versions: 1,
         sourceFormat: report.format ?? "glb",
-        source: { kind: prepared.kind, url: prepared.url, groundFit: isTiles && useFile ? (place.fitGround ? "street" : "none") : undefined, localFrame: isTiles && !useFile ? true : undefined, attribution: "Uploaded in this session" },
+        source: {
+          kind: prepared.kind,
+          url: prepared.url,
+          groundFit: isTiles && useFile ? (place.fitGround ? "street" : "none") : undefined,
+          localFrame: isTiles && !useFile ? true : undefined,
+          georeferenced: !isTiles && useFile ? true : undefined,
+          attribution: "Uploaded in this session",
+        },
         centre: { lat, lon },
-        placement: useFile
-          ? undefined
-          : { lat, lon, height, aboveGround: place.onTerrain ? 0 : undefined, headingDeg: parseFloat(place.heading) || 0, scale: (parseFloat(place.scale) || 1) * place.unit, upAxis: place.upAxis === "z" ? "z" : undefined },
+        placement,
         sizeBytes: report.stats.bytes,
       };
       addUpload(m);
@@ -190,7 +209,18 @@ export function UploadWizard() {
     }
   };
 
-  const crs = CRS.find((c) => c.code === place.crs)!;
+  const crsOptions = crsList(report?.filePosition?.epsg);
+  const crs = crsOptions.find((c) => c.code === place.crs) ?? crsOptions[0]!;
+  const grid = (() => {
+    if (place.crs === 4326) return null;
+    try {
+      const x = parseFloat(place.x);
+      const y = parseFloat(place.y);
+      return Number.isFinite(x) && Number.isFinite(y) ? gridFactors(place.crs, x, y) : null;
+    } catch {
+      return null;
+    }
+  })();
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-6">
@@ -291,7 +321,13 @@ export function UploadWizard() {
             <div className="mx-auto grid max-w-2xl gap-4">
               <div>
                 <h3 className="text-[15px] font-semibold">{t("upload.placeTitle")}</h3>
-                <p className="text-fg3">{report.georef ? "The file has its own position." : "The file has no position. It starts at the centre of the current view."}</p>
+                <p className="text-fg3">
+                  {report.georef
+                    ? "The file has its own position."
+                    : report.filePosition
+                      ? `The position comes from ${report.filePosition.source}. Check it below.`
+                      : "The file has no position. It starts at the centre of the current view."}
+                </p>
               </div>
               {report.georef && (
                 <label className="flex items-center gap-2">
@@ -321,7 +357,7 @@ export function UploadWizard() {
                         setPlace({ ...place, crs: code, x: Number.isFinite(x) ? x.toFixed(dp) : place.x, y: Number.isFinite(y) ? y.toFixed(dp) : place.y });
                       }}
                     >
-                      {CRS.map((c) => (
+                      {crsOptions.map((c) => (
                         <option key={c.code} value={c.code}>{c.label}</option>
                       ))}
                     </select>
@@ -330,13 +366,18 @@ export function UploadWizard() {
                     <Field label={crs.x}><input className="input num" value={place.x} onChange={(e) => setPlace({ ...place, x: e.target.value })} dir="ltr" /></Field>
                     <Field label={crs.y}><input className="input num" value={place.y} onChange={(e) => setPlace({ ...place, y: e.target.value })} dir="ltr" /></Field>
                   </div>
+                  {grid && (
+                    <p className="text-[12px] text-fg3" data-testid="grid-factors">
+                      Here grid north is {Math.abs(grid.northDeg).toFixed(3)}° {grid.northDeg >= 0 ? "east" : "west"} of true north, and a grid metre is {grid.groundPerGrid.toFixed(6)} m on the ground. The model is turned and scaled to match, so its axes follow the grid.
+                    </p>
+                  )}
                   <label className="flex items-center gap-2">
                     <input type="checkbox" checked={place.onTerrain} onChange={(e) => setPlace({ ...place, onTerrain: e.target.checked })} />
                     Sit the model base on the terrain
                   </label>
                   <div className="grid grid-cols-3 gap-3">
                     <Field label={place.onTerrain ? "Height without terrain (m)" : "Height (m, ellipsoidal)"}><input className="input num" value={place.height} onChange={(e) => setPlace({ ...place, height: e.target.value })} dir="ltr" /></Field>
-                    <Field label="Heading (° from north)"><input className="input num" value={place.heading} onChange={(e) => setPlace({ ...place, heading: e.target.value })} dir="ltr" /></Field>
+                    <Field label={place.crs === 4326 ? "Heading (° from north)" : "Heading (° from grid north)"}><input className="input num" value={place.heading} onChange={(e) => setPlace({ ...place, heading: e.target.value })} dir="ltr" /></Field>
                     <Field label="Scale"><input className="input num" value={place.scale} onChange={(e) => setPlace({ ...place, scale: e.target.value })} dir="ltr" /></Field>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
