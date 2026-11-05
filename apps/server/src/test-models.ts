@@ -29,8 +29,14 @@ export function gridGlb(n: number, zUp = false): Uint8Array {
   const views: object[] = [];
   let off = 0;
   for (const p of parts) views.push({ buffer: 0, byteOffset: off, byteLength: p.length }), (off += p.length + ((4 - (p.length % 4)) % 4));
-  const mn = [0, 1, 2].map((c) => Math.min(...Array.from({ length: nv }, (_, v) => pos[v * 3 + c]!)));
-  const mx = [0, 1, 2].map((c) => Math.max(...Array.from({ length: nv }, (_, v) => pos[v * 3 + c]!)));
+  // A loop, not Math.min(...all): spreading a large grid overflows the call stack.
+  const mn = [Infinity, Infinity, Infinity];
+  const mx = [-Infinity, -Infinity, -Infinity];
+  for (let v = 0; v < nv; v++)
+    for (let c = 0; c < 3; c++) {
+      mn[c] = Math.min(mn[c]!, pos[v * 3 + c]!);
+      mx[c] = Math.max(mx[c]!, pos[v * 3 + c]!);
+    }
   const json = {
     asset: { version: "2.0" },
     scene: 0,

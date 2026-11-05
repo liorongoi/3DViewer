@@ -15,7 +15,7 @@ import { enqueue, PermanentError, type Handler } from "./jobs.ts";
 import { addVersion, createModel, type NewModel } from "./library.ts";
 import { closed, int, ref, text } from "./schemas.ts";
 import { Storage, validRelPath } from "./storage.ts";
-import { TILE_IF, tileModel } from "./tiler.ts";
+import { TILE_IF, tileModelInWorker } from "./tiler.ts";
 import { validateOfficial } from "./validate.ts";
 
 /**
@@ -466,7 +466,7 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
         await ctx.progress({ step: "tile" });
         const dir = path.join(work, "tiled");
         try {
-          const t = await tileModel(main.src, dir, { upAxis: (req.placement ?? fromSide)?.upAxis, scale: (req.placement ?? fromSide)?.scale, leafTriangles: opts.leafTriangles }, (done, total) => void ctx.progress({ step: "tile", done, total }));
+          const t = await tileModelInWorker(main.src, dir, { upAxis: (req.placement ?? fromSide)?.upAxis, scale: (req.placement ?? fromSide)?.scale, leafTriangles: opts.leafTriangles }, (done, total) => void ctx.progress({ step: "tile", done, total }));
           const kept = publish.map((f) => (f.path.startsWith("original/") ? f : { ...f, path: `original/${f.path}` }));
           publish = [...(await Promise.all(t.files.map(async (f) => diskFile(f, path.join(dir, f), await fileSize(path.join(dir, f)))))), ...kept];
           tiled = true;

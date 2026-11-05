@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { Worker } from "node:worker_threads";
 import { NodeIO, type Material, type Node, type Primitive, type Texture, type TextureInfo } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { MeshoptDecoder, MeshoptSimplifier } from "meshoptimizer";
@@ -527,4 +528,31 @@ export async function tileModel(file: string, outDir: string, opts: TileOptions 
   await writeFile(path.join(outDir, "tileset.json"), JSON.stringify(tileset));
   files.push("tileset.json");
   return { tiles, levels: root.depth, triangles: total, skipped, files };
+}
+
+/**
+ * tileModel on a worker thread. Tiling a few million triangles takes the CPU for tens of
+ * seconds; on the main thread the API stopped answering for up to 1.4 s at a time.
+ */
+export function tileModelInWorker(file: string, outDir: string, opts: TileOptions = {}, onProgress?: (done: number, total: number) => void): Promise<TileResult> {
+  // From the built server the worker is dist/tiler-worker.js; from source (tests) it is the .ts file,
+  // which Node runs with its built-in type stripping.
+  const url = new URL(import.meta.url.endsWith(".ts") ? "./tiler-worker.ts" : "./tiler-worker.js", import.meta.url);
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(url, { workerData: { file, outDir, opts } });
+    let settled = false;
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      fn();
+      void worker.terminate();
+    };
+    worker.on("message", (m: { type: "progress"; done: number; total: number } | { type: "done"; result: TileResult } | { type: "error"; message: string }) => {
+      if (m.type === "progress") onProgress?.(m.done, m.total);
+      else if (m.type === "done") finish(() => resolve(m.result));
+      else finish(() => reject(new Error(m.message)));
+    });
+    worker.on("error", (e) => finish(() => reject(e)));
+    worker.on("exit", (code) => finish(() => reject(new Error(`The tiler stopped unexpectedly (exit code ${code}).`))));
+  });
 }
