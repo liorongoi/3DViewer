@@ -20,6 +20,7 @@ import {
   Matrix4,
   Model,
   NearFarScalar,
+  PerspectiveFrustum,
   PostProcessStageLibrary,
   type PostProcessStage,
   type PostProcessStageComposite,
@@ -43,7 +44,7 @@ import { CameraController } from "./camera-controller";
 import { MeasureTool } from "./measure-tool";
 import { FlyByTour, FlyMode, captureViewpoint, type Viewpoint } from "./fly";
 import { signal } from "../signal";
-import { effectiveVisibility, layersFromGltf, type Layer } from "../layers/layers";
+import { effectiveVisibility, findLayer, layerForNode, layersFromGltf, type Layer } from "../layers/layers";
 import { applySiteConfig, catalogue, makeBaseLayers } from "./basemaps";
 import { ENVIRONMENTS, environmentSh, environmentSpecular, type EnvironmentId } from "./environments";
 import { cubeToKtx2 } from "./ktx2";
@@ -136,6 +137,9 @@ export class ViewerEngine {
   private lastFrameAt = 0;
   private baseScale = 1;
   readonly layers = signal<Layer[]>([]);
+  /** The layer picked by clicking the model, or in the layers panel; Focus selection (Z) fits it (NAV-05). */
+  readonly selectedLayer = signal<string | null>(null);
+  private gltfNodes: { children?: number[] }[] = [];
   readonly loading = signal(false);
   readonly error = signal<OpenError | null>(null);
   readonly tileProblems = signal<TileProblems | null>(null);
@@ -351,6 +355,7 @@ export class ViewerEngine {
           const off1 = model.readyEvent.addEventListener(() => { off1(); off2(); resolve(); });
           const off2 = model.errorEvent.addEventListener((e: unknown) => { off1(); off2(); reject(e); });
         });
+        this.gltfNodes = (gltfJson as { nodes?: { children?: number[] }[] } | null)?.nodes ?? [];
         this.layers.set(gltfJson ? layersFromGltf(gltfJson as Parameters<typeof layersFromGltf>[0]) : []);
       }
       this.setLocalTime(summary.centre.lon, 10.5);
@@ -388,6 +393,8 @@ export class ViewerEngine {
     this.model = null;
     this.tileset = null;
     this.layers.set([]);
+    this.selectedLayer.set(null);
+    this.gltfNodes = [];
     this.current.set(null);
     this.error.set(null);
     this.applyPinVisibility();
@@ -427,9 +434,47 @@ export class ViewerEngine {
     Cartesian3.clone(Cartesian3.fromDegrees(34.9, 31.4, 0), this.camera.pivot);
   }
 
-  async focusLayer(_layerId: string): Promise<void> {
-    // Per-node bounds need runtime node data; for now focus fits the whole model.
-    await this.home(0.8);
+  /** Fits a layer in the view (NAV-05 Focus selection). A layer without its own extent fits the whole model. */
+  async focusLayer(layerId: string): Promise<void> {
+    const bs = this.layerSphere(layerId);
+    if (!bs) return this.home(0.8);
+    Cartesian3.clone(bs.center, this.camera.pivot);
+    const h = this.widget.camera.heading;
+    const p = Math.min(this.widget.camera.pitch, CMath.toRadians(-15));
+    await this.flySphere(bs, h, p, 0.8);
+  }
+
+  /** Focus selection: the selected layer, or the whole model when nothing is selected. */
+  async focusSelection(): Promise<void> {
+    const id = this.selectedLayer.get();
+    return id ? this.focusLayer(id) : this.home(0.8);
+  }
+
+  /** A layer's extent on the Earth, from its glTF box placed the way Cesium draws the model. */
+  layerSphere(layerId: string): BoundingSphere | null {
+    const l = findLayer(this.layers.get(), layerId);
+    if (!l?.box || !this.model) return null;
+    // modelMatrix · file transform (CESIUM_RTC) · axis correction · scale, as Cesium composes it.
+    const m = (this.model as unknown as { sceneGraph?: { computedModelMatrix?: Matrix4 } }).sceneGraph?.computedModelMatrix;
+    if (!m) return null;
+    const pts: Cartesian3[] = [];
+    for (let c = 0; c < 8; c++) {
+      const v = new Cartesian3(c & 1 ? l.box.hi[0] : l.box.lo[0], c & 2 ? l.box.hi[1] : l.box.lo[1], c & 4 ? l.box.hi[2] : l.box.lo[2]);
+      pts.push(Matrix4.multiplyByPoint(m, v, new Cartesian3()));
+    }
+    return BoundingSphere.fromPoints(pts);
+  }
+
+  /** Selects the layer under a window position, or clears the selection. Returns the layer id. */
+  selectAt(pos: Cartesian2): string | null {
+    const picked = this.widget.scene.pick(pos) as { primitive?: unknown; detail?: { node?: { node?: { index?: number } } } } | undefined;
+    let id: string | null = null;
+    if (picked?.primitive && picked.primitive === this.model) {
+      const index = picked.detail?.node?.node?.index;
+      if (index !== undefined) id = layerForNode(this.layers.get(), this.gltfNodes, index)?.id ?? null;
+    } else if (picked?.primitive && picked.primitive === this.tileset) id = "tileset";
+    this.selectedLayer.set(id);
+    return id;
   }
 
   /** Looks at the model from a direction in east, north, up: a face, edge or corner of the view cube (NAV-05). */
@@ -454,7 +499,14 @@ export class ViewerEngine {
 
   private flySphere(bs: BoundingSphere, heading: number, pitch: number, duration: number): Promise<void> {
     return new Promise((resolve) => {
-      const range = Math.max(bs.radius * 3.1, 3);
+      // Far enough that the sphere spans about 60% of the view's narrower angle, whatever the
+      // window's shape; the whole sphere stays beyond the view's near limit (0.1 m).
+      const f = this.widget.camera.frustum as PerspectiveFrustum;
+      const aspect = this.widget.canvas.clientWidth / Math.max(1, this.widget.canvas.clientHeight);
+      const fov = f.fov ?? CMath.toRadians(60);
+      // Cesium's fov is across the wider side.
+      const narrow = aspect >= 1 ? 2 * Math.atan(Math.tan(fov / 2) / aspect) : fov;
+      const range = Math.max(bs.radius / Math.sin(0.3 * narrow), bs.radius + 0.12);
       this.widget.camera.flyToBoundingSphere(bs, {
         offset: new HeadingPitchRange(heading, pitch, range),
         duration,
@@ -1033,6 +1085,7 @@ export class ViewerEngine {
         if (world && this.userLayers.pickFeature(picked.id, world)) return;
       }
       this.userLayers.clearPick();
+      this.selectAt(pos);
     });
     canvas.addEventListener("dblclick", () => {
       if (this.measure.active.get() === "path") this.measure.finish();

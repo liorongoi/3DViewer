@@ -165,6 +165,55 @@ function gltfBounds(g: Gltf): { lo: V3; hi: V3; stored: number } | null {
   return Number.isFinite(lo[0]) ? { lo, hi, stored } : null;
 }
 
+/** An axis-aligned box in the glTF scene's own coordinates (y-up), node transforms applied. */
+export interface GltfBox {
+  lo: V3;
+  hi: V3;
+}
+
+/**
+ * The box of every node with a mesh at or below it, in scene coordinates, keyed by node index
+ * (for Focus selection). A node used in more than one place gets the box of its first use.
+ */
+export function gltfNodeBoxes(g: Gltf): Map<number, GltfBox> {
+  const nodes = g.nodes ?? [];
+  const roots = g.scenes?.[g.scene ?? 0]?.nodes ?? nodes.map((_, i) => i);
+  const out = new Map<number, GltfBox>();
+  const grow = (b: GltfBox, o: GltfBox) => {
+    for (let k = 0; k < 3; k++) {
+      b.lo[k] = Math.min(b.lo[k]!, o.lo[k]!);
+      b.hi[k] = Math.max(b.hi[k]!, o.hi[k]!);
+    }
+  };
+  const walk = (i: number, parent: M4, depth: number): GltfBox | null => {
+    const n = nodes[i];
+    if (!n || depth > 64) return null;
+    const m = mul(parent, local(n));
+    const box: GltfBox = { lo: [Infinity, Infinity, Infinity], hi: [-Infinity, -Infinity, -Infinity] };
+    for (const p of g.meshes?.[n.mesh ?? -1]?.primitives ?? []) {
+      const a = g.accessors?.[p.attributes?.POSITION ?? -1];
+      if (!a?.min || !a.max || a.min.length < 3) continue;
+      for (let c = 0; c < 8; c++) {
+        const v = [0, 1, 2].map((k) => ((c >> k) & 1 ? a.max![k]! : a.min![k]!));
+        for (let r = 0; r < 3; r++) {
+          const w = m[r]! * v[0]! + m[4 + r]! * v[1]! + m[8 + r]! * v[2]! + m[12 + r]!;
+          box.lo[r] = Math.min(box.lo[r]!, w);
+          box.hi[r] = Math.max(box.hi[r]!, w);
+        }
+      }
+    }
+    for (const ch of n.children ?? []) {
+      const b = walk(ch, m, depth + 1);
+      if (b) grow(box, b);
+    }
+    if (!Number.isFinite(box.lo[0])) return null;
+    if (!out.has(i)) out.set(i, box);
+    return box;
+  };
+  for (const r of roots) walk(r, [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], 0);
+  return out;
+}
+
 /**
  * Earth position a glTF carries itself (plan 4.1): a CESIUM_RTC centre, or node transforms or
  * vertices in Earth-centred (ECEF) metres. Read the way Cesium draws it: the glTF's Y-up axes

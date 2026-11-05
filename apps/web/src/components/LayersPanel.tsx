@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { effectiveVisibility, filterLayers, isolate, setAllVisible, setVisible, type Layer } from "@viewer/core";
 import { useEngine, useSignal } from "../engine";
@@ -12,6 +12,8 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
   const { t } = useTranslation();
   const engine = useEngine();
   const layers = useSignal(engine?.layers, []);
+  const selected = useSignal(engine?.selectedLayer, null);
+  const list = useRef<HTMLUListElement>(null);
   const [query, setQuery] = useState("");
   const [beforeIsolate, setBeforeIsolate] = useState<Layer[] | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -29,13 +31,24 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
     apply(isolate(layers, l.id));
   };
 
+  // A part clicked in the 3D view: open its branch and bring its row into view.
+  useEffect(() => {
+    if (!selected) return;
+    const trail: string[] = [];
+    const find = (ls: Layer[], path: string[]): boolean =>
+      ls.some((l) => (l.id === selected ? (trail.push(...path), true) : find(l.children, [...path, l.id])));
+    find(layers, []);
+    setCollapsed((c) => (trail.some((id) => c.has(id)) ? new Set([...c].filter((id) => !trail.includes(id))) : c));
+    requestAnimationFrame(() => list.current?.querySelector(`[data-layer="${CSS.escape(selected)}"]`)?.scrollIntoView({ block: "nearest" }));
+  }, [selected, layers]);
+
   const row = (l: Layer, depth: number) => {
     const effective = vis.get(l.id) ?? true;
     const open = !collapsed.has(l.id) || !!query;
     return (
-      <li key={l.id} role="treeitem" aria-expanded={l.children.length ? open : undefined} aria-selected={false}>
+      <li key={l.id} role="treeitem" aria-expanded={l.children.length ? open : undefined} aria-selected={l.id === selected} data-layer={l.id}>
         <div
-          className="group flex h-8 items-center gap-1 rounded-[6px] pe-1 hover:bg-s3"
+          className={cx("group flex h-8 items-center gap-1 rounded-[6px] pe-1 hover:bg-s3", l.id === selected && "bg-accent-soft")}
           style={{ paddingInlineStart: 4 + depth * 14 }}
           onPointerEnter={() => {
             if (paint.current !== null && l.visible !== paint.current) toggle(l, paint.current);
@@ -78,12 +91,20 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
           >
             {l.visible ? <Eye size={15} /> : <EyeOff size={15} />}
           </button>
-          <span className={cx("min-w-0 flex-1 truncate", effective ? "text-fg" : "text-fg3")} dir="auto" data-content>{l.name}</span>
+          <span
+            className={cx("min-w-0 flex-1 cursor-default truncate", effective ? "text-fg" : "text-fg3")}
+            dir="auto"
+            data-content
+            onClick={() => engine?.selectedLayer.set(l.id === selected ? null : l.id)}
+            onDoubleClick={() => (engine?.selectedLayer.set(l.id), void engine?.focusLayer(l.id))}
+          >
+            {l.name}
+          </span>
           <span className="flex opacity-0 group-hover:opacity-100 focus-within:opacity-100">
             <IconButton size="sm" label={t("viewer.isolate")} onClick={() => solo(l)}>
               <Scan size={14} />
             </IconButton>
-            <IconButton size="sm" label={t("viewer.focus")} onClick={() => void engine?.focusLayer(l.id)}>
+            <IconButton size="sm" label={t("viewer.focus")} onClick={() => (engine?.selectedLayer.set(l.id), void engine?.focusLayer(l.id))}>
               <Focus size={14} />
             </IconButton>
           </span>
@@ -164,7 +185,7 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-1 scrollbar-thin">
         {shown.length ? (
-          <ul role="tree" aria-label={t("viewer.layers")}>{shown.map((l) => row(l, 0))}</ul>
+          <ul ref={list} role="tree" aria-label={t("viewer.layers")}>{shown.map((l) => row(l, 0))}</ul>
         ) : (
           <p className="p-3 text-fg3">{t("viewer.noLayers")}</p>
         )}

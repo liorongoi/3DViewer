@@ -176,7 +176,7 @@ export function useAppEffects(): void {
       if (k === "?") s.set({ helpOpen: !s.helpOpen });
       else if (k === "P" && e.shiftKey) s.set({ perfOpen: !s.perfOpen });
       else if (lower === "h") void engine?.home();
-      else if (lower === "z") void engine?.home(0.8);
+      else if (lower === "z") void engine?.focusSelection();
       else if (k === "M") s.set({ tool: s.tool === "path" ? "none" : "path" });
       else if (k === "m") s.set({ tool: s.tool === "distance" ? "none" : "distance" });
       else if (lower === "g") s.set({ tool: "fly" });

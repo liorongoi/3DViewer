@@ -88,7 +88,7 @@ export function ViewCube({ className }: { className?: string }) {
   // Together the six faces give the 26 views of NAV-05. Axes are east, north, up.
   type V = [number, number, number];
   const face = (label: string, n: V, right: V, up: V, transform: string) => (
-    <div className="absolute inset-0 grid grid-cols-[1fr_2fr_1fr] grid-rows-[1fr_2fr_1fr] border border-white/15 bg-[rgb(38_42_49/0.92)] [backface-visibility:hidden]" style={{ transform }}>
+    <div className="pointer-events-none absolute inset-0 grid grid-cols-[1fr_2fr_1fr] grid-rows-[1fr_2fr_1fr] border border-white/15 bg-[rgb(38_42_49/0.92)] [backface-visibility:hidden]" style={{ transform }}>
       {[-1, 0, 1].flatMap((r) =>
         [-1, 0, 1].map((c) => {
           const d: V = [0, 1, 2].map((k) => n[k]! + c * right[k]! - r * up[k]!) as V;
@@ -102,7 +102,7 @@ export function ViewCube({ className }: { className?: string }) {
               data-dir={d.join(",")}
               title={centre ? undefined : name}
               onClick={() => void engine?.viewFrom(d)}
-              className={cx("grid place-items-center hover:bg-accent hover:text-accent-on", centre ? "text-[10px] font-semibold tracking-wider text-fg2" : "")}
+              className={cx("pointer-events-auto grid place-items-center hover:bg-accent hover:text-accent-on", centre ? "text-[10px] font-semibold tracking-wider text-fg2" : "")}
             >
               {centre ? label : null}
             </button>
@@ -122,8 +122,10 @@ export function ViewCube({ className }: { className?: string }) {
         <span className="absolute top-1/2 right-1 -translate-y-1/2 text-[9px] text-fg3">E</span>
       </div>
       <div className="absolute left-1/2 top-1/2 h-[52px] w-[52px] -translate-x-1/2 -translate-y-1/2 [perspective:300px]">
+        {/* Only the face buttons take clicks: the box and faces themselves would catch clicks
+            meant for a face that sits in front of them on screen. */}
         <div
-          className="relative h-full w-full [transform-style:preserve-3d]"
+          className="pointer-events-none relative h-full w-full [transform-style:preserve-3d]"
           style={{ transform: `rotateX(${90 + pDeg}deg) rotateZ(${-hDeg}deg)` }}
         >
           {face("TOP", [0, 0, 1], [1, 0, 0], [0, 1, 0], `translateZ(${s}px)`)}

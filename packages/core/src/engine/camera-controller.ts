@@ -56,6 +56,9 @@ export class CameraController {
     ssc.enableZoom = false;
     ssc.enableTilt = false;
     ssc.enableLook = false;
+    // Touch gestures belong to the view: without this the browser scrolls or zooms the page
+    // and cancels the pointers part-way through a pinch.
+    this.canvas.style.touchAction = "none";
 
     const on = <K extends keyof HTMLElementEventMap>(type: K, fn: (e: HTMLElementEventMap[K]) => void, o?: AddEventListenerOptions) => {
       this.canvas.addEventListener(type, fn as EventListener, o);
@@ -147,10 +150,11 @@ export class CameraController {
   handleKey(e: KeyboardEvent): boolean {
     const step = 40;
     switch (e.key) {
-      case "ArrowLeft": this.pan(-step, 0); return true;
-      case "ArrowRight": this.pan(step, 0); return true;
-      case "ArrowUp": this.pan(0, -step); return true;
-      case "ArrowDown": this.pan(0, step); return true;
+      // An arrow moves the camera that way, as on a map: the view's content slides the other way.
+      case "ArrowLeft": this.pan(step, 0); return true;
+      case "ArrowRight": this.pan(-step, 0); return true;
+      case "ArrowUp": this.pan(0, step); return true;
+      case "ArrowDown": this.pan(0, -step); return true;
       case "+": case "=": this.zoomCentre(1); return true;
       case "-": case "_": this.zoomCentre(-1); return true;
     }
