@@ -29,6 +29,9 @@ const path = require("path");
 const { chromium } = require("playwright");
 
 const MODELS = (process.env.MODELS ?? "m-chess,m-tiles-lod").split(",");
+// SKIP=zoom,cube leaves those sections out, to re-run the rest faster.
+const SKIP = (process.env.SKIP ?? "").split(",");
+const on = (section) => !SKIP.includes(section);
 const W = 1000;
 const H = 640;
 
@@ -87,6 +90,8 @@ const H = 640;
       continue;
     }
 
+    const cdp = await ctx.newCDPSession(page);
+    if (on("zoom")) {
     // ---- NAV-01 zoom toward the cursor ----
     const zoomCheck = async (what, act, wantCloser, wantRatio) => {
       const p = await pickAt(page, spot.x, spot.y);
@@ -105,7 +110,6 @@ const H = 640;
     await page.mouse.move(at(spot.x, spot.y).x, at(spot.x, spot.y).y);
     await zoomCheck("mouse wheel", () => page.mouse.wheel(0, -200), true);
     await zoomCheck("mouse wheel", () => page.mouse.wheel(0, 200), false);
-    const cdp = await ctx.newCDPSession(page);
     const wheel = (dy, ctrl, dx = 0) =>
       cdp.send("Input.dispatchMouseEvent", { type: "mouseWheel", x: at(spot.x, spot.y).x, y: at(spot.x, spot.y).y, deltaX: dx, deltaY: dy, modifiers: ctrl ? 2 : 0 });
     // A touchpad pinch reaches the browser as a run of small ctrl + wheel events.
@@ -141,6 +145,7 @@ const H = 640;
     await centreZoom("Zoom in button", () => clickCentre(page, page.getByRole("button", { name: /^Zoom in/ })), true);
     await centreZoom("Zoom out button", () => clickCentre(page, page.getByRole("button", { name: /^Zoom out/ })), false);
 
+    }
     // ---- NAV-02 pivot by double-click, orbit by left-drag ----
     await page.keyboard.press("h");
     await settle(page, 2200);
@@ -256,6 +261,7 @@ const H = 640;
       check(ok, T(`${key} moves the camera ${key.slice(5).toLowerCase()}`), `content moved ${mx.toFixed(0)}, ${my.toFixed(0)} px`);
     }
 
+    if (on("cube")) {
     // ---- NAV-04 view cube and compass ----
     // Each is clicked where the user sees it, starting from Home (looking north-east, so the
     // top, south and west faces show); a hidden face cannot be clicked.
@@ -314,6 +320,7 @@ const H = 640;
       check(Math.abs(wrapDeg(ring + c.heading)) < 0.5, T(`the compass ring shows north (camera heading ${c.heading.toFixed(0)}°)`), `ring turned ${ring.toFixed(1)}°`);
     }
 
+    }
     // ---- NAV-05 Home and Focus selection ----
     const fitsWhole = async (what) => {
       await settle(page, 2000);
@@ -360,7 +367,7 @@ const H = 640;
       await settle(page, 1800);
       const g = await fit(page, sel);
       check(g.centre < 0.05 && g.fill > 0.2 && g.fill < 0.75, T("the Focus selection button fits it too"), `centre ${(g.centre * 100).toFixed(1)}% off`);
-      if (out) await page.screenshot({ path: path.join(out, `${id}-focus.png`) });
+      if (out) await shot(page, path.join(out, `${id}-focus.png`));
     }
     // Click the empty sky: the selection clears, and Z fits the whole model.
     await page.evaluate(() => window.viewerEngine.widget.camera.setView({ orientation: { heading: 0, pitch: 0.3, roll: 0 } }));
@@ -387,7 +394,7 @@ const H = 640;
     if (process.env.JUDGE_FPS) check(fps.avg >= 30 && fps.worst < 1000 / 30 * 2, T("frame rate stays ≥ 30 fps while navigating"), `${fps.avg.toFixed(1)} fps`);
     else console.log(`INFO ${T("frame rate while navigating")}: ${fps.avg.toFixed(1)} fps average, slowest frame ${fps.worst.toFixed(0)} ms (software rendering, not judged)`);
 
-    if (out) await page.screenshot({ path: path.join(out, `${id}.png`) });
+    if (out) await shot(page, path.join(out, `${id}.png`));
     check(errors.length === 0, T("no page errors"), errors[0]);
     await ctx.close();
   }
@@ -418,6 +425,11 @@ async function settle(page, ms) {
   await page.waitForTimeout(ms);
   await helpers(page);
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+}
+
+/** A screenshot, allowed to fail: a slow software-rendered frame can outlast Playwright's wait. */
+async function shot(page, file) {
+  await page.screenshot({ path: file, timeout: 120000 }).catch((e) => console.log(`(screenshot skipped: ${e.message.split("\n")[0]})`));
 }
 
 /** Clicks the middle of an element with the mouse, as a user would, without waiting for the page to idle. */

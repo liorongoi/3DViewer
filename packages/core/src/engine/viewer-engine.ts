@@ -498,7 +498,8 @@ export class ViewerEngine {
 
   private flySphere(bs: BoundingSphere, heading: number, pitch: number, duration: number): Promise<void> {
     return new Promise((resolve) => {
-      const range = Math.max(bs.radius * 3.1, 3);
+      // No nearer than 0.3 m: the view clips closer than about 0.1 m.
+      const range = Math.max(bs.radius * 3.1, 0.3);
       this.widget.camera.flyToBoundingSphere(bs, {
         offset: new HeadingPitchRange(heading, pitch, range),
         duration,
