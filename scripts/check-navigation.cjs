@@ -180,7 +180,7 @@ const H = 640;
       check(Math.abs(d1 / d0 - 1) < 0.002, T(`${what}: the camera stays at the same distance from the pivot`), `×${(d1 / d0).toFixed(4)}`);
       return c1;
     };
-    const mouseDrag = async (button, dx, dy, steps = 12, from = { x: W * 0.3, y: H * 0.5 }) => {
+    const mouseDrag = async (button, dx, dy, steps = 12, from = { x: W * 0.6, y: H * 0.5 }) => {
       const a = at(from.x, from.y);
       await page.mouse.move(a.x, a.y);
       await page.mouse.down({ button });
@@ -190,12 +190,13 @@ const H = 640;
     // 150 px sideways is 150 · π / height of the view in heading.
     const kOrbit = (180 / Math.max(400, H)) * 1;
     await orbitCheck("left-drag sideways", () => mouseDrag("left", 150, 0), (dh) => Math.abs(Math.abs(dh) - 150 * kOrbit) < 1.5);
-    await orbitCheck("left-drag up and down", () => mouseDrag("left", 0, 80, 12, { x: W * 0.3, y: H * 0.4 }), (dh, dp) => Math.abs(dp) > 3 && Math.abs(dh) < 1.5);
+    await orbitCheck("left-drag up and down", () => mouseDrag("left", 0, 80, 12, { x: W * 0.6, y: H * 0.4 }), (dh, dp) => Math.abs(dp) > 3 && Math.abs(dh) < 1.5);
     // Dragging far down never takes the camera past straight down or over the top.
-    await mouseDrag("left", 0, -2000, 30, { x: W * 0.3, y: H * 0.9 });
+    // (in strokes that stay inside the window; the layers panel covers the left side)
+    for (let i = 0; i < 5; i++) await mouseDrag("left", 0, -500, 20, { x: W * 0.6, y: H * 0.9 });
     await settle(page, 400);
     const top = await camInfo(page);
-    await mouseDrag("left", 0, 3000, 30, { x: W * 0.3, y: H * 0.05 });
+    for (let i = 0; i < 6; i++) await mouseDrag("left", 0, 500, 20, { x: W * 0.6, y: H * 0.05 });
     await settle(page, 400);
     const low = await camInfo(page);
     check(top.pitch >= -90.01 && top.pitch < -85 && low.pitch <= 11, T("spinning stops at straight down and a little above the horizon, never flipping"), `${top.pitch.toFixed(1)}° to ${low.pitch.toFixed(1)}°`);
@@ -209,7 +210,7 @@ const H = 640;
     await orbitCheck(
       "one-finger drag",
       async () => {
-        const a = at(W * 0.3, H * 0.5);
+        const a = at(W * 0.6, H * 0.5);
         await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: a.x, y: a.y, id: 1 }] });
         for (let i = 1; i <= 10; i++) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: a.x + i * 12, y: a.y, id: 1 }] });
         await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
@@ -250,8 +251,22 @@ const H = 640;
     }
 
     // ---- NAV-04 view cube and compass ----
-    const cube = async (label, dir) => {
-      await page.getByRole("button", { name: label, exact: true }).first().click();
+    // Each is clicked where the user sees it, starting from Home (looking north-east, so the
+    // top, south and west faces show); a hidden face cannot be clicked.
+    const cube = async (label) => {
+      await page.keyboard.press("h");
+      await settle(page, 2000);
+      const hit = await page.evaluate((label) => {
+        for (const b of document.querySelectorAll(`button[aria-label="${label}"]`)) {
+          const r = b.getBoundingClientRect();
+          const x = r.left + r.width / 2;
+          const y = r.top + r.height / 2;
+          if (r.width > 2 && r.height > 2 && document.elementFromPoint(x, y) === b) return { x, y, dir: b.dataset.dir.split(",").map(Number) };
+        }
+        return null;
+      }, label);
+      if (!hit) return check(false, T(`view cube "${label}" can be clicked from Home`));
+      await page.mouse.click(hit.x, hit.y);
       await settle(page, 1500);
       const r = await page.evaluate((dir) => {
         const e = window.viewerEngine;
@@ -267,20 +282,11 @@ const H = 640;
         const ang = (Math.acos(Math.min(1, enu.reduce((s, v, i) => s + v * wantDir[i], 0))) * 180) / Math.PI;
         const s = e.widget.scene.cartesianToCanvasCoordinates(c);
         return { ang, centre: s ? Math.hypot(s.x - e.widget.canvas.clientWidth / 2, s.y - e.widget.canvas.clientHeight / 2) : Infinity };
-      }, dir);
+      }, hit.dir);
       // Straight down is flown at 89.9°, so allow a little.
-      check(r.ang < 1 && r.centre < 5, T(`view cube "${label}" looks at the model from that side`), `${r.ang.toFixed(2)}° off, model centre ${r.centre.toFixed(1)} px from the middle`);
+      check(r.ang < 1 && r.centre < 5, T(`view cube "${label}" (${hit.dir.join(", ")}) looks at the model from that side`), `${r.ang.toFixed(2)}° off, model centre ${r.centre.toFixed(1)} px from the middle`);
     };
-    await cube("TOP view", [0, 0, 1]);
-    await cube("S view", [0, -1, 0]);
-    await cube("E view", [1, 0, 0]);
-    await cube("N view", [0, 1, 0]);
-    await cube("W edge view", [-1, 0, 1]);
-    await cube("N corner view", await page.evaluate(() => {
-      // A corner of the N face: read the direction the button carries.
-      const b = [...document.querySelectorAll('button[aria-label="N corner view"]')][0];
-      return b.dataset.dir.split(",").map(Number);
-    }));
+    for (const label of ["TOP view", "S view", "W view", "S edge view", "W corner view", "TOP corner view"]) await cube(label);
     // ISO: from the south-west, 35° down.
     await page.getByRole("button", { name: /^ISO/ }).click();
     await settle(page, 1500);
@@ -288,7 +294,8 @@ const H = 640;
     check(Math.abs(wrapDeg(iso.heading - 45)) < 1 && Math.abs(iso.pitch + 35) < 1, T("ISO looks from 45° heading, 35° down"), `${iso.heading.toFixed(1)}°, ${iso.pitch.toFixed(1)}°`);
     // The compass ring turns with the camera: north at the top when looking north.
     for (const turn of [0, 90, 200]) {
-      if (turn) await mouseDrag("left", (turn * Math.max(400, H)) / 180, 0, 20);
+      // A turn of `turn` degrees, in strokes of at most 300 px from the right half of the view.
+      for (let px = (turn * Math.max(400, H)) / 180; px > 0.5; px -= 300) await mouseDrag("left", Math.min(300, px), 0, 15, { x: W * 0.55, y: H * 0.5 });
       await settle(page, 400);
       const c = await camInfo(page);
       const ring = await page.evaluate(() => {

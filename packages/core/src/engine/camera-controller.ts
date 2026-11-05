@@ -150,10 +150,11 @@ export class CameraController {
   handleKey(e: KeyboardEvent): boolean {
     const step = 40;
     switch (e.key) {
-      case "ArrowLeft": this.pan(-step, 0); return true;
-      case "ArrowRight": this.pan(step, 0); return true;
-      case "ArrowUp": this.pan(0, -step); return true;
-      case "ArrowDown": this.pan(0, step); return true;
+      // An arrow moves the camera that way, as on a map: the view's content slides the other way.
+      case "ArrowLeft": this.pan(step, 0); return true;
+      case "ArrowRight": this.pan(-step, 0); return true;
+      case "ArrowUp": this.pan(0, step); return true;
+      case "ArrowDown": this.pan(0, -step); return true;
       case "+": case "=": this.zoomCentre(1); return true;
       case "-": case "_": this.zoomCentre(-1); return true;
     }
