@@ -5,7 +5,7 @@ export type Severity = "ok" | "warning" | "error";
 
 /** One line of the upload check report. Every problem is listed, not just the first. */
 export interface CheckItem {
-  id: "format" | "references" | "structure" | "extensions" | "size" | "georef" | "content" | "conversion" | "scan" | "validator" | "tiling";
+  id: "format" | "references" | "structure" | "extensions" | "size" | "georef" | "content" | "conversion" | "scan" | "validator" | "tiling" | "optimise";
   severity: Severity;
   title: string;
   detail?: string;

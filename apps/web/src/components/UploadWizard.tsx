@@ -530,6 +530,9 @@ const STEP_TEXT: Record<string, string> = {
   check: "Checking the files…",
   scan: "Scanning for viruses…",
   convert: "Converting FBX to glTF…",
+  validate: "Validating…",
+  tile: "Tiling for streaming…",
+  optimise: "Compressing…",
   publish: "Publishing…",
 };
 

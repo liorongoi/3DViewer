@@ -15,7 +15,7 @@ import { enqueue, PermanentError, type Handler } from "./jobs.ts";
 import { addVersion, createModel, type NewModel } from "./library.ts";
 import { closed, int, ref, text } from "./schemas.ts";
 import { Storage, validRelPath } from "./storage.ts";
-import { TILE_IF, tileModelInWorker } from "./tiler.ts";
+import { TILE_IF, optimiseGlbInWorker, tileModelInWorker } from "./tiler.ts";
 import { validateOfficial } from "./validate.ts";
 
 /**
@@ -55,6 +55,8 @@ export interface IngestOptions {
   tileIf?: { triangles: number; bytes: number };
   /** Most triangles in one tile. */
   leafTriangles?: number;
+  /** Compress a GLB's geometry before publishing (default on). */
+  optimise?: boolean;
 }
 
 const MAX_FILES = 100_000;
@@ -82,6 +84,8 @@ interface IngestRow {
   ip: string;
   host: string;
 }
+
+const mb = (n: number) => `${(n / 1048576).toFixed(n < 10 * 1048576 ? 1 : 0)} MB`;
 
 async function fileSize(p: string): Promise<number> {
   return (await stat(p).catch(() => null))?.size ?? 0;
@@ -478,6 +482,24 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
           });
         } catch (e) {
           report.items.push({ id: "tiling", severity: "warning", title: "Could not tile the model; it is published as one file", detail: e instanceof Error ? e.message : String(e) });
+        }
+      }
+
+      // A single GLB (uploaded, or made from an FBX) is sent smaller: the same positions, compressed.
+      const glbIndex = main && !tiled && (report.format === "glb" || report.format === "fbx") ? publish.indexOf(main) : -1;
+      if (opts.optimise !== false && glbIndex >= 0 && main!.path.toLowerCase().endsWith(".glb")) {
+        await ctx.progress({ step: "optimise" });
+        const dest = path.join(work, "optimised.glb");
+        try {
+          const o = await optimiseGlbInWorker(main!.src, dest);
+          if (o.written) {
+            publish = publish.map((f, i) => (i === glbIndex ? diskFile(f.path, dest, o.after) : f));
+            // The file as uploaded stays downloadable; a GLB made from an FBX has the FBX for that.
+            if (report.format === "glb") publish.push({ ...main!, path: `original/${main!.path}` });
+            report.items.push({ id: "optimise", severity: "ok", title: `Compressed for sending: ${mb(o.before)} to ${mb(o.after)}`, detail: "Geometry is compressed; every point is where it was, so measurements are unchanged." });
+          }
+        } catch (e) {
+          report.items.push({ id: "optimise", severity: "warning", title: "Could not compress the model; it is published as uploaded", detail: e instanceof Error ? e.message : String(e) });
         }
       }
 

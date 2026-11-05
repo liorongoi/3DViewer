@@ -274,6 +274,20 @@ describe("ingest job", () => {
       delete opts.leafTriangles;
     }
   }, 60_000);
+
+  it("publishes a GLB compressed, and keeps the upload to download", async () => {
+    const data = gridGlb(200); // 80,000 triangles, mostly geometry
+    const r = await submitAndRun((await upload([{ path: "field.glb", data }], { model: { ...model, name: "Field" }, placement })).id);
+    expect(r, r.error).toMatchObject({ state: "ready", report: { format: "glb", ok: true } });
+    expect(r.report.items.find((i: { id: string }) => i.id === "optimise")).toMatchObject({ severity: "ok", title: expect.stringMatching(/^Compressed for sending: [\d.]+ MB to [\d.]+ MB$/) });
+    const m = (await app.inject(`/api/models/${r.modelId}`)).json();
+    expect(m.source).toEqual({ kind: "glb", url: `files/${r.modelId}/${r.id}/field.glb` });
+    const sent = (await app.inject(`/${m.source.url}`)).rawPayload;
+    expect(sent.length).toBeLessThan(data.length * 0.8);
+    expect(sent.subarray(0, 4).toString()).toBe("glTF");
+    expect(sent.toString("latin1")).toContain("EXT_meshopt_compression");
+    expect((await app.inject(`/files/${r.modelId}/${r.id}/original/field.glb`)).rawPayload.equals(Buffer.from(data))).toBe(true);
+  }, 60_000);
 });
 
 describe("AC-02: the bad-file kit", () => {
