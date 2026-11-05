@@ -488,14 +488,15 @@ async function fit(page, layerId) {
     const e = window.viewerEngine;
     const bs = layerId && layerId !== "tileset" ? e.layerSphere(layerId) : e.boundingSphere();
     const cam = e.widget.camera;
-    const w = e.widget.canvas.clientWidth;
-    const h = e.widget.canvas.clientHeight;
-    const s = e.widget.scene.cartesianToCanvasCoordinates(bs.center);
     const d = dist(cam.positionWC, bs.center);
     const fovy = cam.frustum.fovy;
     // Apparent diameter over the view's height.
     const fill = (2 * Math.asin(Math.min(1, bs.radius / d))) / fovy;
-    return { centre: s ? Math.hypot(s.x - w / 2, s.y - h / 2) / Math.min(w, h) : 1, fill };
+    // How far off the middle of the view the centre is, as an angle over the view's height
+    // (worked out directly: Cesium's own projection gives nothing for points this close).
+    const to = norm({ x: bs.center.x - cam.positionWC.x, y: bs.center.y - cam.positionWC.y, z: bs.center.z - cam.positionWC.z });
+    const off = Math.acos(Math.min(1, dot(to, cam.directionWC)));
+    return { centre: off / fovy, fill };
   }, layerId);
 }
 
