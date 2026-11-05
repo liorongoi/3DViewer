@@ -40,7 +40,8 @@ export function Workspace() {
   return (
     <>
       {/* left column */}
-      <div className={cx("pointer-events-none fixed start-3 z-20 flex flex-col gap-2", top, bottom)}>
+      {/* In a model the column stops above the dock, which it would cover on screens under 1536 px. */}
+      <div className={cx("pointer-events-none fixed start-3 z-20 flex flex-col gap-2", top, route === "viewer" ? "bottom-[84px] 2xl:bottom-7" : bottom)}>
         {route === "home" ? (
           leftOpen ? (
             <section className={cx("glass pointer-events-auto flex w-[360px] min-h-0 flex-col rounded-[14px]", fade.panel)}>

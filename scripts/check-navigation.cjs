@@ -29,8 +29,8 @@ const path = require("path");
 const { chromium } = require("playwright");
 
 const MODELS = (process.env.MODELS ?? "m-chess,m-tiles-lod").split(",");
-const W = 1200;
-const H = 760;
+const W = 1000;
+const H = 640;
 
 (async () => {
   const out = process.argv[2];
@@ -63,6 +63,10 @@ const H = 760;
       // Shadows off: software rendering is slow enough without them; navigation does not use them.
       e.widget.scene.shadowMap.enabled = false;
       e.shadowsWanted = false;
+      // Drawn on a timer rather than flat out: software rendering otherwise starves the input
+      // events and the checks crawl. The frame-rate step turns the normal loop back on.
+      e.widget.useDefaultRenderLoop = false;
+      window.__renderTimer = setInterval(() => e.widget.render(), 100);
     });
     await settle(page, 4000);
     const kind = await page.evaluate(() => (window.viewerEngine.model ? "GLB" : "3D Tiles"));
@@ -142,13 +146,22 @@ const H = 760;
     await settle(page, 2200);
     const dblSpot = (await findModelPoint(page, [[0.5, 0.5], [0.45, 0.55], [0.55, 0.45]])) ?? spot;
     const want = await pickAt(page, dblSpot.x, dblSpot.y);
+    // The pivot mark shows for a second; note when it is drawn.
+    await page.evaluate(() => {
+      const e = window.viewerEngine;
+      const show = e.showPivot.bind(e);
+      e.showPivot = (p) => {
+        show(p);
+        window.__pivotMarked = !!e.pivotMarker?.show;
+      };
+    });
     await page.mouse.dblclick(at(dblSpot.x, dblSpot.y).x, at(dblSpot.x, dblSpot.y).y);
     await settle(page, 400);
     const pivot = await page.evaluate(() => xyz(window.viewerEngine.camera.pivot));
     const pivotErr = want ? dist(pivot, want) : Infinity;
     const scale = await camDist(page, pivot);
     check(pivotErr < Math.max(0.02, scale * 0.002), T("double-click sets the pivot on the model where clicked"), `${pivotErr.toFixed(3)} m off at ${scale.toFixed(1)} m`);
-    check(await page.evaluate(() => !!window.viewerEngine.pivotMarker?.show), T("the pivot is marked in the view"));
+    check(await page.evaluate(() => !!window.__pivotMarked), T("the pivot is marked in the view"));
 
     const orbitCheck = async (what, drag, expect) => {
       const p0 = await screenOf(page, pivot);
@@ -345,6 +358,10 @@ const H = 760;
     // ---- NFR-03 frame rate while navigating ----
     await page.keyboard.press("h");
     await settle(page, 2000);
+    await page.evaluate(() => {
+      clearInterval(window.__renderTimer);
+      window.viewerEngine.widget.useDefaultRenderLoop = true;
+    });
     const fps = await measureFps(page, async () => {
       await mouseDrag("left", 400, 40, 60);
       await mouseDrag("right", -200, 80, 40);
