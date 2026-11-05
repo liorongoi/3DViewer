@@ -138,8 +138,8 @@ const H = 640;
     await focusView(page);
     await centreZoom("+ key", () => page.keyboard.press("+"), true);
     await centreZoom("− key", () => page.keyboard.press("-"), false);
-    await centreZoom("Zoom in button", () => page.getByRole("button", { name: /^Zoom in/ }).first().click(), true);
-    await centreZoom("Zoom out button", () => page.getByRole("button", { name: /^Zoom out/ }).first().click(), false);
+    await centreZoom("Zoom in button", () => clickCentre(page, page.getByRole("button", { name: /^Zoom in/ })), true);
+    await centreZoom("Zoom out button", () => clickCentre(page, page.getByRole("button", { name: /^Zoom out/ })), false);
 
     // ---- NAV-02 pivot by double-click, orbit by left-drag ----
     await page.keyboard.press("h");
@@ -193,12 +193,16 @@ const H = 640;
     await orbitCheck("left-drag up and down", () => mouseDrag("left", 0, 80, 12, { x: W * 0.6, y: H * 0.4 }), (dh, dp) => Math.abs(dp) > 3 && Math.abs(dh) < 1.5);
     // Dragging far down never takes the camera past straight down or over the top.
     // (in strokes that stay inside the window; the layers panel covers the left side)
+    // The globe is hidden meanwhile: looking along the ground to the horizon takes software
+    // rendering minutes per frame. The camera limits do not depend on it.
+    await page.evaluate(() => (window.viewerEngine.widget.scene.globe.show = false));
     for (let i = 0; i < 6; i++) await mouseDrag("left", 0, -400, 20, { x: W * 0.6, y: H * 0.8 });
     await settle(page, 400);
     const a1 = await camInfo(page);
     for (let i = 0; i < 8; i++) await mouseDrag("left", 0, 400, 20, { x: W * 0.6, y: H * 0.15 });
     await settle(page, 400);
     const a2 = await camInfo(page);
+    await page.evaluate(() => (window.viewerEngine.widget.scene.globe.show = true));
     const top = a1.pitch < a2.pitch ? a1 : a2;
     const low = a1.pitch < a2.pitch ? a2 : a1;
     check(top.pitch >= -90.01 && top.pitch < -85 && low.pitch <= 11, T("spinning stops at straight down and a little above the horizon, never flipping"), `${top.pitch.toFixed(1)}° to ${low.pitch.toFixed(1)}°`);
@@ -293,7 +297,7 @@ const H = 640;
     };
     for (const label of ["TOP view", "S view", "W view", "S edge view", "W corner view", "TOP corner view"]) await cube(label);
     // ISO: from the south-west, 35° down.
-    await page.getByRole("button", { name: /^ISO/ }).click();
+    await clickCentre(page, page.getByRole("button", { name: /^ISO/ }));
     await settle(page, 1500);
     const iso = await camInfo(page);
     check(Math.abs(wrapDeg(iso.heading - 45)) < 1 && Math.abs(iso.pitch + 35) < 1, T("ISO looks from 45° heading, 35° down"), `${iso.heading.toFixed(1)}°, ${iso.pitch.toFixed(1)}°`);
@@ -320,7 +324,7 @@ const H = 640;
     await page.keyboard.press("h");
     await fitsWhole("H");
     await mouseDrag("right", -250, 120);
-    await page.getByRole("button", { name: /^Home/ }).first().click();
+    await clickCentre(page, page.getByRole("button", { name: /^Home/ }));
     await fitsWhole("the Home button");
 
     if (kind === "GLB") {
@@ -352,7 +356,7 @@ const H = 640;
       const f = await fit(page, sel);
       check(f.centre < 0.05 && f.fill > 0.2 && f.fill < 0.75, T(`Z fits the selected part (${sel})`), `centre ${(f.centre * 100).toFixed(1)}% off, fills ${(f.fill * 100).toFixed(0)}%`);
       await mouseDrag("right", -200, 100);
-      await page.getByRole("button", { name: /^Focus selection/ }).first().click();
+      await clickCentre(page, page.getByRole("button", { name: /^Focus selection/ }).last());
       await settle(page, 1800);
       const g = await fit(page, sel);
       check(g.centre < 0.05 && g.fill > 0.2 && g.fill < 0.75, T("the Focus selection button fits it too"), `centre ${(g.centre * 100).toFixed(1)}% off`);
@@ -414,6 +418,12 @@ async function settle(page, ms) {
   await page.waitForTimeout(ms);
   await helpers(page);
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+}
+
+/** Clicks the middle of an element with the mouse, as a user would, without waiting for the page to idle. */
+async function clickCentre(page, locator) {
+  const b = await locator.first().boundingBox();
+  await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
 }
 
 async function pickAt(page, x, y) {
