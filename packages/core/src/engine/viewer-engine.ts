@@ -20,6 +20,7 @@ import {
   Matrix4,
   Model,
   NearFarScalar,
+  PerspectiveFrustum,
   PostProcessStageLibrary,
   type PostProcessStage,
   type PostProcessStageComposite,
@@ -498,8 +499,14 @@ export class ViewerEngine {
 
   private flySphere(bs: BoundingSphere, heading: number, pitch: number, duration: number): Promise<void> {
     return new Promise((resolve) => {
-      // No nearer than 0.3 m: the view clips closer than about 0.1 m.
-      const range = Math.max(bs.radius * 3.1, 0.3);
+      // Far enough that the sphere spans about 60% of the view's narrower angle, whatever the
+      // window's shape; the whole sphere stays beyond the view's near limit (0.1 m).
+      const f = this.widget.camera.frustum as PerspectiveFrustum;
+      const aspect = this.widget.canvas.clientWidth / Math.max(1, this.widget.canvas.clientHeight);
+      const fov = f.fov ?? CMath.toRadians(60);
+      // Cesium's fov is across the wider side.
+      const narrow = aspect >= 1 ? 2 * Math.atan(Math.tan(fov / 2) / aspect) : fov;
+      const range = Math.max(bs.radius / Math.sin(0.3 * narrow), bs.radius + 0.12);
       this.widget.camera.flyToBoundingSphere(bs, {
         offset: new HeadingPitchRange(heading, pitch, range),
         duration,

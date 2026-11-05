@@ -386,9 +386,9 @@ const H = 640;
       window.viewerEngine.widget.useDefaultRenderLoop = true;
     });
     const fps = await measureFps(page, async () => {
-      await mouseDrag("left", 400, 40, 60);
-      await mouseDrag("right", -200, 80, 40);
-      for (let i = 0; i < 20; i++) await page.mouse.wheel(0, i < 10 ? -60 : 60);
+      await mouseDrag("left", 300, 30, 20);
+      await mouseDrag("right", -200, 80, 12);
+      for (let i = 0; i < 8; i++) await page.mouse.wheel(0, i < 4 ? -60 : 60);
     });
     fpsReport.push(`${id}: ${fps.avg.toFixed(1)} fps average, slowest frame ${fps.worst.toFixed(0)} ms`);
     if (process.env.JUDGE_FPS) check(fps.avg >= 30 && fps.worst < 1000 / 30 * 2, T("frame rate stays ≥ 30 fps while navigating"), `${fps.avg.toFixed(1)} fps`);

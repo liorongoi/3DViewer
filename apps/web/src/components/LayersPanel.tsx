@@ -96,6 +96,7 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
             dir="auto"
             data-content
             onClick={() => engine?.selectedLayer.set(l.id === selected ? null : l.id)}
+            onDoubleClick={() => (engine?.selectedLayer.set(l.id), void engine?.focusLayer(l.id))}
           >
             {l.name}
           </span>

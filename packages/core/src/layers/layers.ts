@@ -26,7 +26,8 @@ interface GltfJson {
   scene?: number;
   scenes?: { nodes?: number[] }[];
   nodes?: GltfNode[];
-  meshes?: { name?: string }[];
+  meshes?: { name?: string; primitives?: { attributes?: Record<string, number> }[] }[];
+  accessors?: { min?: number[]; max?: number[] }[];
 }
 
 /** Builds the layer tree from glTF JSON. Nodes without a mesh anywhere below them are skipped. */
