@@ -193,12 +193,14 @@ const H = 640;
     await orbitCheck("left-drag up and down", () => mouseDrag("left", 0, 80, 12, { x: W * 0.6, y: H * 0.4 }), (dh, dp) => Math.abs(dp) > 3 && Math.abs(dh) < 1.5);
     // Dragging far down never takes the camera past straight down or over the top.
     // (in strokes that stay inside the window; the layers panel covers the left side)
-    for (let i = 0; i < 5; i++) await mouseDrag("left", 0, -500, 20, { x: W * 0.6, y: H * 0.9 });
+    for (let i = 0; i < 6; i++) await mouseDrag("left", 0, -400, 20, { x: W * 0.6, y: H * 0.8 });
     await settle(page, 400);
-    const top = await camInfo(page);
-    for (let i = 0; i < 6; i++) await mouseDrag("left", 0, 500, 20, { x: W * 0.6, y: H * 0.05 });
+    const a1 = await camInfo(page);
+    for (let i = 0; i < 8; i++) await mouseDrag("left", 0, 400, 20, { x: W * 0.6, y: H * 0.15 });
     await settle(page, 400);
-    const low = await camInfo(page);
+    const a2 = await camInfo(page);
+    const top = a1.pitch < a2.pitch ? a1 : a2;
+    const low = a1.pitch < a2.pitch ? a2 : a1;
     check(top.pitch >= -90.01 && top.pitch < -85 && low.pitch <= 11, T("spinning stops at straight down and a little above the horizon, never flipping"), `${top.pitch.toFixed(1)}° to ${low.pitch.toFixed(1)}°`);
     // Touch: one finger spins too.
     await page.keyboard.press("h");
@@ -278,7 +280,10 @@ const H = 640;
         const d = e.widget.camera.directionWC;
         const enu = [dot(d, east), dot(d, north), dot(d, up)];
         const n = Math.hypot(...dir);
-        const wantDir = dir.map((v) => -v / n);
+        // Looking along the opposite of the direction; a side view looks 5° down so the ground
+        // does not fill the view edge-on (as the viewer flies it).
+        const t = (5 * Math.PI) / 180;
+        const wantDir = dir[2] === 0 ? [(-dir[0] / n) * Math.cos(t), (-dir[1] / n) * Math.cos(t), -Math.sin(t)] : dir.map((v) => -v / n);
         const ang = (Math.acos(Math.min(1, enu.reduce((s, v, i) => s + v * wantDir[i], 0))) * 180) / Math.PI;
         const s = e.widget.scene.cartesianToCanvasCoordinates(c);
         return { ang, centre: s ? Math.hypot(s.x - e.widget.canvas.clientWidth / 2, s.y - e.widget.canvas.clientHeight / 2) : Infinity };
