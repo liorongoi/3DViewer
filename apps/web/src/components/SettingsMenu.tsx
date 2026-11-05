@@ -77,7 +77,7 @@ export function SettingsMenu({ onClose }: { onClose: () => void }) {
           label={t("settings.memory")}
           value={String(s.memoryGb)}
           onChange={(v: string) => s.setPref("memoryGb", Number(v))}
-          options={["1", "2", "4", "8"].map((g) => ({ value: g, label: <span dir="ltr">{g} GB</span> }))}
+          options={["2", "4", "8", "10"].map((g) => ({ value: g, label: <span dir="ltr">{g} GB</span> }))}
         />
       </div>
       <div className="my-2 h-px bg-line" />
