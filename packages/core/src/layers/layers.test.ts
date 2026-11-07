@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { effectiveVisibility, filterLayers, findLayer, isolate, layerForNode, layersFromGltf, layersFromTileset, setAllVisible, setVisible } from "./layers";
+import { applyManifest, effectiveVisibility, filterLayers, findLayer, isolate, layerForNode, layerNodes, layersFromGltf, layersFromTileset, setAllVisible, setVisible, walk, type Layer } from "./layers";
 
 const gltf = {
   scenes: [{ nodes: [0] }],
@@ -94,5 +94,60 @@ describe("layers from a tiled model (WP 2.1)", () => {
     expect(layersFromTileset({ layers: [] })).toBeNull();
     expect(layersFromTileset({ layers: [{ name: "x", node: "2", children: [] }] })).toBeNull();
     expect(layersFromTileset({ layers: [{ name: "x", node: 2, children: [{ name: "bad" }] }] })).toBeNull();
+  });
+});
+
+describe("saved layer manifest (WP 2.1)", () => {
+  // A building (node 0) with walls (1) and a roof (2, with a chimney 3), and a tree (4).
+  const box = (x: number) => ({ lo: [x, 0, 0] as [number, number, number], hi: [x + 1, 1, 1] as [number, number, number] });
+  const L = (node: number, name: string, children: Layer[] = []): Layer => ({ id: `node-${node}`, name, node, visible: true, children, box: box(node) });
+  const derived = () => [L(0, "Building", [L(1, "Walls"), L(2, "Roof", [L(3, "Chimney")])]), L(4, "Tree")];
+  const shape = (ls: Layer[]): unknown[] => ls.map((l) => [l.name, ...(l.children.length ? [shape(l.children)] : [])]);
+  /** Every node of the model, exactly once over the whole tree. */
+  const everyNodeOnce = (ls: Layer[]) => {
+    const seen: number[] = [];
+    walk(ls, (l) => seen.push(...layerNodes(l)));
+    return seen.sort().join() === "0,1,2,3,4";
+  };
+
+  it("leaves the tree as it is with no manifest", () => {
+    expect(applyManifest(derived(), null)).toEqual(derived());
+    expect(applyManifest(derived(), { layers: [] })).toEqual(derived());
+  });
+
+  it("renames and reorders, and keeps the parts it does not mention after its own", () => {
+    const t = applyManifest(derived(), { layers: [{ name: "Trees", nodes: [4] }, { name: "Roofs", nodes: [2] }] });
+    expect(shape(t)).toEqual([["Trees"], ["Roofs", [["Chimney"]]], ["Building", [["Walls"]]]]);
+    expect(t[0]!.id).toBe("node-4");
+    expect(everyNodeOnce(t)).toBe(true);
+  });
+
+  it("merges several parts into one layer that shows, hides and picks them all", () => {
+    const t = applyManifest(derived(), { layers: [{ name: "Structure", nodes: [1, 2] }] });
+    expect(shape(t)).toEqual([["Structure"], ["Building"], ["Tree"]]);
+    const s = t[0]!;
+    expect(layerNodes(s).sort()).toEqual([1, 2, 3]); // the chimney goes with its roof
+    expect(s.box).toEqual({ lo: [1, 0, 0], hi: [3, 1, 1] });
+    expect(layerForNode(t, [], 3)?.id).toBe(s.id);
+    expect(everyNodeOnce(t)).toBe(true);
+  });
+
+  it("nests parts under a new group, and takes a part out of its parent", () => {
+    const t = applyManifest(derived(), { layers: [{ name: "Site", children: [{ name: "Chimney", nodes: [3] }, { name: "Tree", nodes: [4] }] }] });
+    expect(shape(t)).toEqual([["Site", [["Chimney"], ["Tree"]]], ["Building", [["Walls"], ["Roof"]]]]);
+    expect(layerNodes(t[0]!)).toEqual([]);
+    expect(t[0]!.box).toEqual({ lo: [3, 0, 0], hi: [5, 1, 1] });
+    expect(everyNodeOnce(t)).toBe(true);
+  });
+
+  it("ignores parts the model does not have, and drops layers left empty", () => {
+    const t = applyManifest(derived(), { layers: [{ name: "Gone", nodes: [99] }, { name: "", nodes: [4] }] });
+    expect(shape(t)).toEqual([["Tree"], ["Building", [["Walls"], ["Roof", [["Chimney"]]]]]]);
+  });
+
+  it("hides a merged layer's parts and its nested layers with it", () => {
+    const t = applyManifest(derived(), { layers: [{ name: "All", nodes: [0], children: [{ name: "Tree", nodes: [4] }] }] });
+    const v = effectiveVisibility(setVisible(t, "node-0", false));
+    expect([...v.values()].every((x) => !x)).toBe(true);
   });
 });

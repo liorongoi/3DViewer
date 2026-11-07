@@ -132,3 +132,51 @@ describe("audit log", () => {
     expect(Number(v.brokenAt)).toBe(4);
   });
 });
+
+describe("layer manifest (WP 2.1)", () => {
+  const manifest = { layers: [{ name: "Structure", nodes: [1, 2], children: [{ name: "Chimney", nodes: [3] }] }, { name: "Trees", nodes: [4] }] };
+  it("saves the arrangement for the current version, audits it, and carries it to the next version", async () => {
+    const id = (await app.inject({ method: "POST", url: "/api/models", payload: { ...newModel, name: "Layered" }, headers: ws })).json().id as string;
+    expect((await app.inject(`/api/models/${id}/layers`)).json()).toEqual({ version: 1, manifest: null });
+
+    const put = await app.inject({ method: "PUT", url: `/api/models/${id}/layers`, payload: { manifest }, headers: ws });
+    expect(put.statusCode, put.body).toBe(200);
+    expect(put.json()).toEqual({ version: 1, manifest });
+    expect((await app.inject(`/api/models/${id}/layers`)).json()).toEqual({ version: 1, manifest });
+
+    // A new version starts with the same arrangement; changing it leaves version 1's alone.
+    await app.inject({ method: "POST", url: `/api/models/${id}/versions`, payload: { source: { kind: "glb", url: "files/x/v2.glb" }, note: "v2" }, headers: ws });
+    expect((await app.inject(`/api/models/${id}/layers`)).json()).toEqual({ version: 2, manifest });
+    const changed = { layers: [{ name: "Everything", nodes: [0] }] };
+    await app.inject({ method: "PUT", url: `/api/models/${id}/layers`, payload: { manifest: changed }, headers: ws });
+    expect((await app.inject(`/api/models/${id}/layers`)).json().manifest).toEqual(changed);
+    expect((await app.inject(`/api/models/${id}/layers?version=1`)).json()).toEqual({ version: 1, manifest });
+
+    // Cleared: back to the file's own tree.
+    expect((await app.inject({ method: "PUT", url: `/api/models/${id}/layers`, payload: { manifest: null }, headers: ws })).json()).toEqual({ version: 2, manifest: null });
+    expect((await app.inject(`/api/models/${id}/layers`)).json().manifest).toBeNull();
+
+    const { token } = (await app.inject({ method: "POST", url: "/api/admin/login", payload: { password: "correct horse battery" } })).json();
+    const events = (await app.inject({ url: `/api/audit?target=${id}&action=layers.update`, headers: { authorization: `Bearer ${token}` } })).json();
+    expect(events.map((e: { host: string; detail: { version: number; cleared: boolean } }) => [e.host, e.detail.version, e.detail.cleared])).toEqual([
+      ["ANALYST-07", 2, true],
+      ["ANALYST-07", 2, false],
+      ["ANALYST-07", 1, false],
+    ]);
+  });
+
+  it("refuses an arrangement it cannot use, and an unknown model", async () => {
+    const id = (await app.inject("/api/models")).json()[0].id as string;
+    const bad = async (payload: unknown) => (await app.inject({ method: "PUT", url: `/api/models/${id}/layers`, payload })).statusCode;
+    expect(await bad({ manifest: { layers: [{ nodes: [1] }] } })).toBe(400); // no name
+    expect(await bad({ manifest: { layers: [{ name: "x", nodes: [-1] }] } })).toBe(400);
+    expect(await bad({ manifest: { layers: [{ name: "x", nodes: [1.5] }] } })).toBe(400);
+    let deep: { name: string; children?: unknown[] } = { name: "leaf" };
+    for (let i = 0; i < 70; i++) deep = { name: `l${i}`, children: [deep] };
+    const r = await app.inject({ method: "PUT", url: `/api/models/${id}/layers`, payload: { manifest: { layers: [deep] } } });
+    expect([r.statusCode, r.json().error]).toEqual([400, "The layers are nested more than 64 deep."]);
+    expect((await app.inject({ method: "PUT", url: "/api/models/nope/layers", payload: { manifest: null } })).statusCode).toBe(404);
+    expect((await app.inject("/api/models/nope/layers")).statusCode).toBe(404);
+    expect((await app.inject(`/api/models/${id}/layers?version=99`)).statusCode).toBe(404);
+  });
+});

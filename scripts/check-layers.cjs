@@ -13,7 +13,8 @@
 //   - Pointing at a row outlines that part in 3D; clicking a part in 3D selects its row.
 // After each step every part's state in the renderer is compared with the panel: its row is
 // shown (eye on, every parent's eye on) exactly when the renderer draws the part. Hide all is
-// also checked by picking: the model can no longer be hit.
+// also checked by picking: the model can no longer be hit. Last, a saved layer manifest (WP 2.1)
+// is applied: renamed, merged, nested and ordered layers, with the same check.
 //
 // Usage: build apps/web, start `vite preview` on :4173, then
 //   node scripts/check-layers.cjs
@@ -93,10 +94,12 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
         const out = {};
         const rec = (ls) =>
           ls.forEach((l) => {
-            if (e.model) out[l.id] = e.model.sceneGraph._runtimeNodes[l.node]?.show !== false;
+            // A layer merged from several parts is drawn when all of them are.
+            const nodes = l.nodes ?? (l.node !== undefined ? [l.node] : []);
+            if (e.model) out[l.id] = nodes.every((n) => e.model.sceneGraph._runtimeNodes[n]?.show !== false);
             else {
               const show = e.tileset.style?.show;
-              out[l.id] = !show || !!show.evaluate({ getProperty: (p) => (p === "node" ? l.node : undefined) });
+              out[l.id] = nodes.every((n) => !show || !!show.evaluate({ getProperty: (p) => (p === "node" ? n : undefined) }));
             }
             rec(l.children);
           });
@@ -258,15 +261,18 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
     await page.waitForTimeout(300);
 
     // ---- pointing at a row outlines the part; clicking the part selects the row ----
-    await row(leaf.id).evaluate((el) => el.scrollIntoView({ block: "nearest" }));
-    const rb = await row(leaf.id).locator(":scope > div").boundingBox();
+    const listed = await panel();
+    if (!listed.some((r) => r.id === leaf.id)) console.log(`INFO ${kind}: ${leaf.name} is not listed now (rows: ${listed.length}); pointing at ${listed[1].name}`);
+    const pointAt = listed.some((r) => r.id === leaf.id) ? leaf.id : listed[1].id;
+    await row(pointAt).evaluate((el) => el.scrollIntoView({ block: "nearest" }));
+    const rb = await row(pointAt).locator(":scope > div").boundingBox();
     await page.mouse.move(rb.x + rb.width * 0.6, rb.y + rb.height / 2, { steps: 3 });
     await page.waitForTimeout(300);
     const outline = await page.evaluate(() => {
       const e = window.viewerEngine;
       return { id: e.hoveredLayer.get(), shown: !!e.hoverBox && e.widget.entities.contains(e.hoverBox) };
     });
-    check(outline.id === leaf.id && outline.shown, T("pointing at a row outlines that part in 3D"), outline.id);
+    check(outline.id === pointAt && outline.shown, T("pointing at a row outlines that part in 3D"), outline.id);
     await page.mouse.move(5, 400);
     await page.waitForTimeout(200);
     check((await page.evaluate(() => window.viewerEngine.hoveredLayer.get())) === null, T("the outline goes when the pointer leaves the list"));
@@ -285,6 +291,33 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
       const selRow = sel ? await row(sel).getAttribute("aria-selected") : null;
       check(!!sel && selRow === "true", T("clicking a part in 3D selects its row"), sel ? layers.find((l) => l.id === sel)?.name : "nothing picked");
     }
+
+    // ---- WP 2.1: a saved manifest renames, merges, nests and orders the layers ----
+    const nodeOf = (name) => layers.find((l) => l.name === name).node;
+    const manifest = {
+      layers: [
+        { name: "Board", nodes: [nodeOf("Chessboard")] },
+        { name: "Pieces", children: [{ name: "Kings", nodes: [nodeOf("King_W"), nodeOf("King_B")] }, { name: "Queens", nodes: [nodeOf("Queen_W"), nodeOf("Queen_B")] }] },
+      ],
+    };
+    await page.evaluate((m) => window.viewerEngine.setLayerManifest(m), manifest);
+    await page.waitForTimeout(400);
+    rows = await matches("with the saved manifest");
+    check(JSON.stringify(rows.slice(0, 4).map((r) => [r.name, r.depth])) === JSON.stringify([["Board", 0], ["Pieces", 0], ["Kings", 1], ["Queens", 1]]), T("the manifest's names, nesting and order come first"), rows.slice(0, 4).map((r) => r.name).join(", "));
+    check(rows.length === layers.length - 5 + 4 && !rows.some((r) => ["Chessboard", "King_W", "King_B", "Queen_W", "Queen_B"].includes(r.name)), T("the other parts follow in the file's own order, the arranged ones not repeated"), `${rows.length} rows`);
+    const kings = rows.find((r) => r.name === "Kings").id;
+    await clickEye(kings);
+    rows = await matches("Kings (two merged parts) hidden");
+    const kd = await page.evaluate((ns) => ns.map((n) => {
+      const e = window.viewerEngine;
+      if (e.model) return e.model.sceneGraph._runtimeNodes[n].show;
+      return !!e.tileset.style?.show.evaluate({ getProperty: () => n }) ;
+    }), [nodeOf("King_W"), nodeOf("King_B")]);
+    check(kd.every((x) => x === false) && rows.filter((r) => !r.shown).length === 1, T("hiding a merged layer hides each of its parts in 3D, and nothing else"));
+    await page.evaluate(() => window.viewerEngine.setLayerManifest(null));
+    await page.waitForTimeout(300);
+    rows = await matches("manifest cleared");
+    check(JSON.stringify(rows.map((r) => [r.id, r.name, r.depth])) === JSON.stringify(layers.map((l) => [l.id, l.name, l.depth])) && rows.every((r) => r.shown), T("clearing the manifest goes back to the file's own tree, all shown"));
 
     check(errors.length === 0, T("no page errors"), errors[0]);
     await ctx.close();

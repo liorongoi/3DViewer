@@ -1,4 +1,4 @@
-import type { ModelSummary } from "@viewer/shared/model";
+import type { LayerManifest, ModelSummary } from "@viewer/shared/model";
 import type { Queryable } from "./db.ts";
 
 /** WP 3.6: the library, in the same shape the client already uses (ModelSummary). */
@@ -174,5 +174,44 @@ export async function addVersion(q: Queryable, id: string, v: { source: ModelSum
     v.note ?? "",
   ]);
   await q.query("UPDATE models SET current_version = $2, updated_at = now() WHERE id = $1", [id, m.n]);
+  // The producer's layer arrangement carries over to the new version (WP 4.3); parts the new
+  // file no longer has are skipped when it is applied, and new ones show after it.
+  await q.query("INSERT INTO layer_manifests (model_id, version, manifest) SELECT model_id, $2, manifest FROM layer_manifests WHERE model_id = $1 AND version = $2 - 1", [id, m.n]);
   return m.n;
+}
+
+/** The saved layer arrangement of a version (the current one if left out), or null. */
+export async function getManifest(q: Queryable, id: string, version?: number): Promise<{ version: number; manifest: LayerManifest | null } | null> {
+  const [m] = await q.query<{ v: number }>("SELECT current_version AS v FROM models WHERE id = $1 AND deleted_at IS NULL", [id]);
+  if (!m) return null;
+  const v = version ?? m.v;
+  const [ver] = await q.query("SELECT 1 FROM versions WHERE model_id = $1 AND version = $2", [id, v]);
+  if (!ver) return null;
+  const [row] = await q.query<{ manifest: LayerManifest | string }>("SELECT manifest FROM layer_manifests WHERE model_id = $1 AND version = $2", [id, v]);
+  const manifest = row ? (typeof row.manifest === "string" ? (JSON.parse(row.manifest) as LayerManifest) : row.manifest) : null;
+  return { version: v, manifest };
+}
+
+/** Saves the layer arrangement of the current version; null removes it. Returns that version. */
+export async function setManifest(q: Queryable, id: string, manifest: LayerManifest | null): Promise<number | null> {
+  const [m] = await q.query<{ v: number }>("SELECT current_version AS v FROM models WHERE id = $1 AND deleted_at IS NULL", [id]);
+  if (!m) return null;
+  if (manifest) await q.query("INSERT INTO layer_manifests (model_id, version, manifest) VALUES ($1, $2, $3) ON CONFLICT (model_id, version) DO UPDATE SET manifest = EXCLUDED.manifest", [id, m.v, JSON.stringify(manifest)]);
+  else await q.query("DELETE FROM layer_manifests WHERE model_id = $1 AND version = $2", [id, m.v]);
+  return m.v;
+}
+
+/** Why a manifest cannot be saved, or null when it can: too deep, too large, or not whole numbers. */
+export function manifestProblem(m: LayerManifest): string | null {
+  let count = 0;
+  const rec = (ls: LayerManifest["layers"], depth: number): string | null => {
+    if (depth > 64) return "The layers are nested more than 64 deep.";
+    for (const l of ls) {
+      if (++count > 100_000) return "There are more than 100,000 layers.";
+      const r = rec(l.children ?? [], depth + 1);
+      if (r) return r;
+    }
+    return null;
+  };
+  return rec(m.layers, 1);
 }

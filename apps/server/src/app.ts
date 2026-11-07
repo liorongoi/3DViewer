@@ -1,7 +1,7 @@
 import { promises as dns } from "node:dns";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import swagger from "@fastify/swagger";
-import { UPDATE_STATUSES } from "@viewer/shared/model";
+import { UPDATE_STATUSES, type LayerManifest } from "@viewer/shared/model";
 import { registerAdmin } from "./admin.ts";
 import { audit, auditCsv, verifyAudit, type AuditRow } from "./audit.ts";
 import type { Db } from "./db.ts";
@@ -9,7 +9,7 @@ import { registerIngest } from "./ingest.ts";
 import { enqueue } from "./jobs.ts";
 import { registerFiles, type Storage } from "./storage.ts";
 import { addSchemas, arrayOf, bool, closed, int, ref, text, checkContract } from "./schemas.ts";
-import { addVersion, createModel, getModel, listModels, listVersions, updateModel, type LibraryFilter, type ModelPatch, type NewModel } from "./library.ts";
+import { addVersion, createModel, getManifest, getModel, manifestProblem, setManifest, listModels, listVersions, updateModel, type LibraryFilter, type ModelPatch, type NewModel } from "./library.ts";
 
 export interface AppOptions {
   db: Db;
@@ -237,6 +237,44 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       });
       if (!v) return reply.status(404).send({ error: "No model with this id." });
       return reply.status(201).send(await getModel(db, req.params.id));
+    },
+  );
+
+  // The producer's arrangement of the layers (WP 2.1 applies it, WP 4.3 edits it).
+  const manifestAnswer = closed({ version: int, manifest: { anyOf: [ref("LayerManifest"), { type: "null" }] } }, ["version", "manifest"]);
+  app.get<{ Params: { id: string }; Querystring: { version?: number } }>(
+    "/api/models/:id/layers",
+    {
+      schema: {
+        tags: ["library"],
+        params: idParam,
+        querystring: { type: "object", properties: { version: { type: "integer", minimum: 1, description: "An earlier version's. Left out, the current one." } }, additionalProperties: false },
+        response: { 200: manifestAnswer },
+      },
+    },
+    async (req, reply) => (await getManifest(db, req.params.id, req.query.version)) ?? reply.status(404).send({ error: "No model, or no such version." }),
+  );
+  app.put<{ Params: { id: string }; Body: { manifest: LayerManifest | null } }>(
+    "/api/models/:id/layers",
+    {
+      schema: {
+        tags: ["library"],
+        params: idParam,
+        body: closed({ manifest: { anyOf: [ref("LayerManifest"), { type: "null" }] } }, ["manifest"]),
+        response: { 200: manifestAnswer },
+      },
+    },
+    async (req, reply) => {
+      const problem = req.body.manifest && manifestProblem(req.body.manifest);
+      if (problem) return reply.status(400).send({ error: problem });
+      const w = await who(req);
+      const version = await db.tx(async (q) => {
+        const v = await setManifest(q, req.params.id, req.body.manifest);
+        if (v) await audit(q, { ...w, action: "layers.update", target: req.params.id, detail: { version: v, layers: req.body.manifest?.layers.length ?? 0, cleared: !req.body.manifest } });
+        return v;
+      });
+      if (!version) return reply.status(404).send({ error: "No model with this id." });
+      return { version, manifest: req.body.manifest };
     },
   );
 

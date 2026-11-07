@@ -47,7 +47,7 @@ import { CameraController } from "./camera-controller";
 import { MeasureTool } from "./measure-tool";
 import { FlyByTour, FlyMode, captureViewpoint, type Viewpoint } from "./fly";
 import { signal } from "../signal";
-import { effectiveVisibility, findLayer, layerForNode, layersFromGltf, layersFromTileset, walk, type Layer } from "../layers/layers";
+import { applyManifest, effectiveVisibility, findLayer, layerForNode, layerNodes, layersFromGltf, layersFromTileset, walk, type Layer, type LayerManifest } from "../layers/layers";
 import { applySiteConfig, catalogue, makeBaseLayers } from "./basemaps";
 import { ENVIRONMENTS, environmentSh, environmentSpecular, type EnvironmentId } from "./environments";
 import { cubeToKtx2 } from "./ktx2";
@@ -147,6 +147,9 @@ export class ViewerEngine {
   private hoverBox: Entity | null = null;
   /** The open tileset's layers are its original parts, shown and hidden by feature. */
   private tilesetParts = false;
+  /** The open model's layers as the file has them, before its saved manifest is applied. */
+  private derivedLayers: Layer[] = [];
+  private manifest: LayerManifest | null = null;
   private gltfNodes: { children?: number[] }[] = [];
   readonly loading = signal(false);
   readonly error = signal<OpenError | null>(null);
@@ -329,7 +332,8 @@ export class ViewerEngine {
         // A tileset from our tiler names the original's parts (tileset extras, and a feature per part in each tile).
         const parts = layersFromTileset(tileset.extras);
         this.tilesetParts = !!parts;
-        this.layers.set(parts ?? [{ id: "tileset", name: summary.name, children: [], visible: true }]);
+        this.derivedLayers = parts ?? [{ id: "tileset", name: summary.name, children: [], visible: true }];
+        this.layers.set(applyManifest(this.derivedLayers, this.manifest));
         if (summary.source.localFrame && summary.placement) {
           // A tileset in local coordinates: placed like a model, from the upload's Place step.
           this.modelBaseHeight = await this.placementHeight(summary.placement);
@@ -371,7 +375,8 @@ export class ViewerEngine {
           const off2 = model.errorEvent.addEventListener((e: unknown) => { off1(); off2(); reject(e); });
         });
         this.gltfNodes = (gltfJson as { nodes?: { children?: number[] }[] } | null)?.nodes ?? [];
-        this.layers.set(gltfJson ? layersFromGltf(gltfJson as Parameters<typeof layersFromGltf>[0]) : []);
+        this.derivedLayers = gltfJson ? layersFromGltf(gltfJson as Parameters<typeof layersFromGltf>[0]) : [];
+        this.layers.set(applyManifest(this.derivedLayers, this.manifest));
       }
       this.setLocalTime(summary.centre.lon, 10.5);
       this.applyViewMode(this.viewMode.get());
@@ -408,6 +413,8 @@ export class ViewerEngine {
     this.model = null;
     this.tileset = null;
     this.layers.set([]);
+    this.derivedLayers = [];
+    this.manifest = null;
     this.selectedLayer.set(null);
     this.highlightLayer(null);
     this.gltfNodes = [];
@@ -525,7 +532,7 @@ export class ViewerEngine {
       if (index !== undefined) id = layerForNode(this.layers.get(), this.gltfNodes, index)?.id ?? null;
     } else if (picked?.primitive && picked.primitive === this.tileset) {
       const node = this.tilesetParts && picked instanceof Cesium3DTileFeature ? Number(picked.getProperty("node")) : NaN;
-      id = Number.isFinite(node) ? (findLayer(this.layers.get(), `node-${node}`)?.id ?? null) : this.tilesetParts ? null : "tileset";
+      id = Number.isFinite(node) ? (layerForNode(this.layers.get(), [], node)?.id ?? null) : this.tilesetParts ? null : "tileset";
     }
     this.selectedLayer.set(id);
     return id;
@@ -996,13 +1003,23 @@ export class ViewerEngine {
 
   // ---------- layers ----------
 
+  /**
+   * Arranges the open model's layers as a saved manifest says (WP 2.1); null goes back to the
+   * file's own tree. Opening a model clears it, so set it once the model is open (or while it
+   * loads); every part is shown again.
+   */
+  setLayerManifest(manifest: LayerManifest | null): void {
+    this.manifest = manifest;
+    if (this.derivedLayers.length) this.setLayers(applyManifest(this.derivedLayers, manifest));
+  }
+
   setLayers(next: Layer[]): void {
     this.layers.set(next);
     const vis = effectiveVisibility(next);
     if (this.tileset && this.tilesetParts) {
       const hidden = new Set<number>();
       walk(next, (l) => {
-        if (l.node !== undefined && vis.get(l.id) === false) hidden.add(l.node);
+        if (vis.get(l.id) === false) for (const n of layerNodes(l)) hidden.add(n);
       });
       // Evaluated per feature as tiles load; the property is the part's node in the original.
       this.tileset.style = hidden.size ? Object.assign(new Cesium3DTileStyle(), { show: { evaluate: (f: Cesium3DTileFeature) => !hidden.has(Number(f.getProperty("node"))) } }) : undefined;
@@ -1012,8 +1029,8 @@ export class ViewerEngine {
       const runtime = (this.model as unknown as { sceneGraph?: { _runtimeNodes?: ({ show: boolean } | undefined)[] } }).sceneGraph?._runtimeNodes;
       walk(next, (l) => {
         const shown = vis.get(l.id) ?? true;
-        const node = l.node !== undefined ? runtime?.[l.node] : undefined;
-        if (node) node.show = shown;
+        const nodes = layerNodes(l).map((n) => runtime?.[n]);
+        if (nodes.length && nodes.every((n) => !!n)) for (const n of nodes) n!.show = shown;
         else if (l.nodeName) {
           try {
             const named = this.model!.getNode(l.nodeName);
