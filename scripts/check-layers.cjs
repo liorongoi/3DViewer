@@ -147,8 +147,19 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
       await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
     };
     const button = (name) => ({ click: () => clickCentre(page.getByRole("button", { name, exact: true })) });
+    // A tileset's tiles loaded for a second of frames in a row: a tile unloaded while out of view
+    // is asked for again only by the next frame, so a single check can pass before it is back.
+    const settled = () =>
+      page.evaluate(async () => {
+        const e = window.viewerEngine;
+        for (let i = 0, n = 0; i < 600 && e.tileset && n < 5; i++) {
+          e.widget.render();
+          await new Promise((r) => setTimeout(r, 200));
+          n = e.tileset.tilesLoaded ? n + 1 : 0;
+        }
+      });
     const modelHit = () =>
-      page.evaluate(() => {
+      settled().then(() => page.evaluate(() => {
         const e = window.viewerEngine;
         const c = e.widget.scene.canvas;
         // A grid of points over the view: does any of them hit the model?
@@ -158,7 +169,7 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
             if (p && (p.primitive === e.model || p.primitive === e.tileset)) return true;
           }
         return false;
-      });
+      }));
 
     // ---- LYR-01: the tree mirrors the hierarchy ----
     const layers = await engineLayers();
@@ -277,6 +288,7 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
     await page.waitForTimeout(200);
     check((await page.evaluate(() => window.viewerEngine.hoveredLayer.get())) === null, T("the outline goes when the pointer leaves the list"));
     // Click the part in 3D: the centre of its box on screen.
+    await settled();
     const spot = await page.evaluate((id) => {
       const e = window.viewerEngine;
       const s = e.layerSphere(id);
