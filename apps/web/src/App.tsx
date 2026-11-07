@@ -10,6 +10,7 @@ import { AdminPanel } from "./components/AdminPanel";
 import { useFilteredModels } from "./components/Library";
 import { useClassOf, useLowestLevel } from "./state/classification";
 import { Workspace } from "./layout/Workspace";
+import { Guard } from "./components/Guard";
 
 export function App() {
   useAppEffects();
@@ -31,10 +32,11 @@ export function App() {
       <ClassificationBanner level={level} position="top" />
       <ClassificationBanner level={level} position="bottom" />
       <Workspace />
-      <CommandPalette onOpenModel={open} />
-      <HelpOverlay />
-      <UploadWizard />
-      <AdminPanel />
+      {[<CommandPalette key="p" onOpenModel={open} />, <HelpOverlay key="h" />, <UploadWizard key="u" />, <AdminPanel key="a" />].map((el) => (
+        <Guard key={el.key} part="dialog" className="fixed start-1/2 top-1/3 z-50 -translate-x-1/2">
+          {el}
+        </Guard>
+      ))}
       <noscript>{SAMPLE_LIBRARY.length}</noscript>
     </>
   );

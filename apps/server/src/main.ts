@@ -1,4 +1,5 @@
 import { ensureAdminPassword } from "./admin.ts";
+import { ConfigError, loadConfig, type Config } from "./config.ts";
 import { buildApp } from "./app.ts";
 import { AuditForwarder } from "./audit-forward.ts";
 import { migrate, openPglite, openPostgres } from "./db.ts";
@@ -8,54 +9,94 @@ import { chromiumRenderer, thumbnailHandler } from "./thumbnails.ts";
 import { seed } from "./seed.ts";
 import { Storage } from "./storage.ts";
 
-// DATABASE_URL=postgres://… in production; without it an embedded PostgreSQL keeps its data in ./data.
-const dataDir = process.env.DATA_DIR ?? "./data";
-const db = process.env.DATABASE_URL ? await openPostgres(process.env.DATABASE_URL) : await openPglite(`${dataDir}/db`);
+// Settings are checked before anything starts: a wrong one stops the server with its name.
+let config: Config;
+try {
+  config = loadConfig();
+} catch (e) {
+  console.error(e instanceof ConfigError ? e.message : e);
+  process.exit(78); // EX_CONFIG: systemd does not restart a unit that exits with a bad configuration
+}
+const log = (msg: string, extra?: object, level = 50) => console.error(JSON.stringify({ level, time: Date.now(), msg, ...extra }));
+const errInfo = (e: unknown) => (e instanceof Error ? { type: e.name, message: e.message, stack: e.stack } : { message: String(e) });
+
+// A fault nothing caught leaves the process in an unknown state: log it and exit, and the
+// service manager starts a clean one (jobs in flight are taken up again when their lease ends).
+// Registered first, so a fault while starting is caught too.
+process.on("unhandledRejection", (e) => {
+  log("unhandled promise rejection; exiting", { err: errInfo(e) }, 60);
+  process.exit(1);
+});
+process.on("uncaughtException", (e) => {
+  log("uncaught exception; exiting", { err: errInfo(e) }, 60);
+  process.exit(1);
+});
+const db = config.databaseUrl
+  ? await openPostgres(config.databaseUrl, { statementTimeoutMs: config.dbStatementTimeoutMs, onError: (e) => log("database connection failed; it will reconnect", { err: e.message }) })
+  : await openPglite(`${config.dataDir}/db`);
 const applied = await migrate(db);
-const seeded = await seed(db, { samples: process.env.SEED_SAMPLES !== "0" });
+const seeded = await seed(db, { samples: config.seedSamples });
 // ADMIN_PASSWORD sets the admin password on first start; ADMIN_PASSWORD_RESET=1 replaces a stored one.
-const adminPassword = await ensureAdminPassword(db, process.env.ADMIN_PASSWORD, process.env.ADMIN_PASSWORD_RESET === "1");
-const storage = new Storage(process.env.STORAGE_DIR ?? `${dataDir}/storage`);
+const adminPassword = await ensureAdminPassword(db, config.adminPassword, config.adminPasswordReset);
+const storage = new Storage(config.storageDir);
 await storage.init();
-const corsOrigins = (process.env.CORS_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+const corsOrigins = config.corsOrigins;
 // THUMBNAIL_WEB_URL: where the web app is served, on the same origin as /files (WP 3.5).
-const renderer = process.env.THUMBNAIL_WEB_URL ? chromiumRenderer({ webUrl: process.env.THUMBNAIL_WEB_URL, executablePath: process.env.CHROMIUM }) : null;
+const renderer = config.thumbnailWebUrl ? chromiumRenderer({ webUrl: config.thumbnailWebUrl, executablePath: config.chromium }) : null;
 const thumbnails = !!renderer;
-const app = await buildApp({ db, storage, corsOrigins, thumbnails, reverseDns: true, logger: true });
-app.log.info({ db: db.kind, migrations: applied, seeded, storage: storage.root }, "database ready");
+const app = await buildApp({ db, storage, corsOrigins, thumbnails, reverseDns: true, logger: true, writeRateLimit: config.writeRateLimit });
+app.log.info({ db: db.kind, migrations: applied, seeded, storage: storage.root, production: config.production }, "database ready");
+if (!config.databaseUrl && config.production) app.log.warn("EMBEDDED_DB=1: the embedded database is for a single workstation, not a shared server");
 
 // WORKERS=0 runs the API alone, for a site that runs the workers on another machine.
 const worker =
-  process.env.WORKERS === "0"
+  !config.workers
     ? null
     : new Worker(
         db,
         {
-          ingest: ingestHandler(db, storage, { clamdscan: process.env.CLAMDSCAN, fbx2gltf: process.env.FBX2GLTF, thumbnails, strictValidation: process.env.STRICT_VALIDATION === "1" }),
+          ingest: ingestHandler(db, storage, { clamdscan: config.clamdscan, fbx2gltf: config.fbx2gltf, thumbnails, strictValidation: config.strictValidation }),
           ...(renderer ? { thumbnail: thumbnailHandler(db, storage, renderer) } : {}),
         } as Record<string, Handler>,
         // A job whose worker died goes to another worker (or this one, restarted) when its lease
         // runs out; the lease is renewed every third of it while the job runs.
-        { leaseSeconds: Number(process.env.JOB_LEASE_SECONDS ?? 300), onError: (e, job) => app.log.warn({ err: e, job: job.id }, "job failed") },
+        { leaseSeconds: config.jobLeaseSeconds, onError: (e, job) => app.log.warn({ err: e, job: job.id }, "job failed") },
       );
 if (adminPassword === "missing") app.log.warn("No admin password: set ADMIN_PASSWORD and restart to open the admin page");
-if (adminPassword === "kept" && process.env.ADMIN_PASSWORD && process.env.ADMIN_PASSWORD_RESET !== "1") app.log.info("ADMIN_PASSWORD is ignored: a password is already stored (ADMIN_PASSWORD_RESET=1 replaces it)");
-if (!process.env.CLAMDSCAN) app.log.warn("CLAMDSCAN is not set: uploads are not scanned for viruses");
-if (!process.env.FBX2GLTF) app.log.warn("FBX2GLTF is not set: FBX uploads will fail");
+if (adminPassword === "kept" && config.adminPassword && !config.adminPasswordReset) app.log.info("ADMIN_PASSWORD is ignored: a password is already stored (ADMIN_PASSWORD_RESET=1 replaces it)");
+if (!config.clamdscan) app.log.warn("CLAMDSCAN is not set: uploads are not scanned for viruses");
+if (!config.fbx2gltf) app.log.warn("FBX2GLTF is not set: FBX uploads will fail");
 if (!renderer) app.log.warn("THUMBNAIL_WEB_URL is not set: library cards use a format icon instead of a thumbnail");
 // AUDIT_SYSLOG=udp://siem:514, tcp://siem:514 or tls://siem:6514 sends the audit log to the SIEM as CEF (WP 3.8).
-const forwarder = process.env.AUDIT_SYSLOG
-  ? new AuditForwarder(db, process.env.AUDIT_SYSLOG, { onError: (e) => app.log.warn({ err: e }, "audit log could not reach the SIEM; it will retry") })
+const forwarder = config.auditSyslog
+  ? new AuditForwarder(db, config.auditSyslog, { onError: (e) => app.log.warn({ err: e }, "audit log could not reach the SIEM; it will retry") })
   : null;
-await app.listen({ host: process.env.HOST ?? "127.0.0.1", port: Number(process.env.PORT ?? 8787) });
+await app.listen({ host: config.host, port: config.port });
 worker?.start();
 forwarder?.start();
 
+// Stop taking work, let running requests and the current job step finish, then close. A stuck
+// job must not hold the shutdown: after 30 s the process exits anyway (its job lease lets
+// another worker take the job up).
+let stopping = false;
 for (const sig of ["SIGINT", "SIGTERM"] as const)
   process.on(sig, () => {
+    if (stopping) return;
+    stopping = true;
+    app.log.info({ signal: sig }, "shutting down");
+    setTimeout(() => {
+      app.log.error("shutdown took longer than 30 s; exiting");
+      process.exit(1);
+    }, 30_000).unref();
     void Promise.all([worker?.stop(), forwarder?.stop()])
       .then(() => renderer?.close?.())
       .then(() => app.close())
       .then(() => db.close())
-      .then(() => process.exit(0));
+      .then(
+        () => process.exit(0),
+        (e: unknown) => {
+          app.log.error({ err: e }, "shutdown failed");
+          process.exit(1);
+        },
+      );
   });

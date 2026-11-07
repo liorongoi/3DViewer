@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# VIEWER restore: puts back a backup made by viewer-backup.
+#
+#   viewer-restore <backup folder> --yes
+#
+# Stop the server first (systemctl stop viewer-server). Settings come from the server's
+# environment file (VIEWER_ENV, default /etc/viewer/viewer.env).
+#
+# It checks every file against the MANIFEST, then:
+#   - saves what is there now beside the backup, as before-restore-<time>/ (the current
+#     database dump and the current files folder), so a restore can itself be undone;
+#   - replaces the database with the backup's (PostgreSQL: the public schema is dropped and
+#     restored; embedded: the db folder is replaced);
+#   - replaces STORAGE_DIR/files with the backup's.
+# Uploads in progress (STORAGE_DIR/uploads, ingests) are not part of a backup and are left.
+# Everything after the backup is lost, the audit log entries included; the saved
+# before-restore copy keeps them.
+set -euo pipefail
+umask 077
+
+src="${1:-}"
+[[ -n "$src" && "${2:-}" == "--yes" ]] || { echo "Usage: viewer-restore <backup folder> --yes" >&2; exit 2; }
+ENV_FILE="${VIEWER_ENV:-/etc/viewer/viewer.env}"
+if [[ -r "$ENV_FILE" ]]; then set -a; . "$ENV_FILE"; set +a; fi
+DATA_DIR="${DATA_DIR:-./data}"
+STORAGE_DIR="${STORAGE_DIR:-$DATA_DIR/storage}"
+PG_DUMP="${PG_DUMP:-pg_dump}"
+PG_RESTORE="${PG_RESTORE:-pg_restore}"
+PSQL="${PSQL:-psql}"
+
+fail() { echo "viewer-restore: $*" >&2; exit 1; }
+[[ -f "$src/MANIFEST" ]] || fail "$src is not a viewer-backup folder (no MANIFEST)."
+if [[ "${ALLOW_RUNNING:-0}" != 1 ]] && curl -fsS -m 2 "http://${HOST:-127.0.0.1}:${PORT:-8787}/api/health/live" >/dev/null 2>&1; then
+  fail "The server is running. Stop it first (systemctl stop viewer-server)."
+fi
+
+echo "Checking the backup…"
+(cd "$src" && grep -E '^[0-9a-f]{64}  ' MANIFEST | sha256sum --check --quiet) || fail "The backup does not match its MANIFEST; it is damaged or incomplete."
+kind="$(awk '$1 == "database" { print $2 }' "$src/MANIFEST")"
+
+stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+keep="$(dirname "$src")/before-restore-$stamp"
+mkdir -p "$keep"
+echo "Saving the current database and files to $keep…"
+
+if [[ "$kind" == postgres ]]; then
+  [[ -n "${DATABASE_URL:-}" ]] || fail "The backup is of a PostgreSQL database, but DATABASE_URL is not set."
+  $PG_DUMP --format=custom --no-owner --no-privileges --file="$keep/database.dump" --dbname="$DATABASE_URL"
+  echo "Restoring the database…"
+  $PSQL --quiet --no-psqlrc -v ON_ERROR_STOP=1 --dbname="$DATABASE_URL" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+  $PG_RESTORE --no-owner --no-privileges --exit-on-error --dbname="$DATABASE_URL" "$src/database.dump"
+elif [[ "$kind" == embedded ]]; then
+  [[ -z "${DATABASE_URL:-}" ]] || fail "The backup is of the embedded database, but DATABASE_URL is set."
+  if [[ -d "$DATA_DIR/db" ]]; then mv "$DATA_DIR/db" "$keep/db"; fi
+  echo "Restoring the database…"
+  mkdir -p "$DATA_DIR"
+  tar -C "$DATA_DIR" -xf "$src/database.tar"
+else
+  fail "The MANIFEST names no database."
+fi
+
+echo "Restoring the files…"
+mkdir -p "$STORAGE_DIR"
+if [[ -d "$STORAGE_DIR/files" ]]; then mv "$STORAGE_DIR/files" "$keep/files"; fi
+tar -C "$STORAGE_DIR" -xf "$src/files.tar"
+
+echo "Restored $src. Start the server (systemctl start viewer-server) and check /api/health."
+echo "The data that was replaced is in $keep; delete it once the restore is checked."

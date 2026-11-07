@@ -42,9 +42,26 @@ export async function openPglite(dataDir?: string): Promise<Db> {
   };
 }
 
-export async function openPostgres(url: string): Promise<Db> {
+export interface PostgresOptions {
+  /** Longest one statement may run (default 60 s); a stuck query no longer holds a connection forever. */
+  statementTimeoutMs?: number;
+  /** Called when an idle connection fails (the database restarted, the network dropped). */
+  onError?: (e: Error) => void;
+}
+
+export async function openPostgres(url: string, opts: PostgresOptions = {}): Promise<Db> {
   const { default: pgmod } = await import("pg");
-  const pool = new pgmod.Pool({ connectionString: url, max: 10 });
+  const pool = new pgmod.Pool({
+    connectionString: url,
+    max: 10,
+    // Waiting for a free connection, and opening one, give up rather than hang.
+    connectionTimeoutMillis: 10_000,
+    statement_timeout: opts.statementTimeoutMs ?? 60_000,
+    idle_in_transaction_session_timeout: 5 * 60_000,
+    application_name: "viewer-server",
+  });
+  // Without a listener, an idle connection that breaks would crash the process.
+  pool.on("error", (e) => opts.onError?.(e));
   await pool.query("SELECT 1");
   return {
     kind: "postgres",
@@ -57,7 +74,8 @@ export async function openPostgres(url: string): Promise<Db> {
         await c.query("COMMIT");
         return r;
       } catch (e) {
-        await c.query("ROLLBACK");
+        // A broken connection cannot roll back; the original error is the one to report.
+        await c.query("ROLLBACK").catch(() => undefined);
         throw e;
       } finally {
         c.release();
@@ -76,6 +94,8 @@ export async function migrate(db: Db): Promise<string[]> {
   for (const [f, sql] of MIGRATIONS) {
     if (done.has(f)) continue;
     await db.tx(async (q) => {
+      // A migration on a large table may run longer than the usual statement limit.
+      if (db.kind === "postgres") await q.query("SET LOCAL statement_timeout = 0");
       for (const stmt of sql.split(/;\s*$/m).map((s) => s.trim()).filter((s) => s && !/^(--[^\n]*\n?)+$/.test(s))) await q.query(stmt);
       await q.query("INSERT INTO schema_migrations (id) VALUES ($1)", [f]);
     });

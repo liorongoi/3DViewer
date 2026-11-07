@@ -1,7 +1,7 @@
 import { ecefToGeodetic } from "../geo/wgs84";
 import { baseName, ext, resolvePath, type FileSet, type LocalFile } from "./files";
 import { checkGltfDoc, parseGlb, parseJson } from "./gltf";
-import type { CheckItem, LoaderPlugin } from "./types";
+import { checkItem, type CheckItem, type LoaderPlugin } from "./types";
 
 interface Tile {
   content?: { uri?: string; url?: string };
@@ -80,13 +80,13 @@ export const tiles3dLoader: LoaderPlugin = {
       if (!isTileset(json)) throw new Error("It has no asset or root, so it is not a 3D Tiles tileset.");
       ts = json;
     } catch (e) {
-      return { items: [{ id: "format", severity: "error", title: `${baseName(main.path)} cannot be read`, detail: (e as Error).message }], stats, nodes: [], georef: null };
+      return { items: [checkItem("format", "error", "unreadable", { file: baseName(main.path) }, (e as Error).message)], stats, nodes: [], georef: null };
     }
     const v = ts.asset?.version ?? "";
-    if (v === "1.0" || v === "1.1") items.push({ id: "format", severity: "ok", title: `3D Tiles ${v}` });
-    else items.push({ id: "format", severity: "error", title: v ? `3D Tiles version ${v} is not supported` : "The tileset has no asset version", detail: "Versions 1.0 and 1.1 can be opened." });
+    if (v === "1.0" || v === "1.1") items.push(checkItem("format", "ok", "tilesVersion", { version: v }));
+    else items.push(v ? checkItem("format", "error", "tilesBadVersion", { version: v }) : checkItem("format", "error", "tilesNoVersion"));
     if (typeof ts.geometricError !== "number" || !ts.root?.boundingVolume)
-      items.push({ id: "structure", severity: "error", title: "The tileset is incomplete", detail: "It needs a geometric error and a root bounding volume." });
+      items.push(checkItem("structure", "error", "tilesIncomplete"));
 
     const missing: string[] = [];
     const contents: { path: string; from: string }[] = [];
@@ -107,16 +107,11 @@ export const tiles3dLoader: LoaderPlugin = {
       badJson.push((e as Error).message);
     }
     stats.contents = contents.length;
-    if (badJson.length) items.push({ id: "structure", severity: "error", title: "An external tileset cannot be read", detail: badJson.join("; ") });
+    if (badJson.length) items.push(checkItem("structure", "error", "externalUnreadable", {}, badJson.join("; ")));
     if (missing.length)
-      items.push({
-        id: "references",
-        severity: "error",
-        title: `${missing.length} tile file${missing.length > 1 ? "s are" : " is"} missing`,
-        detail: missing.length > 8 ? `${missing.slice(0, 8).join(", ")} and ${missing.length - 8} more` : missing.join(", "),
-      });
-    else items.push({ id: "references", severity: "ok", title: `All ${contents.length} tile files are present` });
-    if (implicit) items.push({ id: "structure", severity: "warning", title: "Uses implicit tiling", detail: "Its tile files are found while viewing; open it in the desktop app or from the server." });
+      items.push(checkItem("references", "error", "tilesMissing", { count: missing.length }, missing.slice(0, 8).join(", ") + (missing.length > 8 ? ` … +${missing.length - 8}` : "")));
+    else items.push(checkItem("references", "ok", "tilesPresent", { count: contents.length }));
+    if (implicit) items.push(checkItem("structure", "warning", "implicit"));
 
     // Read every content header (up to 400) so a damaged tile is named, not discovered while flying.
     const kinds = new Map<string, number>();
@@ -141,8 +136,8 @@ export const tiles3dLoader: LoaderPlugin = {
       }
     }
     if (damaged.length)
-      items.push({ id: "content", severity: "error", title: `${damaged.length} tile file${damaged.length > 1 ? "s are" : " is"} damaged`, detail: damaged.slice(0, 6).join("; ") + (damaged.length > 6 ? ` and ${damaged.length - 6} more` : "") });
-    else if (kinds.size) items.push({ id: "content", severity: "ok", title: [...kinds].map(([k, n]) => `${n} ${k}`).join(", ") });
+      items.push(checkItem("content", "error", "tilesDamaged", { count: damaged.length }, damaged.slice(0, 6).join("; ") + (damaged.length > 6 ? ` … +${damaged.length - 6}` : "")));
+    else if (kinds.size) items.push(checkItem("content", "ok", "tileKinds", { kinds: [...kinds].map(([k, n]) => `${n} ${k}`).join(", ") }));
 
     return { items, stats, nodes: [], georef: georefOf(ts) };
   },

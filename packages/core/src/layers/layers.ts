@@ -1,3 +1,4 @@
+import type { LayerManifest, ManifestLayer } from "@viewer/shared";
 import { gltfNodeBoxes, type GltfBox } from "../loaders/gltf";
 
 // Layer tree derived from a model (SRS 6.3): glTF node hierarchy, or one layer per tileset.
@@ -12,6 +13,8 @@ export interface Layer {
   visible: boolean;
   /** glTF node index the layer stands for. */
   node?: number;
+  /** Every glTF node a layer stands for, when it is more than one (parts merged by a manifest). */
+  nodes?: number[];
   /** Extent in the glTF scene's own coordinates, for Focus selection. */
   box?: GltfBox;
 }
@@ -68,6 +71,35 @@ export function layersFromGltf(gltf: GltfJson): Layer[] {
   // A single unnamed wrapper node adds nothing: show its children directly.
   if (tree.length === 1 && tree[0]!.children.length > 0 && !tree[0]!.nodeName) return tree[0]!.children;
   return tree;
+}
+
+interface TiledLayerJson {
+  id?: unknown;
+  name?: unknown;
+  node?: unknown;
+  box?: { lo?: unknown; hi?: unknown };
+  children?: unknown;
+}
+
+/**
+ * The layer tree a tileset from our tiler carries in its extras (apps/server/src/tiler.ts):
+ * the original model's parts, with ids and boxes as for a single model. Null when the
+ * tileset has none, or it is not in that shape.
+ */
+export function layersFromTileset(extras: unknown): Layer[] | null {
+  const raw = (extras as { layers?: unknown } | undefined)?.layers;
+  if (!Array.isArray(raw) || !raw.length) return null;
+  const vec = (v: unknown) => (Array.isArray(v) && v.length === 3 && v.every((x) => Number.isFinite(x)) ? (v as [number, number, number]) : null);
+  const read = (j: TiledLayerJson, depth: number): Layer | null => {
+    if (depth > 64 || typeof j !== "object" || !j || !Number.isInteger(j.node)) return null;
+    const lo = vec(j.box?.lo), hi = vec(j.box?.hi);
+    const kids = Array.isArray(j.children) ? j.children.map((c) => read(c as TiledLayerJson, depth + 1)) : [];
+    if (kids.some((k) => !k)) return null;
+    const node = j.node as number;
+    return { id: `node-${node}`, name: typeof j.name === "string" && j.name ? j.name : `Node ${node}`, node, children: kids as Layer[], visible: true, ...(lo && hi ? { box: { lo, hi } } : {}) };
+  };
+  const out = raw.map((j) => read(j as TiledLayerJson, 0));
+  return out.every((l) => !!l) ? (out as Layer[]) : null;
 }
 
 export function walk(layers: Layer[], fn: (l: Layer, parent?: Layer) => void, parent?: Layer): void {
@@ -144,11 +176,14 @@ export function filterLayers(layers: Layer[], query: string): Layer[] {
   return rec(layers);
 }
 
+/** The glTF nodes a layer shows and hides itself (its child layers have their own). */
+export const layerNodes = (l: Layer): number[] => l.nodes ?? (l.node !== undefined ? [l.node] : []);
+
 /** The layer that stands for a glTF node: the node's own, or that of its nearest ancestor that is a layer. */
 export function layerForNode(layers: Layer[], gltfNodes: { children?: number[] }[], node: number): Layer | undefined {
   const byNode = new Map<number, Layer>();
   walk(layers, (l) => {
-    if (l.node !== undefined) byNode.set(l.node, l);
+    for (const n of layerNodes(l)) byNode.set(n, l);
   });
   const parent = new Map<number, number>();
   gltfNodes.forEach((n, i) => n.children?.forEach((c) => parent.set(c, i)));
@@ -157,4 +192,59 @@ export function layerForNode(layers: Layer[], gltfNodes: { children?: number[] }
     if (l) return l;
   }
   return undefined;
+}
+
+// ---------------------------------------------------------------- saved layer manifest (WP 2.1)
+
+export type { LayerManifest, ManifestLayer };
+
+const unionBox = (boxes: (GltfBox | undefined)[]): GltfBox | undefined => {
+  const bs = boxes.filter((b): b is GltfBox => !!b);
+  if (!bs.length) return undefined;
+  return {
+    lo: [0, 1, 2].map((k) => Math.min(...bs.map((b) => b.lo[k]!))) as GltfBox["lo"],
+    hi: [0, 1, 2].map((k) => Math.max(...bs.map((b) => b.hi[k]!))) as GltfBox["hi"],
+  };
+};
+
+/**
+ * The layer tree as the manifest arranges it. A layer of one node keeps that node's id and
+ * its own parts below it; a layer of several nodes (a merge) is one layer for all of them.
+ * Parts the manifest does not mention keep their place in the file's own tree, after the
+ * manifest's layers, so a newer version with new parts still shows them. Node numbers the
+ * model does not have are ignored.
+ */
+export function applyManifest(derived: Layer[], manifest: LayerManifest | null | undefined): Layer[] {
+  if (!manifest?.layers?.length) return derived;
+  const byNode = new Map<number, Layer>();
+  walk(derived, (l) => {
+    if (l.node !== undefined) byNode.set(l.node, l);
+  });
+  const claimed = new Set<number>();
+  const claim = (ms: ManifestLayer[]) => ms.forEach((m) => (m.nodes?.forEach((n) => byNode.has(n) && claimed.add(n)), claim(m.children ?? [])));
+  claim(manifest.layers);
+  // A derived layer without the parts claimed elsewhere.
+  const prune = (l: Layer): Layer => ({ ...l, visible: true, children: l.children.filter((c) => c.node === undefined || !claimed.has(c.node)).map(prune) });
+  // Every node under a layer that is not claimed elsewhere: what a merged layer switches.
+  const covered = (l: Layer, out: number[]) => {
+    if (l.node !== undefined) out.push(l.node);
+    for (const c of l.children) if (c.node === undefined || !claimed.has(c.node)) covered(c, out);
+    return out;
+  };
+  const build = (m: ManifestLayer, path: string): Layer | null => {
+    const own = (m.nodes ?? []).map((n) => byNode.get(n)).filter((l): l is Layer => !!l);
+    const kids = (m.children ?? []).map((c, i) => build(c, `${path}.${i}`)).filter((l): l is Layer => !!l);
+    if (!own.length && !kids.length) return null;
+    const name = typeof m.name === "string" && m.name.trim() ? m.name.trim() : own[0]?.name ?? "Layer";
+    if (own.length === 1) {
+      const l = prune(own[0]!);
+      return { ...l, name, children: [...kids, ...l.children] };
+    }
+    const nodes = own.flatMap((l) => covered(l, []));
+    return { id: `group-${path}`, name, visible: true, children: kids, ...(nodes.length ? { nodes } : {}), box: unionBox([...own.map((l) => l.box), ...kids.map((k) => k.box)]) };
+  };
+  const arranged = manifest.layers.map((m, i) => build(m, String(i))).filter((l): l is Layer => !!l);
+  // Parts the manifest leaves out: where the file has them, without the claimed ones.
+  const rest = (ls: Layer[]): Layer[] => ls.flatMap((l) => (l.node !== undefined && claimed.has(l.node) ? [] : [prune(l)]));
+  return [...arranged, ...rest(derived)];
 }

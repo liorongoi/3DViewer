@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { checkFiles, converterForEpsg, fmtBytes, gridFactors, placementFromGrid, prepareFiles, type CheckReport, type LocalFile } from "@viewer/core";
+import { checkFiles, converterForEpsg, fmtBytes, gridFactors, placementFromGrid, prepareFiles, type CheckItem, type CheckReport, type LocalFile } from "@viewer/core";
 import { uploadAndIngest, type UploadProgress } from "../server/api";
 import { refreshLibrary } from "../state/library";
 import { UPDATE_STATUSES, type ModelSummary, type UpdateStatus } from "@viewer/shared";
@@ -15,14 +15,15 @@ import { useLevels } from "../state/classification";
 const STEPS = ["drop", "check", "place", "layers", "details"] as const;
 
 const CRS = [
-  { code: 4326, label: "EPSG:4326 · WGS 84 latitude / longitude", x: "Longitude (°)", y: "Latitude (°)" },
-  { code: 2039, label: "EPSG:2039 · Israeli TM Grid (ITM)", x: "Easting (m)", y: "Northing (m)" },
-  { code: 32636, label: "EPSG:32636 · WGS 84 / UTM zone 36N", x: "Easting (m)", y: "Northing (m)" },
-  { code: 6991, label: "EPSG:6991 · Israeli Grid 05/12", x: "Easting (m)", y: "Northing (m)" },
+  // Labels are i18n keys (wizard.*), or a plain EPSG code for a system a sidecar file names.
+  { code: 4326, label: "wizard.crs4326", x: "wizard.lon", y: "wizard.lat" },
+  { code: 2039, label: "wizard.crs2039", x: "wizard.easting", y: "wizard.northing" },
+  { code: 32636, label: "wizard.crs32636", x: "wizard.easting", y: "wizard.northing" },
+  { code: 6991, label: "wizard.crs6991", x: "wizard.easting", y: "wizard.northing" },
 ] as { code: number; label: string; x: string; y: string }[];
 
 /** The list, plus the system a sidecar file names when it is another one. */
-const crsList = (extra?: number) => (extra && !CRS.some((c) => c.code === extra) ? [...CRS, { code: extra, label: `EPSG:${extra}`, x: "Easting (m)", y: "Northing (m)" }] : CRS);
+const crsList = (extra?: number) => (extra && !CRS.some((c) => c.code === extra) ? [...CRS, { code: extra, label: `EPSG:${extra}`, x: "wizard.easting", y: "wizard.northing" }] : CRS);
 
 const NEW_PLACE: Place = { fromFile: true, fitGround: true, crs: 4326, x: "", y: "", onTerrain: true, height: "0", heading: "0", scale: "1", upAxis: "y", unit: 1 };
 
@@ -49,7 +50,12 @@ interface Place {
  */
 export function UploadWizard() {
   const levels = useLevels();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  /** A check report line in the interface language; lines without a key (older servers) stay as sent. */
+  const itemText = (it: CheckItem) => ({
+    title: it.key ? t(`checks.${it.key}.title`, it.params) : it.title,
+    detail: it.key && i18n.exists(`checks.${it.key}.detail`, it.params) ? t(`checks.${it.key}.detail`, it.params) : it.detail,
+  });
   const open = useApp((s) => s.uploadOpen);
   const set = useApp((s) => s.set);
   const addUpload = useApp((s) => s.addUpload);
@@ -154,8 +160,8 @@ export function UploadWizard() {
       setProgress,
     );
     if (status.state !== "ready" || !status.modelId) {
-      const problems = status.report?.items.filter((i) => i.severity === "error").map((i) => i.title + (i.detail ? `: ${i.detail}` : "")) ?? [];
-      throw new Error([status.error ?? "The server could not publish the model.", ...problems].join("\n"));
+      const problems = status.report?.items.filter((i) => i.severity === "error").map((i) => { const x = itemText(i); return x.title + (x.detail ? `: ${x.detail}` : ""); }) ?? [];
+      throw new Error([status.error ?? t("wizard.serverFailed"), ...problems].join("\n"));
     }
     await refreshLibrary();
     close();
@@ -279,16 +285,16 @@ export function UploadWizard() {
                   onChange={(e) => setFiles(fromInput(e.target.files))}
                 />
               </div>
-              {checking && <p className="text-fg3">Reading {files.length} file{files.length > 1 ? "s" : ""}…</p>}
+              {checking && <p className="text-fg3">{t("wizard.reading", { count: files.length })}</p>}
             </div>
           )}
           {step === 1 && report && (
             <div className="mx-auto max-w-xl space-y-3">
               <p className="text-fg3">
-                {report.mainFile ?? "No model file"} · {report.stats.files} file{report.stats.files > 1 ? "s" : ""}
-                {report.stats.triangles !== undefined && ` · ${report.stats.triangles.toLocaleString()} triangles`}
-                {report.stats.textures !== undefined && ` · ${report.stats.textures} textures`}
-                {report.stats.tiles !== undefined && ` · ${report.stats.tiles.toLocaleString()} tiles`}
+                {report.mainFile ?? t("wizard.noModelFile")} · {t("wizard.files", { count: report.stats.files })}
+                {report.stats.triangles !== undefined && ` · ${t("wizard.triangles", { n: report.stats.triangles.toLocaleString() })}`}
+                {report.stats.textures !== undefined && ` · ${t("wizard.textures", { n: report.stats.textures })}`}
+                {report.stats.tiles !== undefined && ` · ${t("wizard.tiles", { n: report.stats.tiles.toLocaleString() })}`}
               </p>
               <ul className="space-y-2" data-testid="upload-report">
                 {report.items.map((it, i) => (
@@ -301,19 +307,19 @@ export function UploadWizard() {
                       <XCircle size={18} className="mt-0.5 shrink-0 text-[var(--danger,#e5484d)]" />
                     )}
                     <span className="min-w-0 flex-1">
-                      <span className="block">{it.title}</span>
-                      {it.detail && <span className="block break-words text-[12px] text-fg3">{it.detail}</span>}
+                      <span className="block">{itemText(it).title}</span>
+                      {itemText(it).detail && <span className="block break-words text-[12px] text-fg3">{itemText(it).detail}</span>}
                     </span>
                   </li>
                 ))}
                 <li className="flex items-center gap-3 rounded-[10px] bg-s2 p-3 text-fg3">
                   <AlertTriangle size={18} className="shrink-0" />
-                  <span>{t("upload.checks.antivirus")}: {server ? "runs on the server when you publish." : "needs the server, which is not connected."}</span>
+                  <span>{t("upload.checks.antivirus")}: {server ? t("wizard.avOnServer") : t("wizard.avNoServer")}</span>
                 </li>
               </ul>
-              {!report.ok && <p className="text-[12px] text-fg3">Fix the problems above and drop the files again.</p>}
+              {!report.ok && <p className="text-[12px] text-fg3">{t("wizard.fixProblems")}</p>}
               <button type="button" className="btn-ghost" onClick={() => { setFiles([]); setChecked(null); setStep(0); }}>
-                Choose other files
+                {t("wizard.otherFiles")}
               </button>
             </div>
           )}
@@ -323,22 +329,22 @@ export function UploadWizard() {
                 <h3 className="text-[15px] font-semibold">{t("upload.placeTitle")}</h3>
                 <p className="text-fg3">
                   {report.georef
-                    ? "The file has its own position."
+                    ? t("wizard.hasPosition")
                     : report.filePosition
-                      ? `The position comes from ${report.filePosition.source}. Check it below.`
-                      : "The file has no position. It starts at the centre of the current view."}
+                      ? t("wizard.positionFrom", { source: report.filePosition.source })
+                      : t("wizard.noPosition")}
                 </p>
               </div>
               {report.georef && (
                 <label className="flex items-center gap-2">
                   <input type="checkbox" checked={place.fromFile} onChange={(e) => setPlace({ ...place, fromFile: e.target.checked })} />
-                  Use the position in the file ({report.georef.lat.toFixed(5)}°, {report.georef.lon.toFixed(5)}°)
+                  {t("wizard.useFilePosition", { lat: report.georef.lat.toFixed(5), lon: report.georef.lon.toFixed(5) })}
                 </label>
               )}
               {place.fromFile && report.georef && report.format === "3dtiles" && (
                 <label className="flex items-center gap-2">
                   <input type="checkbox" checked={place.fitGround} onChange={(e) => setPlace({ ...place, fitGround: e.target.checked })} />
-                  Move it up or down so its streets meet the terrain (heights in another datum often float or sink)
+                  {t("wizard.fitGround")}
                 </label>
               )}
               {!(place.fromFile && report.georef) && (
@@ -358,40 +364,40 @@ export function UploadWizard() {
                       }}
                     >
                       {crsOptions.map((c) => (
-                        <option key={c.code} value={c.code}>{c.label}</option>
+                        <option key={c.code} value={c.code}>{t(c.label)}</option>
                       ))}
                     </select>
                   </Field>
                   <div className="grid grid-cols-2 gap-3">
-                    <Field label={crs.x}><input className="input num" value={place.x} onChange={(e) => setPlace({ ...place, x: e.target.value })} dir="ltr" /></Field>
-                    <Field label={crs.y}><input className="input num" value={place.y} onChange={(e) => setPlace({ ...place, y: e.target.value })} dir="ltr" /></Field>
+                    <Field label={t(crs.x)}><input className="input num" value={place.x} onChange={(e) => setPlace({ ...place, x: e.target.value })} dir="ltr" /></Field>
+                    <Field label={t(crs.y)}><input className="input num" value={place.y} onChange={(e) => setPlace({ ...place, y: e.target.value })} dir="ltr" /></Field>
                   </div>
                   {grid && (
                     <p className="text-[12px] text-fg3" data-testid="grid-factors">
-                      Here grid north is {Math.abs(grid.northDeg).toFixed(3)}° {grid.northDeg >= 0 ? "east" : "west"} of true north, and a grid metre is {grid.groundPerGrid.toFixed(6)} m on the ground. The model is turned and scaled to match, so its axes follow the grid.
+                      {t(grid.northDeg >= 0 ? "wizard.gridNorthEast" : "wizard.gridNorthWest", { deg: Math.abs(grid.northDeg).toFixed(3), scale: grid.groundPerGrid.toFixed(6) })}
                     </p>
                   )}
                   <label className="flex items-center gap-2">
                     <input type="checkbox" checked={place.onTerrain} onChange={(e) => setPlace({ ...place, onTerrain: e.target.checked })} />
-                    Sit the model base on the terrain
+                    {t("wizard.onTerrain")}
                   </label>
                   <div className="grid grid-cols-3 gap-3">
-                    <Field label={place.onTerrain ? "Height without terrain (m)" : "Height (m, ellipsoidal)"}><input className="input num" value={place.height} onChange={(e) => setPlace({ ...place, height: e.target.value })} dir="ltr" /></Field>
-                    <Field label={place.crs === 4326 ? "Heading (° from north)" : "Heading (° from grid north)"}><input className="input num" value={place.heading} onChange={(e) => setPlace({ ...place, heading: e.target.value })} dir="ltr" /></Field>
-                    <Field label="Scale"><input className="input num" value={place.scale} onChange={(e) => setPlace({ ...place, scale: e.target.value })} dir="ltr" /></Field>
+                    <Field label={place.onTerrain ? t("wizard.heightNoTerrain") : t("wizard.heightEllipsoid")}><input className="input num" value={place.height} onChange={(e) => setPlace({ ...place, height: e.target.value })} dir="ltr" /></Field>
+                    <Field label={place.crs === 4326 ? t("wizard.headingNorth") : t("wizard.headingGrid")}><input className="input num" value={place.heading} onChange={(e) => setPlace({ ...place, heading: e.target.value })} dir="ltr" /></Field>
+                    <Field label={t("wizard.scale")}><input className="input num" value={place.scale} onChange={(e) => setPlace({ ...place, scale: e.target.value })} dir="ltr" /></Field>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <Field label="Up axis in the file">
+                    <Field label={t("wizard.upAxis")}>
                       <select className="input" data-testid="up-axis" value={place.upAxis} onChange={(e) => setPlace({ ...place, upAxis: e.target.value as "y" | "z" })}>
-                        <option value="y">Y up (glTF standard)</option>
-                        <option value="z">Z up (CAD, many FBX exports)</option>
+                        <option value="y">{t("wizard.yUp")}</option>
+                        <option value="z">{t("wizard.zUp")}</option>
                       </select>
                     </Field>
-                    <Field label="File units">
+                    <Field label={t("wizard.units")}>
                       <select className="input" data-testid="file-units" value={place.unit} onChange={(e) => setPlace({ ...place, unit: Number(e.target.value) })}>
                         {UNITS.map(([label, f]) => (
                           <option key={label} value={f}>
-                            {label}
+                            {t(label)}
                           </option>
                         ))}
                       </select>
@@ -400,7 +406,7 @@ export function UploadWizard() {
                   <SizeReadout size={report?.stats.size} place={place} fbx={report?.format === "fbx"} />
                 </>
               )}
-              <p className="text-[12px] text-fg3">After publishing, you can raise or lower the model in Properties.</p>
+              <p className="text-[12px] text-fg3">{t("wizard.adjustLater")}</p>
             </div>
           )}
           {step === 3 && (
@@ -408,9 +414,9 @@ export function UploadWizard() {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-[15px] font-semibold">{t("upload.layersTitle")}</h3>
-                  <p className="text-fg3">{layers.length ? "Suggested standard names for the model's parts. The layer editor follows in a later release." : "3D Tiles keep the structure of the tileset; there is nothing to sort here."}</p>
+                  <p className="text-fg3">{layers.length ? t("wizard.layersSuggested") : t("wizard.layersTiles")}</p>
                 </div>
-                {layers.length > 0 && <span className="inline-flex items-center gap-1 text-[12px] text-fg3"><Wand2 size={14} /> Suggested</span>}
+                {layers.length > 0 && <span className="inline-flex items-center gap-1 text-[12px] text-fg3"><Wand2 size={14} /> {t("wizard.suggested")}</span>}
               </div>
               {layers.length > 0 && (
                 <div className="rounded-[10px] bg-s2 p-2">
@@ -421,7 +427,7 @@ export function UploadWizard() {
                       <span className="text-accent">{l.to}</span>
                     </div>
                   ))}
-                  {(report?.nodes.length ?? 0) > layers.length && <p className="px-2 py-1 text-[12px] text-fg3">and {report!.nodes.length - layers.length} more</p>}
+                  {(report?.nodes.length ?? 0) > layers.length && <p className="px-2 py-1 text-[12px] text-fg3">{t("wizard.andMore", { n: report!.nodes.length - layers.length })}</p>}
                 </div>
               )}
             </div>
@@ -447,7 +453,7 @@ export function UploadWizard() {
                   style={chosen ? { background: chosen.color, color: chosen.textColor } : undefined}
                 >
                   <option value="" disabled>
-                    Choose the classification…
+                    {t("wizard.chooseClass")}
                   </option>
                   {levels.map((c) => (
                     <option key={c.id} value={c.id}>
@@ -459,7 +465,7 @@ export function UploadWizard() {
               <div className="col-span-2"><Field label={t("upload.fields.description")}><textarea className="input h-24 py-2" value={meta.description} onChange={(e) => setMeta({ ...meta, description: e.target.value })} /></Field></div>
               <p className="col-span-2 text-[12px] text-fg3">
                 {report && fmtBytes(report.stats.bytes)} ·{" "}
-                {server ? "The server checks the files again, scans them and publishes the model to the library." : "No server is connected, so the model stays in this browser session."}
+                {server ? t("wizard.publishServer") : t("wizard.publishLocal")}
               </p>
               {progress && publishing && (
                 <div className="col-span-2 flex flex-col gap-1.5" data-testid="upload-progress">
@@ -467,7 +473,7 @@ export function UploadWizard() {
                     <div className="h-full bg-accent transition-[width]" style={{ width: `${progress.total ? Math.round((progress.sent / progress.total) * 100) : 100}%` }} />
                   </div>
                   <span className="text-[12px] text-fg3">
-                    {progress.step === "upload" ? `Sending ${fmtBytes(progress.sent)} of ${fmtBytes(progress.total)}` : (STEP_TEXT[progress.step] ?? "Working…")}
+                    {progress.step === "upload" ? t("wizard.sending", { sent: fmtBytes(progress.sent), total: fmtBytes(progress.total) }) : isStepKey(progress.step) ? t(`wizard.step.${progress.step}`) : t("wizard.working")}
                   </span>
                 </div>
               )}
@@ -486,12 +492,12 @@ export function UploadWizard() {
           ) : (
             <span className="flex items-center gap-3">
               {report?.format === "fbx" && !server ? (
-                <span className="text-[12px] text-fg3">FBX opens once the server converts it.</span>
+                <span className="text-[12px] text-fg3">{t("wizard.fbxNeedsServer")}</span>
               ) : !cls ? (
-                <span className="text-[12px] text-fg3">Choose a classification to publish.</span>
+                <span className="text-[12px] text-fg3">{t("wizard.needClass")}</span>
               ) : null}
               <button type="button" className="btn-primary" disabled={!canPublish} onClick={() => void publish()}>
-                <Upload size={14} /> {publishing ? "Publishing…" : t("upload.publish")}
+                <Upload size={14} /> {publishing ? t("wizard.publishing") : t("upload.publish")}
               </button>
             </span>
           )}
@@ -501,17 +507,18 @@ export function UploadWizard() {
   );
 }
 
-const UNITS: [string, number][] = [
-  ["Metres", 1],
-  ["Centimetres", 0.01],
-  ["Millimetres", 0.001],
-  ["Feet", 0.3048],
-  ["Inches", 0.0254],
-];
+const UNITS = [
+  ["wizard.metres", 1],
+  ["wizard.centimetres", 0.01],
+  ["wizard.millimetres", 0.001],
+  ["wizard.feet", 0.3048],
+  ["wizard.inches", 0.0254],
+] as const;
 
 /** The model's size as it will stand on the ground, so a wrong unit or up axis shows before publishing. */
 function SizeReadout({ size, place, fbx }: { size?: [number, number, number]; place: Place; fbx: boolean }) {
-  if (!size) return <p className="text-[12px] text-fg3">{fbx ? "The size shows once the server has converted the FBX; check it in the viewer." : "The file does not state its size."}</p>;
+  const { t } = useTranslation();
+  if (!size) return <p className="text-[12px] text-fg3">{fbx ? t("wizard.sizeAfterFbx") : t("wizard.noSize")}</p>;
   const k = (parseFloat(place.scale) || 1) * place.unit;
   // glTF y-up: x east-west, z north-south, y height. Z-up files: y north-south, z height.
   const [w, d, h] = place.upAxis === "z" ? [size[0], size[1], size[2]] : [size[0], size[2], size[1]];
@@ -519,22 +526,15 @@ function SizeReadout({ size, place, fbx }: { size?: [number, number, number]; pl
   const odd = Math.max(w, d, h) * k > 2000 || Math.max(w, d, h) * k < 0.05;
   return (
     <p className={cx("text-[12px]", odd ? "text-[var(--status-production)]" : "text-fg2")} data-testid="model-size">
-      Size as placed: {f(w)} × {f(d)} m, {f(h)} m high.{odd ? " That looks wrong for a real object: check the units and the up axis." : ""}
+      {t("wizard.size", { w: f(w), d: f(d), h: f(h) })}
+      {odd ? ` ${t("wizard.sizeOdd")}` : ""}
     </p>
   );
 }
 
-const STEP_TEXT: Record<string, string> = {
-  queued: "Waiting for the server…",
-  unpack: "Unpacking…",
-  check: "Checking the files…",
-  scan: "Scanning for viruses…",
-  convert: "Converting FBX to glTF…",
-  validate: "Validating…",
-  tile: "Tiling for streaming…",
-  optimise: "Compressing…",
-  publish: "Publishing…",
-};
+/** Server job steps with their own text (wizard.step.*). */
+const STEP_KEYS = ["queued", "unpack", "check", "scan", "convert", "validate", "tile", "optimise", "publish"] as const;
+const isStepKey = (s: string): s is (typeof STEP_KEYS)[number] => (STEP_KEYS as readonly string[]).includes(s);
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (

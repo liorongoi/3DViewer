@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { spawn } from "node:child_process";
-import type { CheckItem } from "@viewer/core/loaders";
+import { checkItem, type CheckItem } from "@viewer/core/loaders";
 
 /**
  * The official Khronos and Cesium validators (WP 3.3, UPL-02): gltf-validator for glTF and GLB,
@@ -123,19 +123,19 @@ const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 /** The report line for the official validator of this format. */
 export async function validateOfficial(format: "3dtiles" | "gltf" | "glb", file: string, opts: ValidateOptions = {}): Promise<CheckItem> {
   const kind = format === "3dtiles" ? "3dtiles" : "gltf";
-  const name = kind === "3dtiles" ? "3D Tiles validator" : "glTF validator";
+  const name = kind === "3dtiles" ? "3D Tiles" : "glTF";
   const timeoutMs = opts.timeoutMs ?? 15 * 60_000;
   const r = await runWorker(kind, file, timeoutMs);
-  if (r === "timeout") return { id: "validator", severity: "warning", title: `The official ${name} did not finish`, detail: `It was stopped after ${Math.round(timeoutMs / 60_000)} minutes. The model passed the viewer's own check.` };
-  if (!Array.isArray(r)) return { id: "validator", severity: "warning", title: `The official ${name} could not run`, detail: r.failed };
+  if (r === "timeout") return checkItem("validator", "warning", "validatorTimeout", { format: name, minutes: Math.round(timeoutMs / 60_000) });
+  if (!Array.isArray(r)) return checkItem("validator", "warning", "validatorFailed", { format: name }, r.failed);
   const errors = r.filter((i) => i.severity === "ERROR").length;
   const warnings = r.filter((i) => i.severity === "WARNING").length;
   if (errors) {
     const detail = summarise(r, "ERROR") + (warnings ? `\nAlso ${plural(warnings, "warning")}.` : "");
     return opts.strict
-      ? { id: "validator", severity: "error", title: `The official ${name} found ${plural(errors, "error")}`, detail }
-      : { id: "validator", severity: "warning", title: `The official ${name} found ${plural(errors, "error")}; the model still loads`, detail };
+      ? checkItem("validator", "error", "validatorErrors", { format: name, count: errors }, detail)
+      : checkItem("validator", "warning", "validatorErrorsLoads", { format: name, count: errors }, detail);
   }
-  if (warnings) return { id: "validator", severity: "ok", title: `Passed the official ${name} with ${plural(warnings, "warning")}`, detail: summarise(r, "WARNING") };
-  return { id: "validator", severity: "ok", title: `Passed the official ${name}` };
+  if (warnings) return checkItem("validator", "ok", "validatorWarnings", { format: name, count: warnings }, summarise(r, "WARNING"));
+  return checkItem("validator", "ok", "validatorPassed", { format: name });
 }

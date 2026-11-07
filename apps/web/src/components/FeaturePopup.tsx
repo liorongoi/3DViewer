@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { useEngine, useSignal } from "../engine";
 import { X } from "./icons";
 import { IconButton } from "./primitives";
@@ -7,6 +8,7 @@ const W = 300;
 
 /** Attribute pop-up for a clicked feature of the user's own vector data (VWR-GEO-02). */
 export function FeaturePopup() {
+  const { t } = useTranslation();
   const engine = useEngine();
   const f = useSignal(engine?.userLayers.picked, null);
   useEffect(() => {
@@ -24,7 +26,7 @@ export function FeaturePopup() {
   const style = above ? { left, bottom: window.innerHeight - f.screen.y + 14, width: W } : { left, top: f.screen.y + 14, width: W };
 
   return (
-    <div role="dialog" aria-label={`Attributes of ${f.title}`} className="glass fixed z-30 rounded-[12px] text-[12px] shadow-xl" style={style}>
+    <div role="dialog" aria-label={t("popup.label", { name: f.title })} className="glass fixed z-30 rounded-[12px] text-[12px] shadow-xl" style={style}>
       <span
         aria-hidden
         className="absolute h-3 w-3 rotate-45 border-line bg-s1solid"
@@ -38,12 +40,12 @@ export function FeaturePopup() {
           </div>
           <div className="truncate text-[11px] text-fg3">{f.layerName}</div>
         </div>
-        <IconButton size="sm" label="Close · Esc" onClick={() => engine?.userLayers.clearPick()}>
+        <IconButton size="sm" label={t("popup.close")} onClick={() => engine?.userLayers.clearPick()}>
           <X size={14} />
         </IconButton>
       </div>
       {f.rows.length === 0 ? (
-        <p className="px-2.5 pb-2.5 text-fg3">This feature has no attributes.</p>
+        <p className="px-2.5 pb-2.5 text-fg3">{t("popup.none")}</p>
       ) : (
         <div className="max-h-[240px] overflow-auto px-2.5 pb-2.5 scrollbar-thin">
           <table className="w-full border-collapse">

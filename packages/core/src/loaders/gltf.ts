@@ -1,5 +1,5 @@
 import { baseName, ext, resolvePath, type FileSet, type LocalFile } from "./files";
-import type { CheckItem, LoaderPlugin } from "./types";
+import { checkItem, type CheckItem, type LoaderPlugin } from "./types";
 import { ecefToGeodetic } from "../geo/wgs84";
 
 /** glTF extensions CesiumJS 1.146 reads. A required extension outside this list blocks the upload. */
@@ -230,12 +230,7 @@ export function gltfGeoref(g: Gltf): { georef: { lat: number; lon: number; heigh
   // Vertices are 32-bit floats: far from the origin they snap to a coarse step.
   const step = b ? b.stored * 2 ** -24 : 0;
   if (step > 0.02)
-    items.push({
-      id: "georef",
-      severity: "warning",
-      title: `Vertex positions are only accurate to about ${step < 1 ? `${Math.round(step * 100)} cm` : `${step.toFixed(1)} m`}`,
-      detail: "The file stores Earth-centred coordinates in each vertex. Export with CESIUM_RTC or a node offset so the vertices stay small.",
-    });
+    items.push(checkItem("georef", "warning", "vertexPrecision", { step: step < 1 ? `${Math.round(step * 100)} cm` : `${step.toFixed(1)} m` }));
   return { georef: { lat: geo.lat, lon: geo.lon, height: geo.height }, items };
 }
 
@@ -257,12 +252,12 @@ export async function checkGltfDoc(g: Gltf, from: string, files: FileSet, binByt
   const items: CheckItem[] = [];
   const v = g.asset?.version ?? "";
   if (!v.startsWith("2.")) {
-    items.push({ id: "format", severity: "error", title: v ? `glTF ${v} is not supported` : "The glTF has no asset version", detail: "Only glTF 2.0 can be opened. Re-export the model as glTF 2.0." });
+    items.push(v ? checkItem("format", "error", "gltfVersion", { version: v }) : checkItem("format", "error", "gltfNoVersion"));
     return items;
   }
   const unsupported = (g.extensionsRequired ?? []).filter((e) => !SUPPORTED_GLTF_EXTENSIONS.has(e));
   if (unsupported.length)
-    items.push({ id: "extensions", severity: "error", title: "Uses extensions VIEWER cannot read", detail: unsupported.join(", ") });
+    items.push(checkItem("extensions", "error", "extensions", {}, unsupported.join(", ")));
   const missing: string[] = [];
   const short: string[] = [];
   const sizes: number[] = [];
@@ -287,13 +282,13 @@ export async function checkGltfDoc(g: Gltf, from: string, files: FileSet, binByt
     }
   }
   if (missing.length)
-    items.push({ id: "references", severity: "error", title: `${missing.length} referenced file${missing.length > 1 ? "s are" : " is"} missing`, detail: list(missing) });
+    items.push(checkItem("references", "error", "missingRefs", { count: missing.length }, list(missing)));
   const badViews = (g.bufferViews ?? []).filter((bv) => {
     const size = sizes[bv.buffer ?? -1];
     return size !== undefined && size > 0 && (bv.byteOffset ?? 0) + (bv.byteLength ?? 0) > Math.max(size, g.buffers?.[bv.buffer ?? 0]?.byteLength ?? 0);
   }).length;
-  if (short.length) items.push({ id: "structure", severity: "error", title: "A binary file is shorter than declared", detail: list(short) });
-  else if (badViews) items.push({ id: "structure", severity: "error", title: "The geometry data is damaged", detail: `${badViews} buffer view${badViews > 1 ? "s point" : " points"} past the end of the data.` });
+  if (short.length) items.push(checkItem("structure", "error", "shortBinary", {}, list(short)));
+  else if (badViews) items.push(checkItem("structure", "error", "badViews", { count: badViews }));
   return items;
 }
 
@@ -314,11 +309,11 @@ export const gltfLoader: LoaderPlugin = {
       if (ext(main.path) === "glb") ({ json: g, bin } = parseGlb(data));
       else g = parseJson(data, "glTF");
     } catch (e) {
-      return { items: [{ id: "format", severity: "error", title: `${baseName(main.path)} cannot be read`, detail: (e as Error).message }], stats: { files: files.files.length, bytes: files.bytes }, nodes: [], georef: null };
+      return { items: [checkItem("format", "error", "unreadable", { file: baseName(main.path) }, (e as Error).message)], stats: { files: files.files.length, bytes: files.bytes }, nodes: [], georef: null };
     }
     const items = await checkGltfDoc(g, main.path, files, bin ? bin.byteLength : null);
     if (!items.some((i) => i.id === "format"))
-      items.unshift({ id: "format", severity: "ok", title: `glTF 2.0 ${ext(main.path) === "glb" ? "binary (GLB)" : "with separate files"}` });
+      items.unshift(checkItem("format", "ok", ext(main.path) === "glb" ? "gltfGlb" : "gltfSeparate"));
     const own = gltfGeoref(g);
     items.push(...own.items);
     return {

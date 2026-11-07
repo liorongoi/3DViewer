@@ -55,7 +55,7 @@ export function ModelHeader({ onBack, backLabel, className, compact }: { onBack:
         <Camera size={16} />
       </IconButton>
       <IconButton
-        label={shared ? t("viewer.shareCopied") : model.id.startsWith("upload-") ? "Uploads in this session cannot be shared yet" : t("viewer.share")}
+        label={shared ? t("viewer.shareCopied") : model.id.startsWith("upload-") ? t("misc.uploadNoShare") : t("viewer.share")}
         className="tip-below"
         disabled={model.id.startsWith("upload-")}
         onClick={async () => {

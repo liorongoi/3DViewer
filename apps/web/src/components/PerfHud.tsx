@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEngine, useSignal } from "../engine";
 import { useApp } from "../state/store";
 import { X } from "./icons";
@@ -5,6 +6,7 @@ import { cx } from "./primitives";
 
 /** Performance overlay, Shift+P (WP 1.5): frame rate and time, resolution, tiles and memory. */
 export function PerfHud({ className }: { className?: string }) {
+  const { t } = useTranslation();
   const engine = useEngine();
   const p = useSignal(engine?.perf, null);
   const open = useApp((s) => s.perfOpen);
@@ -14,22 +16,22 @@ export function PerfHud({ className }: { className?: string }) {
   if (!open) return null;
   const rows: [string, string, boolean?][] = p
     ? [
-        ["Frame rate", `${p.fps} fps`, p.fps < 30],
-        ["Frame time", `${p.frameMs.toFixed(1)} ms · worst ${p.worstFrameMs.toFixed(1)} ms`, p.worstFrameMs > 33],
-        ["Resolution", `${Math.round(p.resolution * 100)}% · ${p.canvas} · MSAA ${p.msaa}×`],
-        ["Tiles", `${p.tilesVisible} shown · ${p.tilesLoaded} loaded · ${p.tilesPending} loading`],
-        ["Memory", `${(p.tileMemoryMB + p.modelMemoryMB).toFixed(0)} MB${p.tileMemoryMB ? " in tiles" : p.modelMemoryMB ? " in model" : ""}`],
+        [t("perf.fps"), `${p.fps} fps`, p.fps < 30],
+        [t("perf.frameTime"), t("perf.frameTimeValue", { ms: p.frameMs.toFixed(1), worst: p.worstFrameMs.toFixed(1) }), p.worstFrameMs > 33],
+        [t("perf.resolution"), `${Math.round(p.resolution * 100)}% · ${p.canvas} · MSAA ${p.msaa}×`],
+        [t("perf.tiles"), t("perf.tilesValue", { shown: p.tilesVisible, loaded: p.tilesLoaded, pending: p.tilesPending })],
+        [t("perf.memory"), `${(p.tileMemoryMB + p.modelMemoryMB).toFixed(0)} MB${p.tileMemoryMB ? ` ${t("perf.inTiles")}` : p.modelMemoryMB ? ` ${t("perf.inModel")}` : ""}`],
       ]
     : [];
   return (
-    <div role="status" aria-label="Performance" className={cx("glass w-[300px] rounded-[10px] p-2 text-[11px]", className)} data-testid="perf-hud">
+    <div role="status" aria-label={t("perf.title")} className={cx("glass w-[300px] rounded-[10px] p-2 text-[11px]", className)} data-testid="perf-hud">
       <div className="mb-1 flex items-center justify-between px-1">
-        <span className="font-semibold text-fg">Performance</span>
-        <button type="button" aria-label="Close performance overlay" className="text-fg3 hover:text-fg" onClick={() => set({ perfOpen: false })}>
+        <span className="font-semibold text-fg">{t("perf.title")}</span>
+        <button type="button" aria-label={t("perf.close")} className="text-fg3 hover:text-fg" onClick={() => set({ perfOpen: false })}>
           <X size={12} />
         </button>
       </div>
-      {!p && <p className="px-1 text-fg3">Measuring…</p>}
+      {!p && <p className="px-1 text-fg3">{t("perf.measuring")}</p>}
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 px-1">
         {rows.map(([k, v, bad]) => (
           <div key={k} className="contents">
@@ -40,7 +42,7 @@ export function PerfHud({ className }: { className?: string }) {
       </dl>
       <label className="mt-1.5 flex items-center gap-2 px-1 text-fg2">
         <input type="checkbox" checked={adaptive} onChange={(e) => setPref("adaptiveResolution", e.target.checked)} />
-        Lower the resolution while frames are slow
+        {t("perf.adaptive")}
       </label>
     </div>
   );

@@ -1,6 +1,6 @@
 import { createApiClient, must, type ApiClient, type paths, type Schemas } from "@viewer/api-client";
 import type { CheckReport, LocalFile } from "@viewer/core";
-import type { BaseMapConfig, ClassificationLevel, ModelSummary } from "@viewer/shared";
+import type { BaseMapConfig, ClassificationLevel, LayerManifest, ModelSummary } from "@viewer/shared";
 
 /**
  * The VIEWER server (Phase 3). The web app finds it at VITE_API_URL, or on its own origin.
@@ -56,6 +56,12 @@ export async function listLevels(srv: ServerInfo): Promise<ClassificationLevel[]
 /** This site's base map sources (WP 3.9). */
 export async function getBaseMaps(srv: ServerInfo): Promise<BaseMapConfig> {
   return must(await apiFor(srv).GET("/api/basemaps"));
+}
+
+/** The producer's arrangement of a model's layers (WP 2.1), or null; null too if it cannot be read. */
+export async function getLayerManifest(srv: ServerInfo, id: string, version?: number): Promise<LayerManifest | null> {
+  const r = await apiFor(srv).GET("/api/models/{id}/layers", { params: { path: { id }, query: version ? { version } : {} } }).catch(() => null);
+  return (r?.data?.manifest as LayerManifest | null | undefined) ?? null;
 }
 
 /** Reading a model records a view in the audit log (NFR-11). */

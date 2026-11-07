@@ -1,0 +1,19 @@
+# Nightly backup of the database and the model files (deploy/bin/viewer-backup).
+[Unit]
+Description=VIEWER backup
+After=viewer-server.service
+
+[Service]
+Type=oneshot
+User=viewer
+Group=viewer
+Environment=VIEWER_ENV=/etc/viewer/viewer.env
+ExecStart=/opt/viewer/deploy/bin/viewer-backup /var/backups/viewer
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/backups/viewer
+ReadOnlyPaths=/var/lib/viewer

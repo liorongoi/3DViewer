@@ -72,6 +72,20 @@ export interface ModelSummary {
   sizeBytes: number;
 }
 
+/**
+ * How a producer arranged a model's layers (UPL-09, WP 2.1 / 4.3): renamed, merged, nested
+ * and ordered. Each layer names the glTF nodes it stands for; a node stands for its whole
+ * subtree, except the parts the manifest puts somewhere else.
+ */
+export interface LayerManifest {
+  layers: ManifestLayer[];
+}
+export interface ManifestLayer {
+  name: string;
+  nodes?: number[];
+  children?: ManifestLayer[];
+}
+
 /** A base map or terrain source the admin configured for this site (WP 3.9, RND-11). */
 export interface BaseMapSource {
   id: string;

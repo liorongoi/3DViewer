@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { SightPair } from "@viewer/core";
 
 /**
@@ -8,6 +9,7 @@ import type { SightPair } from "@viewer/core";
  * Hover shows distance, ground, surface and sight-line height at that point.
  */
 export function ProfileChart({ pair, height = 150 }: { pair: SightPair; height?: number }) {
+  const { t } = useTranslation();
   const W = 288;
   const H = height;
   const pad = { l: 34, r: 8, t: 8, b: 18 };
@@ -36,7 +38,7 @@ export function ProfileChart({ pair, height = 150 }: { pair: SightPair; height?:
     return { x, y, D, lo, hi, base, ground: area("ground"), surface: area("surface"), ticks };
   }, [p, pair.distance, H]);
 
-  if (!geo) return <div className="grid h-[120px] place-items-center text-[12px] text-fg3">{pair.computing ? "Sampling the profile…" : "No profile"}</div>;
+  if (!geo) return <div className="grid h-[120px] place-items-center text-[12px] text-fg3">{pair.computing ? t("profile.sampling") : t("profile.none")}</div>;
   const { x, y, D } = geo;
   const A = p[0]!;
   const B = p[p.length - 1]!;
@@ -58,7 +60,7 @@ export function ProfileChart({ pair, height = 150 }: { pair: SightPair; height?:
         viewBox={`0 0 ${W} ${H}`}
         className="block w-full select-none"
         role="img"
-        aria-label={`Height profile of ${pair.name}: ${Math.round(D)} m long, ${pair.visible ? "clear line of sight" : `blocked at ${Math.round(pair.block!.d)} m`}`}
+        aria-label={t("profile.label", { name: pair.name, length: Math.round(D), state: pair.visible ? t("profile.clear") : t("profile.blockedAt", { d: Math.round(pair.block!.d) }) })}
         onPointerMove={onMove}
         onPointerLeave={() => setHover(null)}
       >
@@ -115,23 +117,23 @@ export function ProfileChart({ pair, height = 150 }: { pair: SightPair; height?:
           style={{ [x(h.d) > W / 2 ? "left" : "right"]: 6 }}
           dir="ltr"
         >
-          <div className="font-medium text-fg">{fmtDist(h.d)} from A</div>
-          <div className="text-fg2">Ground {h.ground.toFixed(1)} m</div>
-          {h.surface - h.ground > 0.5 && <div className="text-fg2">Top of object {h.surface.toFixed(1)} m</div>}
+          <div className="font-medium text-fg">{t("profile.fromA", { d: fmtDist(h.d) })}</div>
+          <div className="text-fg2">{t("profile.ground", { h: h.ground.toFixed(1) })}</div>
+          {h.surface - h.ground > 0.5 && <div className="text-fg2">{t("profile.top", { h: h.surface.toFixed(1) })}</div>}
           <div className="text-fg2">
-            Sight line {h.sight.toFixed(1)} m · {h.sight >= h.surface ? `clear by ${(h.sight - h.surface).toFixed(1)} m` : `blocked by ${(h.surface - h.sight).toFixed(1)} m`}
+            {t("profile.sight", { h: h.sight.toFixed(1) })} · {h.sight >= h.surface ? t("profile.clearBy", { d: (h.sight - h.surface).toFixed(1) }) : t("profile.blockedBy", { d: (h.surface - h.sight).toFixed(1) })}
           </div>
         </div>
       )}
       <figcaption className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-fg3">
         <span className="inline-flex items-center gap-1">
-          <i className="inline-block h-2 w-3 rounded-[2px]" style={{ background: "var(--profile-ground)" }} /> Terrain
+          <i className="inline-block h-2 w-3 rounded-[2px]" style={{ background: "var(--profile-ground)" }} /> {t("profile.terrain")}
         </span>
         <span className="inline-flex items-center gap-1">
-          <i className="inline-block h-2 w-3 rounded-[2px]" style={{ background: "var(--profile-surface)" }} /> Buildings, models
+          <i className="inline-block h-2 w-3 rounded-[2px]" style={{ background: "var(--profile-surface)" }} /> {t("profile.buildings")}
         </span>
         <span className="inline-flex items-center gap-1">
-          <i className="inline-block h-0.5 w-3" style={{ background: "var(--ok)" }} /> Sight line
+          <i className="inline-block h-0.5 w-3" style={{ background: "var(--ok)" }} /> {t("profile.sightLine")}
         </span>
       </figcaption>
     </figure>

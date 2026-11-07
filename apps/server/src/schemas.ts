@@ -58,6 +58,11 @@ export const SCHEMAS = [
   },
   { $id: "ModelSummary", ...closed(MODEL, MODEL_REQUIRED) },
   { $id: "ModelDetail", ...closed({ ...MODEL, history: { type: "array", items: { $ref: "Version#" } } }, [...MODEL_REQUIRED, "history"]) },
+  {
+    $id: "ManifestLayer",
+    ...closed({ name: { type: "string", maxLength: 300 }, nodes: { type: "array", items: { type: "integer", minimum: 0 }, maxItems: 100000 }, children: { type: "array", items: { $ref: "ManifestLayer#" } } }, ["name"]),
+  },
+  { $id: "LayerManifest", ...closed({ layers: { type: "array", items: { $ref: "ManifestLayer#" } } }, ["layers"]) },
   { $id: "Version", ...closed({ version: int, state: text, note: text, sizeBytes: num, createdAt: iso }, ["version", "state", "note", "sizeBytes", "createdAt"]) },
   {
     $id: "BaseMapConfig",

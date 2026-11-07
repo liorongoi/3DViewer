@@ -20,9 +20,9 @@ export function SidePanel({ onClose, className }: { onClose?: () => void; classN
           {(
             [
               ["measure", t("viewer.measurements")],
-              ["analysis", "Analysis"],
+              ["analysis", t("side.analysis")],
               ["props", t("viewer.properties")],
-              ["tours", "Fly-by"],
+              ["tours", t("side.flyBy")],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -196,7 +196,7 @@ function PropertiesTab() {
     [t("upload.fields.operation"), model.operation],
     [t("upload.fields.entity"), model.responsibleEntity],
     [t("viewer.version"), `v${model.version} / ${model.versions}`],
-    ["Format", model.sourceFormat.toUpperCase()],
+    [t("side.format"), model.sourceFormat.toUpperCase()],
     [t("library.changed", { date: "" }).trim(), model.statusChangedAt],
   ];
   return (
@@ -210,12 +210,12 @@ function PropertiesTab() {
         )}
       </div>
       <label className="flex items-center justify-between gap-2">
-        <span className="text-fg3">Classification</span>
+        <span className="text-fg3">{t("side.classification")}</span>
         <select
           value={cls.id}
           onChange={(e) => setClassification(model.id, e.target.value)}
           className="h-8 rounded-[6px] border border-line bg-s1solid px-2 text-[12px] font-semibold"
-          aria-label="Classification of this model"
+          aria-label={t("side.classificationOf")}
         >
           {levels.map((c) => (
             <option key={c.id} value={c.id}>
@@ -237,13 +237,14 @@ function PropertiesTab() {
       <LodSection />
       <div className="flex items-start gap-2 rounded-[8px] bg-s2 p-2 text-[12px] text-fg3">
         <Info size={14} className="mt-0.5 shrink-0" />
-        Editing metadata is part of the upload portal (Phase 4). This prototype shows it read-only.
+        {t("side.readOnly")}
       </div>
     </div>
   );
 }
 
 function ToursTab() {
+  const { t } = useTranslation();
   const engine = useEngine();
   const running = useSignal(engine?.tour.running, null);
   const views = useSignal(engine?.viewpoints, []);
@@ -253,59 +254,59 @@ function ToursTab() {
     <div className="flex flex-col gap-3 p-3">
       <section className="rounded-[10px] border border-line bg-s2 p-3">
         <h3 className="mb-1 flex items-center gap-2 font-semibold">
-          <Orbit size={15} className="text-accent" /> Cinematic orbit
+          <Orbit size={15} className="text-accent" /> {t("side.orbit")}
         </h3>
-        <p className="mb-2 text-fg3 text-[12px]">One slow orbit around the model with a gentle rise and fall. Any input stops it.</p>
+        <p className="mb-2 text-fg3 text-[12px]">{t("side.orbitText")}</p>
         {running === "orbit" ? (
           <button type="button" className="btn-secondary" onClick={() => engine?.tour.stop()}>
-            <StopCircle size={14} /> Stop
+            <StopCircle size={14} /> {t("side.stop")}
           </button>
         ) : (
           <button type="button" className="btn-primary" onClick={() => engine?.startOrbitTour()} disabled={!engine?.boundingSphere()}>
-            <Play size={14} /> Start orbit
+            <Play size={14} /> {t("side.startOrbit")}
           </button>
         )}
       </section>
       <section className="rounded-[10px] border border-line bg-s2 p-3">
         <h3 className="mb-1 flex items-center gap-2 font-semibold">
-          <Video size={15} className="text-accent" /> Viewpoint tour
+          <Video size={15} className="text-accent" /> {t("side.tour")}
         </h3>
-        <p className="mb-2 text-fg3 text-[12px]">Save two or more views, then fly smoothly between them on a loop.</p>
+        <p className="mb-2 text-fg3 text-[12px]">{t("side.tourText")}</p>
         <div className="mb-2 flex flex-wrap gap-1.5">
           {views.map((_, i) => (
             <span key={i} className="num inline-flex h-6 items-center gap-1 rounded-full bg-s3 px-2 text-[12px] text-fg2">
               <Bookmark size={12} /> {i + 1}
             </span>
           ))}
-          {!views.length && <span className="text-[12px] text-fg3">No saved views yet.</span>}
+          {!views.length && <span className="text-[12px] text-fg3">{t("side.noViews")}</span>}
         </div>
         <div className="flex flex-wrap gap-1.5">
           <button type="button" className="btn-secondary" onClick={() => engine?.saveViewpoint()}>
-            <Bookmark size={14} /> Save this view
+            <Bookmark size={14} /> {t("side.saveView")}
           </button>
           {running === "viewpoints" ? (
             <button type="button" className="btn-secondary" onClick={() => engine?.tour.stop()}>
-              <StopCircle size={14} /> Stop
+              <StopCircle size={14} /> {t("side.stop")}
             </button>
           ) : (
             <button type="button" className="btn-primary" disabled={views.length < 2} onClick={() => engine?.startViewpointTour()}>
-              <Play size={14} /> Play tour
+              <Play size={14} /> {t("side.playTour")}
             </button>
           )}
           {views.length > 0 && (
             <button type="button" className="btn-ghost" onClick={() => engine?.clearViewpoints()}>
-              Clear
+              {t("misc.clear")}
             </button>
           )}
         </div>
       </section>
       <section className="rounded-[10px] border border-line bg-s2 p-3">
-        <h3 className="mb-1 flex items-center gap-2 font-semibold">Fly mode</h3>
+        <h3 className="mb-1 flex items-center gap-2 font-semibold">{t("side.flyMode")}</h3>
         <p className="mb-2 text-fg3 text-[12px]">
-          Drone-style flight: W A S D to move, Q / E down and up, drag to look, Shift for 4× speed. Speed adapts to your height.
+          {t("side.flyText")}
         </p>
         <button type="button" className={flying ? "btn-secondary" : "btn-primary"} onClick={() => setTool({ tool: flying ? "none" : "fly" })}>
-          {flying ? "Exit fly mode" : "Enter fly mode"} <span className="num opacity-70">G</span>
+          {flying ? t("side.exitFly") : t("side.enterFly")} <span className="num opacity-70">G</span>
         </button>
       </section>
     </div>
@@ -314,13 +315,14 @@ function ToursTab() {
 
 /** Fine height adjustment of the open model against the terrain (VWR-GEO-02). */
 function GroundOffset() {
+  const { t } = useTranslation();
   const engine = useEngine();
   const offset = useSignal(engine?.groundOffset, 0);
   const terrain = useSignal(engine?.terrainId, "none");
   return (
     <section className="rounded-[8px] border border-line bg-s2 p-2">
       <div className="mb-1 flex items-center justify-between text-[12px]">
-        <span className="font-medium">Height on the terrain</span>
+        <span className="font-medium">{t("side.heightOnTerrain")}</span>
         <span className="num text-fg2" dir="ltr">
           {offset >= 0 ? "+" : ""}
           {offset.toFixed(1)} m
@@ -334,12 +336,12 @@ function GroundOffset() {
         value={Math.max(-200, Math.min(200, offset))}
         onChange={(e) => engine?.setGroundOffset(Number(e.target.value))}
         className="w-full accent-[var(--accent)]"
-        aria-label="Height on the terrain"
+        aria-label={t("side.heightOnTerrain")}
       />
       <div className="mt-1 flex items-center justify-between text-[11px] text-fg3">
-        <span>{terrain === "none" ? "No terrain: the model keeps its own heights." : "Set automatically so the model sits on the ground."}</span>
+        <span>{terrain === "none" ? t("side.noTerrain") : t("side.autoHeight")}</span>
         <button type="button" className="text-accent hover:underline" onClick={() => void engine?.placeOnGround()}>
-          Reset
+          {t("side.reset")}
         </button>
       </div>
     </section>
@@ -350,6 +352,7 @@ const LOD_RAMP = ["#FFE8A3", "#FFC66B", "#FF9F4A", "#F2703F", "#D9463E", "#B02A4
 
 /** Level-of-detail inspector for 3D Tiles (VWR-LOD-01). */
 function LodSection() {
+  const { t } = useTranslation();
   const engine = useEngine();
   const stats = useSignal(engine?.lod.stats, null);
   const s = useSignal(engine?.lod.settings, { sse: 8, colorByDepth: false, bounds: false, freeze: false });
@@ -365,11 +368,11 @@ function LodSection() {
   const mb = (b: number) => `${(b / 1048576).toFixed(b > 104857600 ? 0 : 1)} MB`;
   return (
     <section className="rounded-[8px] border border-line bg-s2 p-2">
-      <div className="mb-1 text-[12px] font-medium">Level of detail</div>
+      <div className="mb-1 text-[12px] font-medium">{t("side.lod")}</div>
       <label className="flex flex-col gap-0.5">
         <span className="flex justify-between text-[11px] text-fg3">
-          Detail (screen-space error)
-          <span className="num text-fg2">{s.sse <= 0 ? "full" : s.sse < 4 ? "very high" : s.sse < 12 ? "high" : s.sse < 32 ? "medium" : "low"} · {Math.round(s.sse * 10) / 10} px</span>
+          {t("side.detailSse")}
+          <span className="num text-fg2">{t(s.sse <= 0 ? "side.sseFull" : s.sse < 4 ? "side.sseVeryHigh" : s.sse < 12 ? "side.sseHigh" : s.sse < 32 ? "side.sseMedium" : "side.sseLow")} · {Math.round(s.sse * 10) / 10} px</span>
         </span>
         <input
           type="range"
@@ -380,51 +383,51 @@ function LodSection() {
           onChange={(e) => set({ sse: Math.max(1, 64 ** (Number(e.target.value) / 1000)) })}
           className="w-full accent-[var(--accent)]"
           style={{ direction: "rtl" }}
-          aria-label="Detail"
+          aria-label={t("side.detail")}
         />
       </label>
-      <label className="mt-1 flex items-start gap-2 text-[12px]" title="Loads the finest level everywhere, near and far. Uses the most memory.">
+      <label className="mt-1 flex items-start gap-2 text-[12px]" title={t("side.fullDetailText")}>
         <input type="checkbox" className="mt-0.5" checked={s.sse <= 0} onChange={(e) => set({ sse: e.target.checked ? 0 : 8 })} />
         <span>
-          <span className="text-fg">Full detail: every triangle</span>
-          <span className="block text-[11px] text-fg3">Loads the finest level everywhere, near and far. Uses the most memory.</span>
+          <span className="text-fg">{t("side.fullDetail")}</span>
+          <span className="block text-[11px] text-fg3">{t("side.fullDetailText")}</span>
         </span>
       </label>
       <div className="mt-1 flex flex-col gap-1">
-        {toggle("colorByDepth", "Colour tiles by depth")}
-        {toggle("bounds", "Show tile bounding boxes")}
-        {toggle("freeze", "Freeze the selection (fly around it)")}
+        {toggle("colorByDepth", t("side.colorByDepth"))}
+        {toggle("bounds", t("side.bounds"))}
+        {toggle("freeze", t("side.freeze"))}
       </div>
-      <div className="mt-2 flex h-3 overflow-hidden rounded-[4px] bg-s3" aria-label="Tiles drawn per depth">
+      <div className="mt-2 flex h-3 overflow-hidden rounded-[4px] bg-s3" aria-label={t("side.perDepth")}>
         {stats.perDepth.map((n, d) =>
-          n ? <span key={d} title={`Depth ${d}: ${n} tiles`} style={{ width: `${(n / total) * 100}%`, background: LOD_RAMP[Math.min(d, LOD_RAMP.length - 1)] }} className="border-e border-s2 last:border-0" /> : null,
+          n ? <span key={d} title={t("side.depthTiles", { d, n })} style={{ width: `${(n / total) * 100}%`, background: LOD_RAMP[Math.min(d, LOD_RAMP.length - 1)] }} className="border-e border-s2 last:border-0" /> : null,
         )}
       </div>
       <div className="mt-0.5 flex justify-between text-[10px] text-fg3">
-        <span>coarse (root)</span>
-        <span>fine (depth {stats.maxDepth})</span>
+        <span>{t("side.coarse")}</span>
+        <span>{t("side.fine", { d: stats.maxDepth })}</span>
       </div>
       <dl className="num mt-2 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[12px]">
-        <dt className="text-fg3">Tiles drawn</dt>
+        <dt className="text-fg3">{t("side.tilesDrawn")}</dt>
         <dd className="text-fg2">{stats.drawn}</dd>
-        <dt className="text-fg3">Deepest level</dt>
+        <dt className="text-fg3">{t("side.deepest")}</dt>
         <dd className="text-fg2">{stats.maxDepth}</dd>
         {stats.points > 0 && (
           <>
-            <dt className="text-fg3">Points</dt>
+            <dt className="text-fg3">{t("side.points")}</dt>
             <dd className="text-fg2">{stats.points.toLocaleString()}</dd>
           </>
         )}
         {stats.triangles > 0 && (
           <>
-            <dt className="text-fg3">Triangles</dt>
+            <dt className="text-fg3">{t("side.triangles")}</dt>
             <dd className="text-fg2">{stats.triangles.toLocaleString()}</dd>
           </>
         )}
-        <dt className="text-fg3">GPU memory</dt>
+        <dt className="text-fg3">{t("side.gpu")}</dt>
         <dd className="text-fg2">{mb(stats.memory)}</dd>
-        <dt className="text-fg3">Loading</dt>
-        <dd className="text-fg2">{stats.loading ? `${stats.loading} tiles` : "done"}</dd>
+        <dt className="text-fg3">{t("side.loading")}</dt>
+        <dd className="text-fg2">{stats.loading ? t("side.loadingTiles", { n: stats.loading }) : t("side.done")}</dd>
       </dl>
     </section>
   );

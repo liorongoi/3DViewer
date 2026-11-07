@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { ViewerEngine, type Signal } from "@viewer/core";
 
 const EngineContext = createContext<ViewerEngine | null>(null);
@@ -18,6 +19,7 @@ export function useSignal<T>(s: Signal<T> | undefined, fallback: T): T {
 
 /** Mounts one full-screen Cesium canvas shared by every UI direction. */
 export function EngineProvider({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
   const host = useRef<HTMLDivElement>(null);
   const [engine, setEngine] = useState<ViewerEngine | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
@@ -46,7 +48,7 @@ export function EngineProvider({ children }: { children: ReactNode }) {
       {failed && (
         <div className="fixed inset-0 grid place-items-center">
           <div className="glass rounded-[14px] p-6 max-w-md">
-            <div className="font-semibold mb-1">WebGL 2 is required</div>
+            <div className="font-semibold mb-1">{t("misc.webgl")}</div>
             <div className="text-fg2">{failed}</div>
           </div>
         </div>

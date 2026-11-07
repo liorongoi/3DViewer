@@ -2,7 +2,7 @@ import { epsgDef } from "../geo/crs";
 import { placementFrame, transformPoint } from "../geo/place";
 import { ecefToGeodetic } from "../geo/wgs84";
 import { baseName, type FileSet } from "./files";
-import type { CheckItem, CheckReport } from "./types";
+import { checkItem, type CheckItem, type CheckReport } from "./types";
 
 /**
  * Position from a sidecar file next to the model (plan 4.1, third in the chain). Bentley
@@ -29,24 +29,24 @@ export function parseMetadataXml(xml: string, path = "metadata.xml"): { position
   const srs = tag(xml, "SRS");
   const origin = (tag(xml, "SRSOrigin") ?? "0,0,0").split(/[,\s]+/).filter(Boolean).map(Number);
   const [ox = 0, oy = 0, oz = 0] = origin;
-  const fail = (detail: string) => ({ position: null, items: [{ id: "georef" as const, severity: "warning" as const, title: `${path} gives no position VIEWER can use`, detail }] });
-  if (!srs) return fail("It has no SRS element.");
-  if (origin.some((v) => !Number.isFinite(v))) return fail(`Its SRSOrigin "${tag(xml, "SRSOrigin")}" is not three numbers.`);
+  const fail = (key: string, params: Record<string, string | number> = {}) => ({ position: null, items: [checkItem("georef", "warning", key, { file: path, ...params })] });
+  if (!srs) return fail("sidecarNoSrs");
+  if (origin.some((v) => !Number.isFinite(v))) return fail("sidecarBadOrigin", { origin: tag(xml, "SRSOrigin") ?? "" });
   const enu = /^ENU:\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)/i.exec(srs);
   if (enu) {
     // A local east-north-up frame at that latitude and longitude; the origin is metres in it.
     const lat = Number(enu[1]);
     const lon = Number(enu[2]);
     const g = ecefToGeodetic((([x, y, z]) => ({ x, y, z }))(transformPoint(placementFrame({ lat, lon }, 0), [ox, oy, oz])));
-    return ok({ epsg: 4326, x: g.lon, y: g.lat, height: g.height, source: path }, `${path}: local frame at ${lat.toFixed(5)}°, ${lon.toFixed(5)}°`);
+    return ok({ epsg: 4326, x: g.lon, y: g.lat, height: g.height, source: path }, "sidecarEnu", { file: path, lat: lat.toFixed(5), lon: lon.toFixed(5) });
   }
   const code = /^EPSG:\s*(\d+)/i.exec(srs);
-  if (!code) return fail(`Its SRS "${srs.slice(0, 80)}" is not an EPSG code or ENU frame. Export with an EPSG code.`);
+  if (!code) return fail("sidecarBadSrs", { srs: srs.slice(0, 80) });
   const epsg = Number(code[1]);
-  if (!epsgDef(epsg)) return fail(`It names EPSG:${epsg}, which is not in VIEWER's list of coordinate systems. Ask the admin to add it, or enter the position by hand.`);
-  return ok({ epsg, x: ox, y: oy, height: oz, source: path }, `${path}: EPSG:${epsg}, origin ${ox}, ${oy}, ${oz}`);
+  if (!epsgDef(epsg)) return fail("sidecarUnknownEpsg", { epsg });
+  return ok({ epsg, x: ox, y: oy, height: oz, source: path }, "sidecarEpsg", { file: path, epsg, x: ox, y: oy, z: oz });
 }
 
-function ok(position: NonNullable<CheckReport["filePosition"]>, detail: string) {
-  return { position, items: [{ id: "georef" as const, severity: "ok" as const, title: "Position from the export's metadata", detail }] };
+function ok(position: NonNullable<CheckReport["filePosition"]>, key: string, params: Record<string, string | number>) {
+  return { position, items: [checkItem("georef", "ok", key, params)] };
 }

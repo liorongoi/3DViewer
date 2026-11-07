@@ -1,6 +1,7 @@
 import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { findModel, refreshLibrary } from "./state/library";
-import { findServer, getBaseMaps, listLevels, recordView } from "./server/api";
+import { findServer, getBaseMaps, getLayerManifest, listLevels, recordView } from "./server/api";
 import { readShare } from "./share";
 import { setVisible } from "@viewer/core";
 import { useEngine } from "./engine";
@@ -16,8 +17,11 @@ export function useOpenModel() {
       if (!m || !engine) return;
       set({ modelId: id, route: "viewer", tool: "none" });
       const srv = useApp.getState().server;
-      if (srv && !m.id.startsWith("upload-")) recordView(srv, m.id);
+      const fromServer = srv && !m.id.startsWith("upload-");
+      if (fromServer) recordView(srv, m.id);
       void engine.open(m);
+      // The producer's layer arrangement, applied as soon as it arrives (the model may still be loading).
+      if (fromServer) void getLayerManifest(srv, m.id, m.version).then((man) => man && engine.current.get()?.id === m.id && engine.setLayerManifest(man));
     },
     close: () => {
       engine?.close();
@@ -30,6 +34,11 @@ export function useOpenModel() {
 /** Wires app state to the engine and installs the global keyboard shortcuts (SRS 5.1). */
 export function useAppEffects(): void {
   const engine = useEngine();
+  const { t, i18n } = useTranslation();
+  // New measurements are named in the interface language.
+  useEffect(() => {
+    if (engine) engine.measure.labelFor = (kind, n) => t(`measureNames.${kind}`, { n });
+  }, [engine, t, i18n.language]);
   const tool = useApp((s) => s.tool);
   const quality = useApp((s) => s.quality);
   const adaptive = useApp((s) => s.adaptiveResolution);
@@ -92,7 +101,11 @@ export function useAppEffects(): void {
       const m = findModel(st.m);
       if (!m) return;
       useApp.getState().set({ modelId: m.id, route: "viewer", tool: "none" });
+      const srv = useApp.getState().server;
+      const man = srv && !m.id.startsWith("upload-") ? getLayerManifest(srv, m.id, m.version) : null;
       await engine.open(m, { fly: false });
+      const arranged = await man;
+      if (arranged) engine.setLayerManifest(arranged);
       engine.setView(st.c);
       engine.setViewMode(st.mode);
       if (st.hidden.length) engine.setLayers(st.hidden.reduce((ls, id) => setVisible(ls, id, false), engine.layers.get()));

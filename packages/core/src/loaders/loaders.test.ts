@@ -206,7 +206,7 @@ describe("position carried by the file (WP 1.3)", () => {
     const { report } = await checkFiles([fromBytes("site/Data/m.glb", glb(triangle)), fromBytes("site/metadata.xml", enc(xml))]);
     expect(report.georef).toBeNull();
     expect(report.filePosition).toEqual({ epsg: 2039, x: 222303.615, y: 631557.918, height: 780.5, source: "metadata.xml" });
-    expect(report.items.filter((i) => i.id === "georef")).toEqual([{ id: "georef", severity: "ok", title: "Position from the export's metadata", detail: "metadata.xml: EPSG:2039, origin 222303.615, 631557.918, 780.5" }]);
+    expect(report.items.filter((i) => i.id === "georef")).toMatchObject([{ id: "georef", severity: "ok", title: "Position from the export's metadata", detail: "metadata.xml: EPSG:2039, origin 222303.615, 631557.918, 780.5", key: "sidecarEpsg" }]);
   });
 
   it("reads ENU and compound systems, and names what it cannot use", () => {

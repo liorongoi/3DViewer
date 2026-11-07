@@ -27,6 +27,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Type-check
         run: pnpm -r --if-present run typecheck
+      - name: No hard-coded interface strings
+        run: node scripts/check-i18n.cjs
+      - name: Third-party licences allowed and listed
+        run: node scripts/licenses.cjs --check
       - name: Unit tests
         run: pnpm -r --if-present run test
       - name: Build
@@ -53,7 +57,58 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The backup test runs pg_dump, which must be the server's major version or newer.
+      - name: PostgreSQL 17 client
+        run: |
+          sudo apt-get install -y postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-client-17
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
       - name: Server tests on PostgreSQL
         run: pnpm --filter @viewer/server test
         env:
           TEST_DATABASE_URL: postgres://postgres:viewer@localhost:5432/viewer
+
+  # Production gap 7: the browser acceptance checks run on every pull request, in software
+  # rendering (SwiftShader), on the light sample set (Khronos models and CesiumGS tilesets).
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Chromium for Playwright
+        run: pnpm exec playwright install --with-deps chromium
+      - uses: actions/cache@v4
+        with:
+          path: apps/web/public/samples
+          key: samples-light-${{ hashFiles('scripts/fetch-samples.sh') }}
+      - name: Sample models
+        run: test -f apps/web/public/samples/khronos/ABeautifulGame.glb || LIGHT=1 bash scripts/fetch-samples.sh
+      - name: Build
+        run: pnpm -r --if-present run build
+      - name: Start the web app
+        run: |
+          (cd apps/web && nohup npx vite preview --port 4173 --strictPort > "$RUNNER_TEMP/preview.log" 2>&1 &)
+          for i in $(seq 1 60); do curl -sf http://localhost:4173/ > /dev/null && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/preview.log"; exit 1
+      - name: Shell in both languages and themes, with accessibility (AC WP 1.8)
+        run: node scripts/check-shell.cjs check-out/shell
+        env:
+          SHELL_MODEL: SciFi Helmet
+      - name: Layers (AC-05)
+        run: node scripts/check-layers.cjs
+      - name: A fault in one part keeps the rest working
+        run: node scripts/check-faults.cjs
+      - name: Screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-check-screenshots
+          path: check-out/
+          if-no-files-found: ignore
