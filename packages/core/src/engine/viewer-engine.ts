@@ -45,6 +45,7 @@ import {
 import type { BaseMapConfig, ModelSummary, UpdateStatus } from "@viewer/shared";
 import { CameraController } from "./camera-controller";
 import { MeasureTool } from "./measure-tool";
+import { Snapper, type Snap } from "./snapper";
 import { FlyByTour, FlyMode, captureViewpoint, type Viewpoint } from "./fly";
 import { signal } from "../signal";
 import { applyManifest, effectiveVisibility, findLayer, layerForNode, layerNodes, layersFromGltf, layersFromTileset, walk, type Layer, type LayerManifest } from "../layers/layers";
@@ -122,6 +123,8 @@ export class ViewerEngine {
   readonly widget: CesiumWidget;
   readonly camera: CameraController;
   readonly measure: MeasureTool;
+  /** Snapping of measurement points to corners and edges (WP 2.3, MSR-03). */
+  readonly snapper: Snapper;
   readonly fly: FlyMode;
   readonly tour: FlyByTour;
   readonly sight: SightlineTool;
@@ -177,6 +180,8 @@ export class ViewerEngine {
   private offTileFailed: (() => void) | null = null;
   private cutTimer: ReturnType<typeof setTimeout> | null = null;
   private cutRun = 0;
+  /** The last cut found no drawn tiles to capture: try again when tiles next finish loading. */
+  private cutMissing = false;
 
   private model: Model | null = null;
   private tileset: Cesium3DTileset | null = null;
@@ -243,7 +248,11 @@ export class ViewerEngine {
     scene.postProcessStages.fxaa.enabled = true;
     scene.postProcessStages.tonemapper = Tonemapper.PBR_NEUTRAL;
     scene.highDynamicRange = true;
-    scene.pickTranslucentDepth = true;
+    // Picks read the depth of the frame already drawn. With translucent depth on, every pick
+    // position draws the whole scene once more (a second frame for each hover), and in Cesium
+    // 1.146 that extra draw can hit a billboard collection mid-rebuild and crash the view. So a
+    // pick looks through glass to what is behind it; glass edges and corners still snap.
+    scene.pickTranslucentDepth = false;
     scene.globe.depthTestAgainstTerrain = true;
     scene.globe.baseColor = Color.fromCssColorString("#3A3B36");
     scene.backgroundColor = Color.fromCssColorString("#0E0F12");
@@ -269,6 +278,11 @@ export class ViewerEngine {
     this.camera.onMoveStart = () => this.setMovingQuality(true);
     this.camera.onMoveEnd = () => this.setMovingQuality(false);
     this.measure = new MeasureTool(this.widget.entities, () => scene.requestRender());
+    // An index built in the worker may change what the cursor snaps to: look again.
+    this.snapper = new Snapper(scene, () => {
+      this.rehover?.();
+      scene.requestRender();
+    });
     this.fly = new FlyMode(scene, this.widget.canvas);
     this.tour = new FlyByTour(scene);
     this.sight = new SightlineTool(scene, this.widget.entities, (pts) => this.sampleGround(pts));
@@ -289,6 +303,7 @@ export class ViewerEngine {
   }
 
   destroy(): void {
+    this.snapper.destroy();
     this.fly.disable();
     this.tour.stop();
     this.camera.destroy();
@@ -422,6 +437,7 @@ export class ViewerEngine {
     this.error.set(null);
     this.applyPinVisibility();
     this.cutRun++;
+    this.cutMissing = false;
     this.offTilesLoaded?.();
     this.offTilesLoaded = null;
     this.offTileFailed?.();
@@ -717,6 +733,9 @@ export class ViewerEngine {
     }
     const u = await this.captureGround(target, () => run === this.cutRun && (this.tileset ?? this.model) === target);
     if (run !== this.cutRun || (this.tileset ?? this.model) !== target) return;
+    // Tiles still loading draw nothing to capture; without a retry the terrain would show
+    // through the model for good.
+    this.cutMissing = !u && target === this.tileset;
     if (!u) {
       if (had) this.applyTerrain();
       return;
@@ -763,6 +782,11 @@ export class ViewerEngine {
    * is rebuilt only if that uncovers ground the cut missed, so most refines change nothing.
    */
   private scheduleGroundCutRefine(): void {
+    if (this.cutMissing && this.tileset && !this.cut) {
+      this.cutMissing = false;
+      void this.updateGroundCut();
+      return;
+    }
     if (!this.cut || !this.tileset) return;
     if (this.cutRefineTimer) clearTimeout(this.cutRefineTimer);
     this.cutRefineTimer = setTimeout(async () => {
@@ -1112,15 +1136,45 @@ export class ViewerEngine {
     return g ?? this.widget.camera.pickEllipsoid(pos) ?? undefined;
   }
 
+  /** Asks the hover to be worked out again at the last cursor position. */
+  private rehover: (() => void) | null = null;
+
+  /**
+   * Where a measurement point goes for a cursor position: the corner or edge within 10 px, else
+   * the surface. free (Alt held) places it on the surface without snapping.
+   */
+  measurePoint(at: { x: number; y: number }, free = false): Snap | undefined {
+    // A real Cartesian2: Cesium caches pickPosition per frame by the position's text.
+    const pos = new Cartesian2(at.x, at.y);
+    const surface = this.pick(pos);
+    if (free || !this.snapper.enabled.get()) return surface ? { position: surface, kind: "surface", pixels: 0 } : undefined;
+    return this.snapper.snap(pos, surface);
+  }
+
   private bindPointer(): void {
     const canvas = this.widget.canvas;
     let pending: Cartesian2 | null = null;
+    let last: Cartesian2 | null = null;
+    let alt = false;
     let downAt: { x: number; y: number } | null = null;
     canvas.addEventListener("pointermove", (e) => {
-      pending = new Cartesian2(e.offsetX, e.offsetY);
+      pending = last = new Cartesian2(e.offsetX, e.offsetY);
+      alt = e.altKey;
     });
+    this.rehover = () => {
+      if (last && this.measure.active.get()) pending = last;
+    };
+    // Alt pressed or let go over a still cursor changes the snap: look again.
+    for (const type of ["keydown", "keyup"] as const) {
+      window.addEventListener(type, (e) => {
+        if (e.key !== "Alt" || alt === e.altKey) return;
+        alt = e.altKey;
+        this.rehover?.();
+        this.widget.scene.requestRender();
+      });
+    }
     canvas.addEventListener("pointerleave", () => {
-      pending = null;
+      pending = last = null;
       this.cursor.set(null);
       this.measure.setHover(undefined);
       this.sight.setHover(null);
@@ -1170,8 +1224,8 @@ export class ViewerEngine {
       if (moved > 4) return;
       const pos = new Cartesian2(e.offsetX, e.offsetY);
       if (this.measure.active.get()) {
-        const p = this.pick(pos);
-        if (p) this.measure.addPoint(p);
+        const p = this.measurePoint(pos, e.altKey);
+        if (p) this.measure.addPoint(p.position);
         return;
       }
       if (this.viewshed.placing.get()) {
@@ -1201,11 +1255,15 @@ export class ViewerEngine {
     canvas.addEventListener("dblclick", () => {
       if (this.measure.active.get() === "path") this.measure.finish();
     });
-    this.widget.scene.preRender.addEventListener(() => {
+    // After the frame, so the picks read the depth of the frame just drawn.
+    this.widget.scene.postRender.addEventListener(() => {
       if (!pending) return;
       const pos = pending;
       pending = null;
-      const p = this.pick(pos);
+      // While measuring, the point shown is where a click would put it: snapped, even just off
+      // the model's outline.
+      const snap = this.measure.active.get() ? this.measurePoint(pos, alt) : undefined;
+      const p = snap ? snap.position : this.pick(pos);
       if (!p) {
         this.cursor.set(null);
         this.measure.setHover(undefined);
@@ -1214,7 +1272,7 @@ export class ViewerEngine {
       const c = Cartographic.fromCartesian(p);
       if (!c) return;
       this.cursor.set({ lat: CMath.toDegrees(c.latitude), lon: CMath.toDegrees(c.longitude), height: c.height, onModel: true });
-      this.measure.setHover(p);
+      this.measure.setHover(p, snap);
       this.sight.setHover(p);
     });
   }

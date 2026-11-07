@@ -72,9 +72,12 @@ const LABELS = {
         {
           id: "model",
           go: async () => {
-            // SHELL_MODEL picks the card by name (CI has only the light sample set).
-            const cards = page.locator("button:has(img), button:has([role=img])");
-            await (process.env.SHELL_MODEL ? cards.filter({ hasText: process.env.SHELL_MODEL }) : cards).first().click();
+            // SHELL_MODEL picks the card by name (CI has only the light sample set, and no
+            // thumbnails: there a card shows an icon, not an image).
+            const cards = process.env.SHELL_MODEL
+              ? page.locator("button").filter({ hasText: process.env.SHELL_MODEL })
+              : page.locator("button:has(img), button:has([role=img])");
+            await cards.first().click();
             await page.waitForFunction(() => window.viewerEngine.model?.ready || window.viewerEngine.tileset, null, { timeout: 120000 });
             await page.waitForTimeout(2500);
           },
@@ -148,7 +151,12 @@ const LABELS = {
           },
           { axe: AXE, latinOk: [...LATIN_OK], lang },
         );
-        if (out) await page.screenshot({ path: path.join(out, `${run}-${s.id}.png`) });
+        // The picture is for people reading a failure, not a check: on a slow software renderer
+        // it can take too long, and then it is skipped.
+        if (out)
+          await page
+            .screenshot({ path: path.join(out, `${run}-${s.id}.png`), timeout: 60000, animations: "disabled" })
+            .catch((e) => console.log(`  (no screenshot of ${run} ${s.id}: ${e.message.split("\n")[0]})`));
         check(r.violations.length === 0, `${run} ${s.id}: no serious accessibility problems`, r.violations.join("\n"));
         check(r.dir === (lang === "he" ? "rtl" : "ltr") && r.lang === lang, `${run} ${s.id}: runs ${lang === "he" ? "right to left" : "left to right"} (dir=${r.dir}, lang=${r.lang})`);
         check(r.overflow <= 0, `${run} ${s.id}: nothing spills past the window`, `${r.overflow}px`);

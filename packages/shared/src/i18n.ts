@@ -76,8 +76,8 @@ export const en = {
     environments: { overcast: "Overcast", noon: "Clear noon", studio: "Studio neutral" },
     hints: {
       idle: "Left-drag to orbit · Right-drag to pan · Wheel to zoom · Double-click to set the pivot",
-      distanceFirst: "Click the first point · Esc to cancel",
-      distanceSecond: "Click the second point · Esc to cancel",
+      distanceFirst: "Click the first point · Alt places it without snapping · Esc to cancel",
+      distanceSecond: "Click the second point · Alt places it without snapping · Esc to cancel",
       pathNext: "Click to add a point · Double-click or Enter to finish · Backspace removes the last point",
     },
     error: {
@@ -107,6 +107,8 @@ export const en = {
     feet: "Feet",
     modelUnits: "Model units: this model has no reliable scale",
     copyValues: "Copy values",
+    snapVertex: "Vertex · {{px}} px",
+    snapEdge: "Edge · {{px}} px",
   },
   coords: { system: "Coordinate system", wgs84: "WGS84", utm: "UTM", zone: "Zone" },
   palette: {
@@ -190,6 +192,7 @@ export const en = {
       palette: "Command palette",
       modes: "View modes",
       cancel: "Cancel the active tool",
+      free: "Hold while clicking: place a point without snapping",
       help: "This help",
     },
   },
@@ -897,8 +900,8 @@ export const he: Shape<typeof en> = {
     environments: { overcast: "מעונן", noon: "צהריים בהירים", studio: "סטודיו ניטרלי" },
     hints: {
       idle: "גרירה שמאלית לסיבוב · גרירה ימנית להזזה · גלגלת לזום · לחיצה כפולה לקביעת ציר",
-      distanceFirst: "לחצו על הנקודה הראשונה · Esc לביטול",
-      distanceSecond: "לחצו על הנקודה השנייה · Esc לביטול",
+      distanceFirst: "לחצו על הנקודה הראשונה · Alt מציב בלי הצמדה · Esc לביטול",
+      distanceSecond: "לחצו על הנקודה השנייה · Alt מציב בלי הצמדה · Esc לביטול",
       pathNext: "לחצו להוספת נקודה · לחיצה כפולה או Enter לסיום · Backspace מוחק את הנקודה האחרונה",
     },
     error: {
@@ -928,6 +931,8 @@ export const he: Shape<typeof en> = {
     feet: "רגל",
     modelUnits: "יחידות מודל: למודל הזה אין קנה מידה אמין",
     copyValues: "העתקת ערכים",
+    snapVertex: "קודקוד · {{px}} פיקסלים",
+    snapEdge: "מקצוע · {{px}} פיקסלים",
   },
   coords: { system: "מערכת קואורדינטות", wgs84: "WGS84", utm: "UTM", zone: "אזור" },
   palette: {
@@ -1011,6 +1016,7 @@ export const he: Shape<typeof en> = {
       palette: "לוח פקודות",
       modes: "מצבי תצוגה",
       cancel: "ביטול הכלי הפעיל",
+      free: "החזיקו בזמן לחיצה: הצבת נקודה בלי הצמדה",
       help: "העזרה הזו",
     },
   },

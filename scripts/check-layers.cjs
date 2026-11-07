@@ -55,6 +55,8 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
     page.on("pageerror", (e) => errors.push(e.message));
     await page.goto("http://localhost:4173/", { waitUntil: "load" });
     await page.waitForFunction(() => !!window.viewerEngine, null, { timeout: 60000 });
+    // A render error stops Cesium drawing without a page error: keep it for the report.
+    await page.evaluate(() => window.viewerEngine.widget.scene.renderError.addEventListener((_, err) => (window.__renderError = String(err?.stack ?? err).slice(0, 400))));
     // Open it as a user would: the chess set's card. The tiled copy is then opened in its place,
     // as the app opens a model the server tiled.
     await page.getByRole("button", { name: /A Beautiful Game/ }).first().click();
@@ -147,9 +149,25 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
       await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
     };
     const button = (name) => ({ click: () => clickCentre(page.getByRole("button", { name, exact: true })) });
-    const modelHit = () =>
-      page.evaluate(() => {
+    // A tileset's tiles loaded for a second of frames in a row: a tile unloaded while out of view
+    // is asked for again only by the next frame, so a single check can pass before it is back.
+    const settled = () =>
+      page.evaluate(async () => {
         const e = window.viewerEngine;
+        for (let i = 0, n = 0; i < 600 && e.tileset && n < 5; i++) {
+          e.widget.render();
+          await new Promise((r) => setTimeout(r, 200));
+          n = e.tileset.tilesLoaded ? n + 1 : 0;
+        }
+      });
+    const modelHit = () =>
+      settled().then(() => page.evaluate(() => {
+        const e = window.viewerEngine;
+        // What the last drawn frame chose, before the picks below run their own passes.
+        const t = e.tileset;
+        window.__drawn = t
+          ? { selected: t._selectedTiles.length, memSse: Math.round(t.memoryAdjustedScreenSpaceError * 100) / 100, maxSse: t.maximumScreenSpaceError, rootSseTileset: Math.round(t.root.getScreenSpaceError(e.widget.scene.frameState, true) * 100) / 100, rootVisible: t.root._visible, memory: t.totalMemoryUsageInBytes, cache: t.cacheBytes, overflow: t.maximumCacheOverflowBytes, gError: t._geometricError }
+          : null;
         const c = e.widget.scene.canvas;
         // A grid of points over the view: does any of them hit the model?
         for (let y = 0.2; y <= 0.8; y += 0.05)
@@ -158,6 +176,48 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
             if (p && (p.primitive === e.model || p.primitive === e.tileset)) return true;
           }
         return false;
+      }));
+
+    // When a click misses: what the view holds, for the check's detail.
+    const viewState = () =>
+      page.evaluate(() => {
+        const e = window.viewerEngine;
+        const scene = e.widget.scene;
+        const target = e.tileset ?? e.model;
+        const bs = target?.boundingSphere;
+        const at = bs && scene.cartesianToCanvasCoordinates(bs.center);
+        const kinds = {};
+        const c = scene.canvas;
+        for (let y = 0.2; y <= 0.8; y += 0.15)
+          for (let x = 0.2; x <= 0.8; x += 0.15) {
+            const p = scene.pick({ x: c.clientWidth * x, y: c.clientHeight * y });
+            const k = !p ? "nothing" : p.primitive === e.tileset ? "tileset" : p.primitive === e.model ? "model" : p.primitive?.constructor?.name ?? p.constructor?.name ?? "other";
+            kinds[k] = (kinds[k] ?? 0) + 1;
+          }
+        const t = e.tileset;
+        return JSON.stringify({
+          picks: kinds,
+          centreOnScreen: at ? [Math.round(at.x), Math.round(at.y)] : null,
+          radius: bs ? Math.round(bs.radius * 100) / 100 : null,
+          camHeight: Math.round(scene.camera.positionCartographic.height),
+          tiles: t ? { loaded: t.tilesLoaded, selected: t._selectedTiles.length, commands: t.statistics.numberOfCommands, visited: t.statistics.visited, show: t.show, freeze: t.debugFreezeFrame, style: !!t.style } : null,
+          root: t
+            ? {
+                contentReady: t.root.contentReady,
+                state: t.root._contentState,
+                planeMask: t.root._visibilityPlaneMask,
+                visited: t.root._visitedFrame,
+                selected: t.root._selectedFrame,
+                frame: scene.frameState.frameNumber,
+                sse: Math.round(t.root._screenSpaceError * 100) / 100,
+                children: t.root.children.map((c) => [c.contentReady, c._visibilityPlaneMask, c._visitedFrame]),
+                distance: bs ? Math.round(Math.hypot(bs.center.x - scene.camera.positionWC.x, bs.center.y - scene.camera.positionWC.y, bs.center.z - scene.camera.positionWC.z) * 100) / 100 : null,
+              }
+            : null,
+          near: scene.camera.frustum.near,
+          drawn: window.__drawn ?? null,
+          renderError: window.__renderError ?? null,
+        });
       });
 
     // ---- LYR-01: the tree mirrors the hierarchy ----
@@ -191,7 +251,10 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
     } else console.log(`INFO ${kind}: no part has children`);
 
     // ---- LYR-03: show all / hide all ----
-    check(await modelHit(), T("the model can be clicked before Hide all"));
+    {
+      const hit = await modelHit();
+      check(hit, T("the model can be clicked before Hide all"), hit ? undefined : await viewState());
+    }
     await button("Hide all").click();
     await page.waitForTimeout(400);
     rows = await matches("Hide all");
@@ -200,7 +263,10 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
     await button("Show all").click();
     await page.waitForTimeout(400);
     rows = await matches("Show all");
-    check(rows.every((r) => r.shown) && (await modelHit()), T("Show all shows every part again"));
+    {
+      const hit = await modelHit();
+      check(rows.every((r) => r.shown) && hit, T("Show all shows every part again"), hit ? undefined : await viewState());
+    }
 
     // ---- LYR-04: search ----
     const search = page.getByRole("textbox", { name: "Search layers" });
@@ -277,6 +343,7 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
     await page.waitForTimeout(200);
     check((await page.evaluate(() => window.viewerEngine.hoveredLayer.get())) === null, T("the outline goes when the pointer leaves the list"));
     // Click the part in 3D: the centre of its box on screen.
+    await settled();
     const spot = await page.evaluate((id) => {
       const e = window.viewerEngine;
       const s = e.layerSphere(id);
@@ -289,7 +356,7 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
       await page.waitForTimeout(400);
       const sel = await page.evaluate(() => window.viewerEngine.selectedLayer.get());
       const selRow = sel ? await row(sel).getAttribute("aria-selected") : null;
-      check(!!sel && selRow === "true", T("clicking a part in 3D selects its row"), sel ? layers.find((l) => l.id === sel)?.name : "nothing picked");
+      check(!!sel && selRow === "true", T("clicking a part in 3D selects its row"), sel ? layers.find((l) => l.id === sel)?.name : `nothing picked at ${Math.round(spot.x)},${Math.round(spot.y)}: ${await viewState()}`);
     }
 
     // ---- WP 2.1: a saved manifest renames, merges, nests and orders the layers ----
