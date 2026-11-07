@@ -135,13 +135,17 @@ describe.runIf(process.env.E2E_KILL === "1")("WP 3.4: kill the worker mid-job", 
     // Back up: the job waits out the dead worker's lease, then runs again from the upload.
     await start();
     for (;;) {
+      const t = Date.now();
       s = await json<Status>(`/api/ingests/${ing.id}`);
+      slowest = Math.max(slowest, Date.now() - t);
       if (s.state === "ready" || s.state === "failed") break;
       await new Promise((r) => setTimeout(r, 500));
     }
     const recovered = (Date.now() - killedAt) / 1000;
     console.log(`kill-worker: killed while tiling, published ${recovered.toFixed(0)} s later after ${s.job?.attempts} attempts; slowest API answer while the job ran ${slowest} ms`);
     expect(s, s.error ?? "").toMatchObject({ state: "ready", version: 1, job: { state: "done", attempts: 2 } });
+    // Tiling runs on its own thread, so the API keeps answering (it took up to 1.4 s before).
+    expect(slowest).toBeLessThan(300);
 
     // Exactly one model with one version, and its tileset and every tile are there.
     const models = await json<{ id: string; name: string }[]>("/api/models");

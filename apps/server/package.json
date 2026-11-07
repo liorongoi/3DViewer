@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build --ssr src/main.ts --outDir dist --emptyOutDir",
+    "build": "vite build --outDir dist --emptyOutDir",
     "start": "node dist/main.js",
-    "dev": "vite build --ssr src/main.ts --outDir dist --emptyOutDir && node dist/main.js",
+    "dev": "vite build --outDir dist --emptyOutDir && node dist/main.js",
     "typecheck": "tsc -p .",
     "test": "vitest run"
   },

@@ -4,7 +4,7 @@ import path from "node:path";
 import { Document, NodeIO } from "@gltf-transform/core";
 import { describe, expect, it } from "vitest";
 import { gridGlb } from "./test-models.ts";
-import { tileModel } from "./tiler.ts";
+import { tileModel, tileModelInWorker } from "./tiler.ts";
 import { validateOfficial } from "./validate.ts";
 
 interface Tile {
@@ -94,5 +94,37 @@ describe("tiler (WP 3.4)", () => {
       const box = JSON.parse(readFileSync(path.join(o, "tileset.json"), "utf8")).root.boundingVolume.box as number[];
       expect(box.slice(0, 3).map((v) => Math.round(v))).toEqual([30, 70, 5]);
     }
+  }, 60_000);
+
+  it("tiles on its own thread, so the server keeps answering meanwhile", async () => {
+    const { input, out } = setup(600); // 720,000 triangles: several seconds of tiling
+    // The longest the main thread goes without running a 10 ms timer.
+    let last = performance.now();
+    let worst = 0;
+    const timer = setInterval(() => {
+      const now = performance.now();
+      worst = Math.max(worst, now - last);
+      last = now;
+    }, 10);
+    const progress: number[] = [];
+    const started = performance.now();
+    const r = await tileModelInWorker(input, out, { leafTriangles: 50_000 }, (done) => progress.push(done));
+    clearInterval(timer);
+    const took = performance.now() - started;
+    if (process.env.TILER_TIMING) console.log(`worker: ${took.toFixed(0)} ms, main thread held at most ${worst.toFixed(0)} ms`);
+    expect(r.triangles).toBe(720_000);
+    expect(progress.length).toBeGreaterThan(0);
+    expect(took).toBeGreaterThan(1000); // long enough to mean something
+    // On the main thread the same job held it for over a second at a time.
+    expect(worst).toBeLessThan(150);
+    // Same tiles as on the main thread.
+    const ts = JSON.parse(readFileSync(path.join(out, "tileset.json"), "utf8"));
+    expect(ts.asset.version).toBe("1.1");
+  }, 120_000);
+
+  it("reports a tiling failure from the worker as an error", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "tile-"));
+    writeFileSync(path.join(dir, "bad.glb"), "not a glb");
+    await expect(tileModelInWorker(path.join(dir, "bad.glb"), path.join(dir, "out"))).rejects.toThrow();
   }, 60_000);
 });

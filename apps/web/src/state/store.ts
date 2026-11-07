@@ -79,7 +79,8 @@ export const useApp = create<AppState>((set) => ({
   unit: readPref<LengthUnit>("unit", "m"),
   quality: readPref<Quality>("quality", "high"),
   environment: readPref<EnvironmentId>("environment", "atmosphere"),
-  memoryGb: Number(readPref<string>("memoryGb", "2")) || 2,
+  // NFR-04: 10 GB of the A4000's 16 GB by default.
+  memoryGb: Number(readPref<string>("memoryGb", "10")) || 10,
   viewMode: "shaded",
   tool: "none",
   shadows: true,

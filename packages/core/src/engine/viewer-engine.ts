@@ -151,7 +151,7 @@ export class ViewerEngine {
   /** Lighting environment for models and tilesets (WP 1.4). */
   readonly environment = signal<EnvironmentId>("atmosphere");
   /** GPU memory for 3D Tiles, shared by every open tileset (WP 1.5, NFR-04). */
-  private memoryBudget = 2 * 1024 ** 3;
+  private memoryBudget = 10 * 1024 ** 3;
   /** Vertical shift applied to a 3D Tiles dataset to meet the terrain, metres. */
   readonly groundOffset = signal(0);
   private userDems: DemSource[] = [];
@@ -296,8 +296,7 @@ export class ViewerEngine {
       if (summary.source.kind === "3dtiles") {
         const tileset = await Cesium3DTileset.fromUrl(summary.source.url, {
           maximumScreenSpaceError: SSE[this.quality],
-          cacheBytes: this.memoryBudget,
-          maximumCacheOverflowBytes: this.memoryBudget / 2,
+          ...this.budgetSplit(),
           imageBasedLighting: this.makeIbl(),
           shadows: ShadowMode.ENABLED,
         });
@@ -325,7 +324,12 @@ export class ViewerEngine {
           this.modelBaseHeight = await this.placementHeight(summary.placement);
           this.groundOffset.set(0);
           tileset.modelMatrix = placeMatrix(summary.placement, this.modelBaseHeight);
-        } else void this.fitTilesetToGround(tileset, summary).then(() => this.updateGroundCut());
+        } else {
+          // The fit samples the surface by drawing it many times over: let the first view out first.
+          void this.firstDrawn(tileset)
+            .then(() => (this.tileset === tileset ? this.fitTilesetToGround(tileset, summary) : undefined))
+            .then(() => this.updateGroundCut());
+        }
       } else {
         // A GLB with its own Earth position (CESIUM_RTC, an Earth-centred node) is drawn as it is.
         const own = summary.source.georeferenced && !summary.placement;
@@ -825,6 +829,19 @@ export class ViewerEngine {
     if (Math.abs(offset) > minOffset) this.setGroundOffset(offset);
   }
 
+  /** Resolves after the first frame that draws one of the tileset's tiles (or once it is closed). */
+  private firstDrawn(tileset: Cesium3DTileset): Promise<void> {
+    const scene = this.widget.scene;
+    return new Promise((resolve) => {
+      const off = scene.postRender.addEventListener(() => {
+        if (this.tileset !== tileset || tileset.isDestroyed() || (tileset as unknown as { statistics: { selected: number } }).statistics.selected > 0) {
+          off();
+          resolve();
+        }
+      });
+    });
+  }
+
   /** Shift the open 3D Tiles dataset up or down along the local vertical. */
   setGroundOffset(metres: number): void {
     this.groundOffset.set(metres);
@@ -880,13 +897,32 @@ export class ViewerEngine {
     if (this.tileset) this.tileset.imageBasedLighting = this.makeIbl();
   }
 
-  /** Caps the GPU memory 3D Tiles may hold. Tiles over the cap are unloaded, farthest first. */
+  /**
+   * Caps the GPU memory 3D Tiles may hold (NFR-04: 10 GB by default, configurable). Tiles the
+   * view no longer needs are unloaded once three quarters of the cap is used; if the view itself
+   * needs more than the cap, the tileset draws coarser tiles rather than go over it.
+   */
   setMemoryBudget(bytes: number): void {
-    this.memoryBudget = Math.max(256 * 1024 ** 2, bytes);
-    if (this.tileset) {
-      this.tileset.cacheBytes = this.memoryBudget;
-      this.tileset.maximumCacheOverflowBytes = this.memoryBudget / 2;
+    const previous = this.memoryBudget;
+    this.memoryBudget = Math.max(16 * 1024 ** 2, bytes);
+    const ts = this.tileset;
+    if (!ts) return;
+    Object.assign(ts, this.budgetSplit());
+    // Cesium only coarsens while new tiles wait to load, and never drops tiles the view uses.
+    // When the cap falls below what is held now, coarsen at once so those tiles can go.
+    const over = ts.totalMemoryUsageInBytes / this.memoryBudget;
+    // Raised, detail comes straight back (Cesium alone would step it back 2% a frame).
+    if (this.memoryBudget > previous) ts.maximumScreenSpaceError = ts.maximumScreenSpaceError;
+    else if (over > 1) {
+      const t = ts as unknown as { _memoryAdjustedScreenSpaceError: number };
+      t._memoryAdjustedScreenSpaceError = Math.max(t._memoryAdjustedScreenSpaceError, ts.maximumScreenSpaceError * over * 2);
     }
+    this.widget.scene.requestRender();
+  }
+
+  /** Cesium's two limits, which together make the cap: unused tiles go above the first, detail drops above the sum. */
+  private budgetSplit(): { cacheBytes: number; maximumCacheOverflowBytes: number } {
+    return { cacheBytes: Math.round(this.memoryBudget * 0.75), maximumCacheOverflowBytes: Math.round(this.memoryBudget * 0.25) };
   }
 
   setQuality(q: Quality): void {
