@@ -14,7 +14,8 @@
 //
 // Usage: build apps/web, start `vite preview` on :4173, then
 //   node scripts/check-shell.cjs [out folder]
-// ONLY=en-dark,he-light limits the runs. Set CHROMIUM to a Chromium binary if needed.
+// ONLY=en-dark,he-light limits the runs. SHELL_MODEL="Sci-Fi" opens that model instead of the
+// first card. Set CHROMIUM to a Chromium binary if needed.
 const fs = require("fs");
 const path = require("path");
 const { chromium } = require("playwright");
@@ -71,7 +72,9 @@ const LABELS = {
         {
           id: "model",
           go: async () => {
-            await page.locator("button:has(img), button:has([role=img])").first().click();
+            // SHELL_MODEL picks the card by name (CI has only the light sample set).
+            const cards = page.locator("button:has(img), button:has([role=img])");
+            await (process.env.SHELL_MODEL ? cards.filter({ hasText: process.env.SHELL_MODEL }) : cards).first().click();
             await page.waitForFunction(() => window.viewerEngine.model?.ready || window.viewerEngine.tileset, null, { timeout: 120000 });
             await page.waitForTimeout(2500);
           },

@@ -2,6 +2,8 @@
 # Downloads open sample data for the prototype into apps/web/public/samples.
 # Run on an internet-connected machine; copy the folder through the approved
 # transfer process for use on the internal network. Licences: docs/DATA_SOURCES.md
+# LIGHT=1 fetches only the Khronos models and the CesiumGS tilesets (about 110 MB), which is
+# what the browser checks in CI need.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/apps/web/public/samples"
@@ -23,6 +25,7 @@ git clone -q --depth 1 --filter=blob:none --sparse https://github.com/CesiumGS/3
 (cd "$TMP/tiles" && git sparse-checkout set 1.0/TilesetWithDiscreteLOD 1.0/TilesetWithRequestVolume)
 cp -r "$TMP/tiles/1.0/TilesetWithDiscreteLOD" "$TMP/tiles/1.0/TilesetWithRequestVolume" "$OUT/3dtiles/"
 rm -rf "$OUT"/3dtiles/*/screenshot
+if [[ "${LIGHT:-0}" == 1 ]]; then echo "Done (light): $OUT"; exit 0; fi
 echo "Done: $OUT"
 
 # Georeferenced real-world 3D Tiles from the iTowns sample data repository:
