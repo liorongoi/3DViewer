@@ -41,6 +41,8 @@ export function useAppEffects(): void {
     engine.measure.labelFor = (kind, n) => t(`measureNames.${kind}`, { n });
     engine.measure.snapLabel = (kind, px) =>
         kind === "surface" ? "" : t(kind === "vertex" ? "measure.snapVertex" : "measure.snapEdge", { px: px.toFixed(1) });
+    engine.measure.modelUnitName = t("measure.modelUnitName");
+    engine.measure.redraw();
   }, [engine, t, i18n.language]);
   const tool = useApp((s) => s.tool);
   const quality = useApp((s) => s.quality);

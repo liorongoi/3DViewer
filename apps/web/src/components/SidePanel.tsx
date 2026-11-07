@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useClassOf, useLevels } from "../state/classification";
 import { useTranslation } from "react-i18next";
-import { ecefToGeodetic, formatCoordinate, formatLength, type Measurement } from "@viewer/core";
+import { ecefToGeodetic, formatCoordinate, formatLength, formatModelLength, type Measurement } from "@viewer/core";
 import { useEngine, useSignal } from "../engine";
 import { useApp } from "../state/store";
-import { Bookmark, Copy, Eye, EyeOff, Info, Orbit, Play, Route, Ruler, StopCircle, Trash2, Video, X } from "./icons";
+import { AlertTriangle, Bookmark, Copy, Eye, EyeOff, Info, Orbit, Play, Route, Ruler, StopCircle, Trash2, Video, X } from "./icons";
 import { IconButton, Panel, Segmented, StatusBadge, cx } from "./primitives";
 import { AnalysisTab } from "./AnalysisTab";
 
@@ -62,23 +62,33 @@ function MeasurementsTab() {
   const list = useSignal(engine?.measure.measurements, []);
   const unit = useApp((s) => s.unit);
   const setPref = useApp((s) => s.setPref);
+  const modelUnit = useSignal(engine?.measure.modelUnit, null);
   return (
     <div className="flex flex-col gap-2 p-2">
-      <div className="flex items-center justify-between px-1">
-        <span className="text-[12px] text-fg3">{t("measure.units")}</span>
-        <Segmented
-          label={t("measure.units")}
-          value={unit}
-          onChange={(u) => {
-            setPref("unit", u);
-            engine?.measure.setUnit(u);
-          }}
-          options={[
-            { value: "m", label: "m", title: t("measure.metres") },
-            { value: "ft", label: "ft", title: t("measure.feet") },
-          ]}
-        />
-      </div>
+      {modelUnit !== null && (
+        <div role="status" data-testid="model-units" className="flex items-start gap-2 rounded-[10px] border border-[var(--status-production)] px-2.5 py-2 text-[12px] text-fg">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0 text-[var(--status-production)]" />
+          {t("measure.modelUnits")}
+        </div>
+      )}
+      {/* m or ft means nothing for a model without a reliable scale. */}
+      {modelUnit === null && (
+        <div className="flex items-center justify-between px-1">
+          <span className="text-[12px] text-fg3">{t("measure.units")}</span>
+          <Segmented
+            label={t("measure.units")}
+            value={unit}
+            onChange={(u) => {
+              setPref("unit", u);
+              engine?.measure.setUnit(u);
+            }}
+            options={[
+              { value: "m", label: "m", title: t("measure.metres") },
+              { value: "ft", label: "ft", title: t("measure.feet") },
+            ]}
+          />
+        </div>
+      )}
       {list.length === 0 && (
         <div className="m-1 rounded-[10px] border border-dashed border-line-strong p-4 text-center text-fg3">
           <Ruler size={20} className="mx-auto mb-2 text-fg3" />
@@ -92,9 +102,21 @@ function MeasurementsTab() {
   );
 }
 
+/**
+ * How the panel writes a length: in the chosen unit, or in model units when the open model has
+ * no reliable scale (MSR-06), as the labels in the view do.
+ */
+function useLength(unit: "m" | "ft"): (metres: number, locale?: string) => string {
+  const { t } = useTranslation();
+  const engine = useEngine();
+  const modelUnit = useSignal(engine?.measure.modelUnit, null);
+  return (metres, locale) => (modelUnit ? formatModelLength(metres / modelUnit, t("measure.modelUnitName"), locale) : formatLength(metres, unit, locale));
+}
+
 function MeasurementCard({ m, unit, locale }: { m: Measurement; unit: "m" | "ft"; locale: string }) {
   const { t } = useTranslation();
   const engine = useEngine();
+  const length = useLength(unit);
   const coordSystem = useApp((s) => s.coordSystem);
   const [copied, setCopied] = useState(false);
   const r = m.result;
@@ -118,8 +140,8 @@ function MeasurementCard({ m, unit, locale }: { m: Measurement; unit: "m" | "ft"
       .join("\n");
     const text = [
       m.label,
-      `${t("measure.d3")}: ${formatLength(r.total3d, unit)}`,
-      ...rows.map(([k, v]) => `${k}: ${formatLength(v, unit)}`),
+      `${t("measure.d3")}: ${length(r.total3d)}`,
+      ...rows.map(([k, v]) => `${k}: ${length(v)}`),
       coords,
     ].join("\n");
     try {
@@ -152,7 +174,7 @@ function MeasurementCard({ m, unit, locale }: { m: Measurement; unit: "m" | "ft"
       </div>
       <div className="text-[11px] uppercase tracking-wide text-fg3">{m.kind === "path" ? t("measure.total") : t("measure.d3")}</div>
       <div className="num text-[22px] leading-7 font-medium text-fg" dir="ltr">
-        {formatLength(r.total3d, unit, locale === "he" ? "en" : locale)}
+        {length(r.total3d, locale === "he" ? "en" : locale)}
       </div>
       <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
         {rows.map(([k, v]) => (
@@ -160,7 +182,7 @@ function MeasurementCard({ m, unit, locale }: { m: Measurement; unit: "m" | "ft"
             <dt className="text-[11px] text-fg3">{k}</dt>
             <dd className="num text-fg2" dir="ltr">
               {k === t("measure.height") && v > 0 ? "+" : ""}
-              {formatLength(v, unit)}
+              {length(v)}
             </dd>
           </div>
         ))}
@@ -172,7 +194,7 @@ function MeasurementCard({ m, unit, locale }: { m: Measurement; unit: "m" | "ft"
             {r.segments.map((s, i) => (
               <li key={i} className="flex justify-between num text-fg2" dir="ltr">
                 <span>{i + 1}</span>
-                <span>{formatLength(s.distance3d, unit)}</span>
+                <span>{length(s.distance3d)}</span>
               </li>
             ))}
           </ol>

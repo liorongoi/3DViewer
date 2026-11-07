@@ -133,7 +133,7 @@ export function registerIngest(
             placement: {
               type: "object",
               required: ["lat", "lon", "height"],
-              properties: { lat: { type: "number" }, lon: { type: "number" }, height: { type: "number" }, aboveGround: { type: "number" }, headingDeg: { type: "number" }, scale: { type: "number", exclusiveMinimum: 0 }, upAxis: { enum: ["y", "z"] }, grid: { type: "object", required: ["epsg", "x", "y", "northDeg", "groundPerGrid"], properties: { epsg: { type: "integer" }, x: { type: "number" }, y: { type: "number" }, northDeg: { type: "number" }, groundPerGrid: { type: "number", exclusiveMinimum: 0 } }, additionalProperties: false } },
+              properties: { lat: { type: "number" }, lon: { type: "number" }, height: { type: "number" }, aboveGround: { type: "number" }, headingDeg: { type: "number" }, scale: { type: "number", exclusiveMinimum: 0 }, modelUnit: { type: "number", exclusiveMinimum: 0 }, upAxis: { enum: ["y", "z"] }, grid: { type: "object", required: ["epsg", "x", "y", "northDeg", "groundPerGrid"], properties: { epsg: { type: "integer" }, x: { type: "number" }, y: { type: "number" }, northDeg: { type: "number" }, groundPerGrid: { type: "number", exclusiveMinimum: 0 } }, additionalProperties: false } },
               additionalProperties: false,
             },
             centre: latlon,

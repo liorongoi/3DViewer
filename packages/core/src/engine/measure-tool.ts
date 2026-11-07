@@ -15,7 +15,7 @@ import {
   ArcType,
   NearFarScalar,
 } from "cesium";
-import { measurePath, formatLength, type LengthUnit, type PathResult } from "../measure/distance";
+import { measurePath, formatLength, formatModelLength, type LengthUnit, type PathResult } from "../measure/distance";
 import { signal } from "../signal";
 import type { Snap, SnapKind } from "./snapper";
 
@@ -44,6 +44,13 @@ export class MeasureTool {
   /** Points placed so far in the measurement being drawn. */
   readonly draft = signal<Cartesian3[]>([]);
   unit: LengthUnit = "m";
+  /**
+   * Metres per model unit when the open model has no reliable scale (MSR-06), else null. Lengths
+   * are then shown in model units, whatever the unit setting.
+   */
+  readonly modelUnit = signal<number | null>(null);
+  /** The words for "model units"; the app sets them to the interface language. */
+  modelUnitName = "model units";
 
   private hover: Cartesian3 | undefined;
   private hoverSnap: Snap | undefined;
@@ -79,14 +86,42 @@ export class MeasureTool {
     if (this.active.get()) this.requestRender();
   }
 
-  /** Called on click with the picked surface point. */
-  addPoint(p: Cartesian3): void {
+  /**
+   * Called on click with the picked surface point. Returns the point as kept, which
+   * replacePoint can later move (to the same surface at full detail).
+   */
+  addPoint(p: Cartesian3): Cartesian3 | undefined {
     const kind = this.active.get();
-    if (!kind) return;
-    const pts = [...this.draft.get(), Cartesian3.clone(p)];
+    if (!kind) return undefined;
+    const kept = Cartesian3.clone(p);
+    const pts = [...this.draft.get(), kept];
     this.draft.set(pts);
     if (kind === "distance" && pts.length === 2) this.commit();
     this.requestRender();
+    return kept;
+  }
+
+  /**
+   * Moves a point placed earlier, in the measurement being drawn or a finished one, and works the
+   * results out again. False when the point is gone (undone, deleted or cleared).
+   */
+  replacePoint(old: Cartesian3, next: Cartesian3): boolean {
+    const draft = this.draft.get();
+    const i = draft.indexOf(old);
+    if (i >= 0) {
+      const pts = [...draft];
+      pts[i] = Cartesian3.clone(next);
+      this.draft.set(pts);
+      this.requestRender();
+      return true;
+    }
+    const m = this.measurements.get().find((x) => x.points.includes(old));
+    if (!m) return false;
+    this.update(m.id, (x) => {
+      const points = x.points.map((p) => (p === old ? Cartesian3.clone(next) : p));
+      return { ...x, points, result: measurePath(points) };
+    });
+    return true;
   }
 
   removeLastPoint(): void {
@@ -102,6 +137,25 @@ export class MeasureTool {
 
   setUnit(unit: LengthUnit): void {
     this.unit = unit;
+    this.redraw();
+  }
+
+  /** The open model's scale: metres per model unit when it has no reliable scale, else null. */
+  setModelUnit(metresPerUnit: number | null | undefined): void {
+    const v = metresPerUnit && metresPerUnit > 0 && Number.isFinite(metresPerUnit) ? metresPerUnit : null;
+    if (v === this.modelUnit.get()) return;
+    this.modelUnit.set(v);
+    this.redraw();
+  }
+
+  /** A length in metres as the measurement labels show it: m or ft, or model units (MSR-06). */
+  format(metres: number, locale?: string): string {
+    const mu = this.modelUnit.get();
+    return mu ? formatModelLength(metres / mu, this.modelUnitName, locale) : formatLength(metres, this.unit, locale);
+  }
+
+  /** Draws the measurements again, after a change in how lengths read. */
+  redraw(): void {
     for (const m of this.measurements.get()) this.drawMeasurement(m);
     this.requestRender();
   }
@@ -178,7 +232,7 @@ export class MeasureTool {
           const pts = livePoints();
           if (pts.length < 2) return "";
           const r = measurePath(pts);
-          return formatLength(r.total3d, this.unit);
+          return this.format(r.total3d);
         }, false),
         ...labelStyle(),
       },
@@ -246,13 +300,13 @@ export class MeasureTool {
           list.push(this.entities.add({ polyline: { positions: [low, corner], ...legStyle } }));
           list.push(this.entities.add({ polyline: { positions: [corner, high], ...legStyle } }));
           const r = m.result.segments[0]!;
-          if (r.horizontal > 0.01) list.push(this.label(midpoint(low, corner), `↔ ${formatLength(r.horizontal, this.unit)}`, true));
-          if (Math.abs(r.heightDelta) > 0.01) list.push(this.label(midpoint(corner, high), `↕ ${formatLength(Math.abs(r.heightDelta), this.unit)}`, true));
+          if (r.horizontal > 0.01) list.push(this.label(midpoint(low, corner), `↔ ${this.format(r.horizontal)}`, true));
+          if (Math.abs(r.heightDelta) > 0.01) list.push(this.label(midpoint(corner, high), `↕ ${this.format(Math.abs(r.heightDelta))}`, true));
         }
       }
       const last = m.points[m.points.length - 1]!;
       const anchor = m.points.length === 2 ? midpoint(m.points[0]!, last) : last;
-      list.push(this.label(anchor, `${m.label} · ${formatLength(m.result.total3d, this.unit)}`, false));
+      list.push(this.label(anchor, `${m.label} · ${this.format(m.result.total3d)}`, false));
     }
     this.shapes.set(m.id, list);
   }
