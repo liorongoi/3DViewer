@@ -55,6 +55,8 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
     page.on("pageerror", (e) => errors.push(e.message));
     await page.goto("http://localhost:4173/", { waitUntil: "load" });
     await page.waitForFunction(() => !!window.viewerEngine, null, { timeout: 60000 });
+    // A render error stops Cesium drawing without a page error: keep it for the report.
+    await page.evaluate(() => window.viewerEngine.widget.scene.renderError.addEventListener((_, err) => (window.__renderError = String(err?.stack ?? err).slice(0, 400))));
     // Open it as a user would: the chess set's card. The tiled copy is then opened in its place,
     // as the app opens a model the server tiled.
     await page.getByRole("button", { name: /A Beautiful Game/ }).first().click();
@@ -193,7 +195,22 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
           centreOnScreen: at ? [Math.round(at.x), Math.round(at.y)] : null,
           radius: bs ? Math.round(bs.radius * 100) / 100 : null,
           camHeight: Math.round(scene.camera.positionCartographic.height),
-          tiles: t ? { loaded: t.tilesLoaded, selected: t._selectedTiles.length, commands: t.statistics.numberOfCommands, show: t.show, freeze: t.debugFreezeFrame, style: !!t.style } : null,
+          tiles: t ? { loaded: t.tilesLoaded, selected: t._selectedTiles.length, commands: t.statistics.numberOfCommands, visited: t.statistics.visited, show: t.show, freeze: t.debugFreezeFrame, style: !!t.style } : null,
+          root: t
+            ? {
+                contentReady: t.root.contentReady,
+                state: t.root._contentState,
+                planeMask: t.root._visibilityPlaneMask,
+                visited: t.root._visitedFrame,
+                selected: t.root._selectedFrame,
+                frame: scene.frameState.frameNumber,
+                sse: Math.round(t.root._screenSpaceError * 100) / 100,
+                children: t.root.children.map((c) => [c.contentReady, c._visibilityPlaneMask, c._visitedFrame]),
+                distance: bs ? Math.round(Math.hypot(bs.center.x - scene.camera.positionWC.x, bs.center.y - scene.camera.positionWC.y, bs.center.z - scene.camera.positionWC.z) * 100) / 100 : null,
+              }
+            : null,
+          near: scene.camera.frustum.near,
+          renderError: window.__renderError ?? null,
         });
       });
 
