@@ -78,7 +78,8 @@ describe("backup and restore", () => {
     expect(readFileSync(path.join(s.storage, "files", "m1", "v1", "model.glb"), "utf8")).toBe("first model");
     const kept = readdirSync(s.backups).find((d) => d.startsWith("before-restore-"))!;
     expect(files(path.join(s.backups, kept, "files"))).toEqual(["m1/v1/extra.bin"]);
-  });
+    // Opens the embedded database three times and runs both scripts: seconds, not milliseconds.
+  }, 60_000);
 
   it("refuses a damaged backup", () => {
     const s = setup({ EMBEDDED_DB: "1" });
