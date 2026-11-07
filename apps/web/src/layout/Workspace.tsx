@@ -14,6 +14,7 @@ import { PerfHud } from "../components/PerfHud";
 import { Globe, Layers, PanelIcon, Ruler, Upload } from "./parts";
 import { IconButton, cx } from "../components/primitives";
 import { fadeClasses, useChromeFade } from "./useChromeFade";
+import { Guard } from "../components/Guard";
 
 /**
  * The workspace (chosen direction: A + C). A Google Earth-style globe is home; every model
@@ -42,6 +43,7 @@ export function Workspace() {
       {/* left column */}
       {/* In a model the column stops above the dock, which it would cover on screens under 1536 px. */}
       <div className={cx("pointer-events-none fixed start-3 z-20 flex flex-col gap-2", top, route === "viewer" ? "bottom-[84px] 2xl:bottom-7" : bottom)}>
+        <Guard part={route === "home" ? "library" : "model"}>
         {route === "home" ? (
           leftOpen ? (
             <section className={cx("glass pointer-events-auto flex w-[360px] min-h-0 flex-col rounded-[14px]", fade.panel)}>
@@ -83,10 +85,12 @@ export function Workspace() {
             {leftOpen && <LayersPanel className={cx("pointer-events-auto min-h-0 !w-[300px]", fade.panel)} onClose={() => set({ leftOpen: false })} />}
           </>
         )}
+        </Guard>
       </div>
 
       {/* right column */}
       <div className={cx("pointer-events-none fixed end-3 z-20 flex flex-col items-end gap-2 bottom-[120px]", top)}>
+        <Guard part="tools">
         <PerfHud className="pointer-events-auto" />
         <ViewCube className={cx("pointer-events-auto", fade.ambient)} />
         <div className={cx("pointer-events-auto flex flex-col gap-1", fade.ambient)}>
@@ -102,19 +106,26 @@ export function Workspace() {
           )}
         </div>
         {route === "viewer" && rightOpen && <SidePanel className={cx("pointer-events-auto min-h-0", fade.panel)} onClose={() => set({ rightOpen: false })} />}
+        </Guard>
       </div>
 
       {/* bottom */}
       <div className={cx("pointer-events-none fixed inset-x-0 z-10 flex flex-col items-center gap-2", bottom, fade.ambient)}>
-        <HintLine />
-        <Dock className="pointer-events-auto" />
+        <Guard part="dock">
+          <HintLine />
+          <Dock className="pointer-events-auto" />
+        </Guard>
       </div>
       <div className={cx("pointer-events-none fixed z-10 flex flex-col items-end gap-2 end-3", bottom, fade.ambient)}>
-        <ScaleBar />
-        <CoordinatesHud className="pointer-events-auto" />
+        <Guard part="hud">
+          <ScaleBar />
+          <CoordinatesHud className="pointer-events-auto" />
+        </Guard>
       </div>
 
-      <FeaturePopup />
+      <Guard part="popup" className="fixed start-1/2 top-24 z-30 -translate-x-1/2">
+        <FeaturePopup />
+      </Guard>
       <LoadingAndError loading={loading} error={error} onBack={close} />
       <TileProblemsNotice />
     </>

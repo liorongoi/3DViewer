@@ -5,6 +5,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { EngineProvider } from "./engine";
 import { App } from "./App";
+import { Guard } from "./components/Guard";
 
 // "?render-only" shows just the 3D canvas; used by the thumbnail renderer (plan WP 3.5).
 const renderOnly = new URLSearchParams(location.search).has("render-only");
@@ -23,6 +24,11 @@ if (renderOnly || new URLSearchParams(location.search).has("test")) {
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <EngineProvider>{renderOnly ? null : <App />}</EngineProvider>
+    <EngineProvider>{renderOnly ? null : (
+        // The canvas is mounted by EngineProvider, outside this boundary, so it survives a fault.
+        <Guard part="app" className="fixed start-1/2 top-1/3 z-50 -translate-x-1/2">
+          <App />
+        </Guard>
+      )}</EngineProvider>
   </StrictMode>,
 );

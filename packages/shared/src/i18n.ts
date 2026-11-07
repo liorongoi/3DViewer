@@ -218,6 +218,14 @@ export const en = {
     cubeEdge: "{{face}} edge view",
     cubeCorner: "{{face}} corner view",
   },
+  fault: {
+    title: "{{part}} could not be shown",
+    body: "Something went wrong in this part of the interface. The 3D view and the rest of the app still work.",
+    retry: "Try again",
+    reload: "Reload",
+    details: "Details",
+    parts: { app: "The interface", library: "The library", model: "The model panel", tools: "The side panel", dock: "The toolbar", hud: "The map controls", popup: "The feature details", dialog: "This window" },
+  },
   onboarding: {
     step1: "Drag to orbit, right-drag to pan, scroll to zoom. Double-click sets the pivot.",
     step2: "Layers live here. Click the eye to show or hide; Alt+click to isolate.",
@@ -445,6 +453,14 @@ export const he: Shape<typeof en> = {
     cubeView: "מבט {{face}}",
     cubeEdge: "מבט קצה {{face}}",
     cubeCorner: "מבט פינה {{face}}",
+  },
+  fault: {
+    title: "לא ניתן להציג את {{part}}",
+    body: "אירעה תקלה בחלק זה של הממשק. התצוגה התלת-ממדית ושאר היישום ממשיכים לפעול.",
+    retry: "נסו שוב",
+    reload: "טעינה מחדש",
+    details: "פרטים",
+    parts: { app: "הממשק", library: "הספרייה", model: "חלונית המודל", tools: "החלונית הצדדית", dock: "סרגל הכלים", hud: "פקדי המפה", popup: "פרטי הישות", dialog: "החלון" },
   },
   onboarding: {
     step1: "גררו לסיבוב, גרירה ימנית להזזה, גלגלת לזום. לחיצה כפולה קובעת ציר.",
