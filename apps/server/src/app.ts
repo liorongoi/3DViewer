@@ -1,4 +1,6 @@
 import { promises as dns } from "node:dns";
+import { rm, writeFile } from "node:fs/promises";
+import path from "node:path";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import swagger from "@fastify/swagger";
 import { UPDATE_STATUSES, type LayerManifest } from "@viewer/shared/model";
@@ -27,6 +29,45 @@ export interface AppOptions {
    * not match, instead of trimming it to the schema. On in tests (WP 3.1 contract tests).
    */
   contract?: boolean;
+  /**
+   * Write requests (POST, PUT, PATCH, DELETE) one address may make per minute, answered with 429
+   * and Retry-After beyond that. Upload chunks (/api/tus/) do not count. 0 or unset: no limit.
+   */
+  writeRateLimit?: number;
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  let t: NodeJS.Timeout | undefined;
+  return Promise.race([p, new Promise<never>((_, rej) => (t = setTimeout(() => rej(new Error(`no answer in ${ms / 1000} s`)), ms)))]).finally(() => clearTimeout(t));
+}
+
+const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+/** Most addresses the rate limiter and host-name cache remember; the oldest are forgotten first. */
+const MAX_TRACKED = 10_000;
+
+/** A token bucket per address: `limit` requests at once, refilled at `limit` per minute. */
+export function writeLimiter(limit: number, now: () => number = Date.now) {
+  const buckets = new Map<string, { tokens: number; at: number }>();
+  const perMs = limit / 60_000;
+  /** Seconds to wait before the next write is allowed, or 0 when it is allowed now. */
+  return (ip: string): number => {
+    const t = now();
+    let b = buckets.get(ip);
+    if (b) {
+      b.tokens = Math.min(limit, b.tokens + (t - b.at) * perMs);
+      b.at = t;
+      buckets.delete(ip); // re-insert so the map stays in least-recently-used order
+    } else {
+      b = { tokens: limit, at: t };
+      if (buckets.size >= MAX_TRACKED) buckets.delete(buckets.keys().next().value!);
+    }
+    buckets.set(ip, b);
+    if (b.tokens >= 1) {
+      b.tokens -= 1;
+      return 0;
+    }
+    return Math.max(1, Math.ceil((1 - b.tokens) / perMs / 1000));
+  };
 }
 
 const FORMATS = ["glb", "gltf", "fbx", "3dtiles"];
@@ -82,6 +123,15 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     });
   }
 
+  if (opts.writeRateLimit && opts.writeRateLimit > 0) {
+    const wait = writeLimiter(opts.writeRateLimit);
+    app.addHook("onRequest", async (req, reply) => {
+      if (!WRITE_METHODS.has(req.method) || req.url.startsWith("/api/tus/")) return;
+      const s = wait(req.ip);
+      if (s > 0) return reply.status(429).header("retry-after", String(s)).send({ error: `Too many changes from this address. Try again in ${s} s.`, code: "RATE_LIMITED" });
+    });
+  }
+
   const hostCache = new Map<string, string>();
   const hostOf = async (req: FastifyRequest): Promise<string> => {
     // The desktop app sends the Windows computer name; browsers cannot, so the server looks up the IP.
@@ -91,6 +141,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const hit = hostCache.get(req.ip);
     if (hit !== undefined) return hit;
     const name = await Promise.race([dns.reverse(req.ip).then((n) => n[0] ?? "").catch(() => ""), new Promise<string>((r) => setTimeout(() => r(""), 300))]);
+    if (hostCache.size >= MAX_TRACKED) hostCache.delete(hostCache.keys().next().value!);
     hostCache.set(req.ip, name);
     return name;
   };
@@ -101,7 +152,31 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     reply.status(status).send({ error: status >= 500 ? "The server could not complete the request." : err.message, code: err.code });
   });
 
-  app.get("/api/health", { schema: { tags: ["system"], response: { 200: closed({ ok: bool, db: text }, ["ok", "db"]) } } }, async () => ({ ok: true, db: db.kind }));
+  // Readiness, for a load balancer or monitor: the database answers and storage can be written.
+  // 503 names what failed. /api/health/live only says the process answers.
+  const health = closed({ ok: bool, db: text, checks: closed({ database: text, storage: text }, ["database", "storage"]), error: text }, ["ok", "db", "checks"]);
+  app.get("/api/health", { schema: { tags: ["system"], response: { 200: health, 503: health } } }, async (_req, reply) => {
+    const checks = { database: "ok", storage: opts.storage ? "ok" : "off" };
+    const failed: string[] = [];
+    try {
+      await withTimeout(db.query("SELECT 1"), 3000);
+    } catch (e) {
+      checks.database = `failed: ${(e as Error).message}`.slice(0, 300);
+      failed.push("database");
+    }
+    if (opts.storage) {
+      const probe = path.join(opts.storage.root, `.health-${process.pid}-${Date.now()}`);
+      try {
+        await withTimeout(writeFile(probe, "ok").then(() => rm(probe, { force: true })), 3000);
+      } catch (e) {
+        checks.storage = `failed: ${(e as Error).message}`.slice(0, 300);
+        failed.push("storage");
+      }
+    }
+    if (failed.length) return reply.status(503).send({ ok: false, db: db.kind, checks, error: `Not ready: ${failed.join(" and ")} failed.` });
+    return { ok: true, db: db.kind, checks };
+  });
+  app.get("/api/health/live", { schema: { tags: ["system"], response: { 200: closed({ ok: bool }, ["ok"]) } } }, async () => ({ ok: true }));
 
   app.get("/api/classifications", { schema: { tags: ["library"], response: { 200: arrayOf("Classification") } } }, async () =>
     (await db.query<{ id: string; label: string; color: string; text_color: string; ord: number }>("SELECT * FROM classifications ORDER BY ord")).map((c) => ({

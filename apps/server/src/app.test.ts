@@ -41,7 +41,8 @@ const newModel = {
 
 describe("library API", () => {
   it("is healthy and publishes OpenAPI", async () => {
-    expect((await app.inject("/api/health")).json()).toEqual({ ok: true, db: db.kind });
+    expect((await app.inject("/api/health")).json()).toEqual({ ok: true, db: db.kind, checks: { database: "ok", storage: "off" } });
+    expect((await app.inject("/api/health/live")).json()).toEqual({ ok: true });
     const spec = (await app.inject("/api/openapi.json")).json();
     expect(Object.keys(spec.paths)).toContain("/api/models/{id}");
   });
@@ -167,7 +168,7 @@ describe("layer manifest (WP 2.1)", () => {
 
   it("refuses an arrangement it cannot use, and an unknown model", async () => {
     const id = (await app.inject("/api/models")).json()[0].id as string;
-    const bad = async (payload: unknown) => (await app.inject({ method: "PUT", url: `/api/models/${id}/layers`, payload })).statusCode;
+    const bad = async (payload: object) => (await app.inject({ method: "PUT", url: `/api/models/${id}/layers`, payload })).statusCode;
     expect(await bad({ manifest: { layers: [{ nodes: [1] }] } })).toBe(400); // no name
     expect(await bad({ manifest: { layers: [{ name: "x", nodes: [-1] }] } })).toBe(400);
     expect(await bad({ manifest: { layers: [{ name: "x", nodes: [1.5] }] } })).toBe(400);
