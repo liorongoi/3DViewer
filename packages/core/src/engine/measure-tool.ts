@@ -17,6 +17,7 @@ import {
 } from "cesium";
 import { measurePath, formatLength, type LengthUnit, type PathResult } from "../measure/distance";
 import { signal } from "../signal";
+import type { Snap, SnapKind } from "./snapper";
 
 export type MeasureKind = "distance" | "path";
 
@@ -45,11 +46,15 @@ export class MeasureTool {
   unit: LengthUnit = "m";
 
   private hover: Cartesian3 | undefined;
+  private hoverSnap: Snap | undefined;
   private draftEntities: Entity[] = [];
   private shapes = new Map<string, Entity[]>();
   private counters: Record<MeasureKind, number> = { distance: 0, path: 0 };
   /** The name a new measurement gets; the app sets it to the interface language. */
   labelFor = (kind: MeasureKind, n: number): string => `${kind === "distance" ? "Distance" : "Path"} ${n}`;
+  /** The words beside the snap glyph ("Vertex · 2.4 px"); the app sets it to the interface language. */
+  snapLabel = (kind: SnapKind, pixels: number): string =>
+    kind === "surface" ? "" : `${kind === "vertex" ? "Vertex" : "Edge"} · ${pixels.toFixed(1)} px`;
 
   constructor(private readonly entities: EntityCollection, private readonly requestRender: () => void) {}
 
@@ -67,8 +72,10 @@ export class MeasureTool {
     this.requestRender();
   }
 
-  setHover(p: Cartesian3 | undefined): void {
+  /** The point under the cursor, and what it snapped to (UI spec: square vertex, diamond edge, circle surface). */
+  setHover(p: Cartesian3 | undefined, snap?: Snap): void {
     this.hover = p;
+    this.hoverSnap = p ? snap : undefined;
     if (this.active.get()) this.requestRender();
   }
 
@@ -176,11 +183,29 @@ export class MeasureTool {
         ...labelStyle(),
       },
     });
-    const points = this.entities.add({
+    const glyph = this.entities.add({
       position: new CallbackPositionProperty(() => this.hover, false),
-      point: { pixelSize: 9, color: Color.WHITE, outlineColor: ACCENT, outlineWidth: 2, disableDepthTestDistance: Number.POSITIVE_INFINITY },
+      billboard: {
+        image: new CallbackProperty(() => snapGlyph(this.hoverSnap?.kind ?? "surface"), false),
+        width: 28,
+        height: 28,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      },
+      label: {
+        text: new CallbackProperty(() => (this.hoverSnap ? this.snapLabel(this.hoverSnap.kind, this.hoverSnap.pixels) : ""), false),
+        font: "500 11px 'IBM Plex Mono', ui-monospace, monospace",
+        fillColor: Color.WHITE,
+        showBackground: true,
+        backgroundColor: LABEL_BG,
+        backgroundPadding: new Cartesian2(6, 3),
+        style: LabelStyle.FILL,
+        pixelOffset: new Cartesian2(16, 14),
+        horizontalOrigin: HorizontalOrigin.LEFT,
+        verticalOrigin: VerticalOrigin.TOP,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      },
     });
-    this.draftEntities = [line, liveLabel, points];
+    this.draftEntities = [line, liveLabel, glyph];
   }
 
   private drawMeasurement(m: Measurement): void {
@@ -267,4 +292,59 @@ function triangleCorner(a: Cartesian3, b: Cartesian3): Cartesian3 | undefined {
   if (!ca || !cb) return undefined;
   const [low, high] = ca.height <= cb.height ? [ca, cb] : [cb, ca];
   return Cartesian3.fromRadians(high.longitude, high.latitude, low.height);
+}
+
+const glyphs = new Map<SnapKind, string>();
+
+/**
+ * The snap glyph: a square on a vertex, a diamond on an edge, a circle on a surface, each with a
+ * crosshair. As a data URL: the billboard keeps one texture per URL, where a canvas given again
+ * each frame would be added to its atlas again each frame.
+ */
+function snapGlyph(kind: SnapKind): string {
+  const known = glyphs.get(kind);
+  if (known) return known;
+  const size = 28;
+  const ratio = 2;
+  const c = document.createElement("canvas");
+  c.width = c.height = size * ratio;
+  const g = c.getContext("2d")!;
+  g.scale(ratio, ratio);
+  const m = size / 2;
+  const shape = () => {
+    g.beginPath();
+    if (kind === "vertex") g.rect(m - 6, m - 6, 12, 12);
+    else if (kind === "edge") {
+      g.moveTo(m, m - 8);
+      g.lineTo(m + 8, m);
+      g.lineTo(m, m + 8);
+      g.lineTo(m - 8, m);
+      g.closePath();
+    } else g.arc(m, m, 5, 0, Math.PI * 2);
+  };
+  const cross = () => {
+    g.beginPath();
+    for (const [x0, y0, x1, y1] of [[m, 1, m, m - 9], [m, m + 9, m, size - 1], [1, m, m - 9, m], [m + 9, m, size - 1, m]] as const) {
+      g.moveTo(x0, y0);
+      g.lineTo(x1, y1);
+    }
+  };
+  // A dark halo first, so the glyph reads on light and dark surfaces alike.
+  g.strokeStyle = "rgba(0,0,0,0.75)";
+  g.lineWidth = 4;
+  shape();
+  g.stroke();
+  cross();
+  g.stroke();
+  g.strokeStyle = kind === "surface" ? "#FFFFFF" : ACCENT.toCssColorString();
+  g.lineWidth = 2;
+  shape();
+  g.stroke();
+  g.strokeStyle = "#FFFFFF";
+  g.lineWidth = 1;
+  cross();
+  g.stroke();
+  const url = c.toDataURL("image/png");
+  glyphs.set(kind, url);
+  return url;
 }

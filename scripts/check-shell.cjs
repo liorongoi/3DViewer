@@ -148,7 +148,12 @@ const LABELS = {
           },
           { axe: AXE, latinOk: [...LATIN_OK], lang },
         );
-        if (out) await page.screenshot({ path: path.join(out, `${run}-${s.id}.png`) });
+        // The picture is for people reading a failure, not a check: on a slow software renderer
+        // it can take too long, and then it is skipped.
+        if (out)
+          await page
+            .screenshot({ path: path.join(out, `${run}-${s.id}.png`), timeout: 60000, animations: "disabled" })
+            .catch((e) => console.log(`  (no screenshot of ${run} ${s.id}: ${e.message.split("\n")[0]})`));
         check(r.violations.length === 0, `${run} ${s.id}: no serious accessibility problems`, r.violations.join("\n"));
         check(r.dir === (lang === "he" ? "rtl" : "ltr") && r.lang === lang, `${run} ${s.id}: runs ${lang === "he" ? "right to left" : "left to right"} (dir=${r.dir}, lang=${r.lang})`);
         check(r.overflow <= 0, `${run} ${s.id}: nothing spills past the window`, `${r.overflow}px`);

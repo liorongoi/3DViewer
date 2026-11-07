@@ -105,6 +105,8 @@ jobs:
         run: node scripts/check-layers.cjs
       - name: A fault in one part keeps the rest working
         run: node scripts/check-faults.cjs
+      - name: Snapping to corners and edges within 10 px (MSR-03)
+        run: node scripts/check-snap.cjs
       - name: Screenshots
         if: failure()
         uses: actions/upload-artifact@v4

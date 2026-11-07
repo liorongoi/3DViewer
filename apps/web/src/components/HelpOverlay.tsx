@@ -24,6 +24,7 @@ export function HelpOverlay() {
     ["Z", t("help.rows.focus")],
     ["M", t("help.rows.measure")],
     ["Shift M", t("help.rows.path")],
+    ["Alt", t("help.rows.free")],
     ["G", t("help.fly")],
     ["1 – 4", t("help.rows.modes")],
     ["L", t("help.rows.layers")],
