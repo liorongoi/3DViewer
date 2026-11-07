@@ -163,6 +163,11 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
     const modelHit = () =>
       settled().then(() => page.evaluate(() => {
         const e = window.viewerEngine;
+        // What the last drawn frame chose, before the picks below run their own passes.
+        const t = e.tileset;
+        window.__drawn = t
+          ? { selected: t._selectedTiles.length, memSse: Math.round(t.memoryAdjustedScreenSpaceError * 100) / 100, maxSse: t.maximumScreenSpaceError, rootSseTileset: Math.round(t.root.getScreenSpaceError(e.widget.scene.frameState, true) * 100) / 100, rootVisible: t.root._visible, memory: t.totalMemoryUsageInBytes, cache: t.cacheBytes, overflow: t.maximumCacheOverflowBytes, gError: t._geometricError }
+          : null;
         const c = e.widget.scene.canvas;
         // A grid of points over the view: does any of them hit the model?
         for (let y = 0.2; y <= 0.8; y += 0.05)
@@ -210,6 +215,7 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
               }
             : null,
           near: scene.camera.frustum.near,
+          drawn: window.__drawn ?? null,
           renderError: window.__renderError ?? null,
         });
       });
