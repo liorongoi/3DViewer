@@ -27,6 +27,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Type-check
         run: pnpm -r --if-present run typecheck
+      - name: No hard-coded interface strings
+        run: node scripts/check-i18n.cjs
       - name: Unit tests
         run: pnpm -r --if-present run test
       - name: Build

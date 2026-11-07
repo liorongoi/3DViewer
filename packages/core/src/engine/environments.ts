@@ -20,13 +20,14 @@ export interface EnvironmentDef {
   sky: number;
 }
 
+// Labels are for scripts and logs; the app shows its own translated names (settings.environments.*).
 export const ENVIRONMENTS: EnvironmentDef[] = [
-  { id: "atmosphere", label: "Sky and sun", sun: 2, shadow: 0.35, sky: 1 },
+  { id: "atmosphere", label: "Sky and sun", sun: 2, shadow: 0.35, sky: 1 }, // i18n-ignore
   // Clouds hide the sun: weak direct light, faint soft shadows, the sky does most of the work.
-  { id: "overcast", label: "Overcast", sun: 0.5, shadow: 0.8, sky: 2.2 },
-  { id: "clear-noon", label: "Clear noon", sun: 2.4, shadow: 0.25, sky: 1.3 },
+  { id: "overcast", label: "Overcast", sun: 0.5, shadow: 0.8, sky: 2.2 }, // i18n-ignore
+  { id: "clear-noon", label: "Clear noon", sun: 2.4, shadow: 0.25, sky: 1.3 }, // i18n-ignore
   // Even light for inspecting a model: low sun, soft box overhead, light shadows.
-  { id: "studio", label: "Studio neutral", sun: 0.9, shadow: 0.7, sky: 2 },
+  { id: "studio", label: "Studio neutral", sun: 0.9, shadow: 0.7, sky: 2 }, // i18n-ignore
 ];
 
 type Rgb = [number, number, number];

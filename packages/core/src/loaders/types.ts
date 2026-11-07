@@ -1,4 +1,4 @@
-import type { ModelFormat } from "@viewer/shared";
+import { english, hasEnglish, type ModelFormat } from "@viewer/shared";
 import type { FileSet, LocalFile } from "./files";
 
 export type Severity = "ok" | "warning" | "error";
@@ -7,8 +7,21 @@ export type Severity = "ok" | "warning" | "error";
 export interface CheckItem {
   id: "format" | "references" | "structure" | "extensions" | "size" | "georef" | "content" | "conversion" | "scan" | "validator" | "tiling" | "optimise";
   severity: Severity;
+  /** English, for logs, the server and as a fallback. */
   title: string;
   detail?: string;
+  /** The message's i18n key under checks.*, so the app shows it in the interface language. */
+  key?: string;
+  params?: Record<string, string | number>;
+}
+
+/**
+ * A report line from the checks.<key> strings: title, and detail unless one is given (a list of
+ * files or an error message, which stays as it is).
+ */
+export function checkItem(id: CheckItem["id"], severity: Severity, key: string, params: Record<string, string | number> = {}, detail?: string): CheckItem {
+  const d = detail ?? (hasEnglish(`checks.${key}.detail`) ? english(`checks.${key}.detail`, params) : undefined);
+  return { id, severity, title: english(`checks.${key}.title`, params), ...(d ? { detail: d } : {}), key, ...(Object.keys(params).length ? { params } : {}) };
 }
 
 export interface CheckReport {

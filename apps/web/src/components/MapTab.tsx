@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { catalogue, type UserLayer, type WmtsLayerInfo, type WmsLayerInfo } from "@viewer/core";
 import { useEngine, useSignal } from "../engine";
 import { ChevronDown, Eye, EyeOff, Focus, Globe, Map, Mountain, Trash2, Upload, X } from "./icons";
@@ -31,16 +32,16 @@ function Section({ title, icon: Icon, children }: { title: string; icon: typeof 
 
 /** The claude.ai preview page cannot reach other sites, so online sources are switched off there. */
 const NO_ONLINE = import.meta.env.VITE_NO_ONLINE === "1";
-const OFFLINE_NOTE = "Online sources can't load in this preview page. They work in the web app and the desktop app.";
 
 function Choice({ checked, label, note, onSelect, disabled }: { checked: boolean; label: string; note?: string; onSelect: () => void; disabled?: boolean }) {
+  const { t } = useTranslation();
   return (
     <button
       type="button"
       role="radio"
       aria-checked={checked}
       disabled={disabled}
-      title={disabled ? OFFLINE_NOTE : undefined}
+      title={disabled ? t("map.offlineNote") : undefined}
       onClick={onSelect}
       className={cx(
         "flex h-8 w-full items-center gap-2 rounded-[6px] px-2 text-start disabled:cursor-not-allowed disabled:opacity-45",
@@ -57,20 +58,21 @@ function Choice({ checked, label, note, onSelect, disabled }: { checked: boolean
 }
 
 function BasePicker() {
+  const { t } = useTranslation();
   const engine = useEngine();
   const id = useSignal(engine?.baseMapId, "bundled");
   const { baseMaps } = useSignal(catalogue, catalogue.get());
   const users = useSignal(engine?.userLayers.list, []);
   const userBase = users.find((u) => u.asBase);
   return (
-    <Section title="Base map" icon={Map}>
-      <div role="radiogroup" aria-label="Base map">
+    <Section title={t("map.baseMap")} icon={Map}>
+      <div role="radiogroup" aria-label={t("map.baseMap")}>
         {baseMaps.map((b) => (
           <Choice
             key={b.id}
             checked={!userBase && id === b.id}
-            label={b.label.replace(/ \((online|offline)\)$/, "")}
-            note={b.site ? "site" : b.online ? (NO_ONLINE ? "not in preview" : "online") : "offline"}
+            label={b.site ? b.label : t(`catalogue.${b.id}`, { defaultValue: b.label.replace(/ \((online|offline)\)$/, "") })}
+            note={t(b.site ? "map.site" : b.online ? (NO_ONLINE ? "map.notInPreview" : "map.online") : "map.offline")}
             disabled={NO_ONLINE && b.online}
             onSelect={() => {
               if (userBase) engine?.userLayers.setAsBase(userBase.id, false);
@@ -78,26 +80,27 @@ function BasePicker() {
             }}
           />
         ))}
-        {userBase && <Choice checked label={userBase.name} note="yours" onSelect={() => undefined} />}
+        {userBase && <Choice checked label={userBase.name} note={t("map.yours")} onSelect={() => undefined} />}
       </div>
     </Section>
   );
 }
 
 function TerrainPicker() {
+  const { t: tr } = useTranslation();
   const engine = useEngine();
   const id = useSignal(engine?.terrainId, "none");
   const { terrains } = useSignal(catalogue, catalogue.get());
   const [busy, setBusy] = useState(false);
   return (
-    <Section title="Terrain" icon={Mountain}>
-      <div role="radiogroup" aria-label="Terrain" className={cx(busy && "opacity-60")}>
+    <Section title={tr("map.terrain")} icon={Mountain}>
+      <div role="radiogroup" aria-label={tr("map.terrain")} className={cx(busy && "opacity-60")}>
         {terrains.map((t) => (
           <Choice
             key={t.id}
             checked={id === t.id}
-            label={t.label.replace(/ \((online|offline)\)$/, "")}
-            note={t.id === "none" ? undefined : t.site ? "site" : t.online ? (NO_ONLINE ? "not in preview" : "online") : "offline"}
+            label={t.site ? t.label : tr(`catalogue.${t.id}`, { defaultValue: t.label.replace(/ \((online|offline)\)$/, "") })}
+            note={t.id === "none" ? undefined : tr(t.site ? "map.site" : t.online ? (NO_ONLINE ? "map.notInPreview" : "map.online") : "map.offline")}
             disabled={NO_ONLINE && t.online}
             onSelect={async () => {
               setBusy(true);
@@ -110,20 +113,21 @@ function TerrainPicker() {
           />
         ))}
       </div>
-      <p className="px-2 pt-1 text-[11px] text-fg3">Models are set on the terrain when it changes, so nothing floats.</p>
-      {NO_ONLINE && <p className="px-2 pt-1 text-[11px] text-fg3">{OFFLINE_NOTE}</p>}
+      <p className="px-2 pt-1 text-[11px] text-fg3">{tr("map.terrainNote")}</p>
+      {NO_ONLINE && <p className="px-2 pt-1 text-[11px] text-fg3">{tr("map.offlineNote")}</p>}
     </Section>
   );
 }
 
-const SAMPLES: { label: string; files: string[] }[] = [
-  { label: "Rivers near Lyon · shapefile in Lambert-93", files: ["lyon-rivers-l93.shp", "lyon-rivers-l93.dbf", "lyon-rivers-l93.prj", "lyon-rivers-l93.cpg"] },
-  { label: "Towns of France and Israel · shapefile", files: ["places-fr-il.shp", "places-fr-il.dbf", "places-fr-il.prj", "places-fr-il.cpg"] },
-  { label: "Lyon Sentinel-2 · GeoTIFF in UTM 31N", files: ["lyon-s2-utm31.tif"] },
-  { label: "Tarn elevation · GeoTIFF, one band", files: ["tarn-dem.tif"] },
+const SAMPLES: { label: "map.sampleRivers" | "map.sampleTowns" | "map.sampleS2" | "map.sampleTarn"; files: string[] }[] = [
+  { label: "map.sampleRivers", files: ["lyon-rivers-l93.shp", "lyon-rivers-l93.dbf", "lyon-rivers-l93.prj", "lyon-rivers-l93.cpg"] },
+  { label: "map.sampleTowns", files: ["places-fr-il.shp", "places-fr-il.dbf", "places-fr-il.prj", "places-fr-il.cpg"] },
+  { label: "map.sampleS2", files: ["lyon-s2-utm31.tif"] },
+  { label: "map.sampleTarn", files: ["tarn-dem.tif"] },
 ];
 
 function UserData() {
+  const { t } = useTranslation();
   const engine = useEngine();
   const list = useSignal(engine?.userLayers.list, []);
   const input = useRef<HTMLInputElement>(null);
@@ -134,7 +138,7 @@ function UserData() {
 
   const add = async (files: File[]) => {
     if (!engine || !files.length) return;
-    setBusy(`Reading ${files.length > 1 ? `${files.length} files` : files[0]!.name}…`);
+    setBusy(t("map.reading", { what: files.length > 1 ? t("map.nFiles", { count: files.length }) : files[0]!.name }));
     const r = await engine.userLayers.addFiles(files);
     setErrors(r.errors);
     setBusy(null);
@@ -143,7 +147,7 @@ function UserData() {
   };
 
   const addSample = async (s: (typeof SAMPLES)[number]) => {
-    setBusy(`Loading ${s.label}…`);
+    setBusy(t("map.loadingSample", { name: t(s.label) }));
     try {
       const files = await Promise.all(
         s.files.map(async (f) => {
@@ -160,7 +164,7 @@ function UserData() {
   };
 
   return (
-    <Section title="Your data" icon={Upload}>
+    <Section title={t("map.yourData")} icon={Upload}>
       <div
         className={cx("rounded-[10px] border border-dashed p-3 text-center", drag ? "border-accent bg-accent-soft" : "border-line-strong")}
         onDragOver={(e) => {
@@ -174,13 +178,13 @@ function UserData() {
           void add(Array.from(e.dataTransfer.files));
         }}
       >
-        <p className="mb-2 text-[12px] text-fg3">Drop shapefiles (.shp + .dbf + .prj, or a .zip), GeoJSON, KML or GeoTIFF here.</p>
+        <p className="mb-2 text-[12px] text-fg3">{t("map.drop")}</p>
         <div className="flex flex-wrap justify-center gap-1.5">
           <button type="button" className="btn-primary" onClick={() => input.current?.click()}>
-            <Upload size={14} /> Add files
+            <Upload size={14} /> {t("map.addFiles")}
           </button>
           <button type="button" className="btn-secondary" onClick={() => setSvc(!svc)} aria-expanded={svc}>
-            <Globe size={14} /> Add map service
+            <Globe size={14} /> {t("map.addService")}
           </button>
         </div>
         <input
@@ -205,7 +209,7 @@ function UserData() {
             </p>
           ))}
           <button type="button" className="mt-1 text-[11px] text-fg3 underline" onClick={() => setErrors([])}>
-            Dismiss
+            {t("map.dismiss")}
           </button>
         </div>
       )}
@@ -217,11 +221,11 @@ function UserData() {
         </ul>
       )}
       <details className="mt-2 px-1 text-[12px]">
-        <summary className="cursor-pointer text-fg3">Try sample data</summary>
+        <summary className="cursor-pointer text-fg3">{t("map.trySamples")}</summary>
         <div className="mt-1 flex flex-col items-start gap-0.5">
           {SAMPLES.map((s) => (
             <button key={s.label} type="button" className="text-start text-accent hover:underline" onClick={() => void addSample(s)}>
-              {s.label}
+              {t(s.label)}
             </button>
           ))}
           <button
@@ -233,7 +237,7 @@ function UserData() {
               engine!.userLayers.setAsBase(l.id, true);
             }}
           >
-            Offline WMTS · used as the base map
+            {t("map.sampleWmts")}
           </button>
         </div>
       </details>
@@ -242,18 +246,14 @@ function UserData() {
 }
 
 function ServiceForm({ onDone, onError }: { onDone: () => void; onError: (m: string) => void }) {
+  const { t } = useTranslation();
   const engine = useEngine();
   const [kind, setKind] = useState<"wmts" | "wms" | "xyz" | "cog">("wmts");
   const [url, setUrl] = useState("");
   const [wmts, setWmts] = useState<WmtsLayerInfo[] | null>(null);
   const [wms, setWms] = useState<{ url: string; layers: WmsLayerInfo[] } | null>(null);
   const [busy, setBusy] = useState(false);
-  const hint = {
-    wmts: "GetCapabilities address, for example https://server/wmts/1.0.0/WMTSCapabilities.xml",
-    wms: "Service address, for example https://server/wms",
-    xyz: "Tile address with {z}, {x} and {y}",
-    cog: "Address of a GeoTIFF or Cloud Optimised GeoTIFF",
-  }[kind];
+  const hint = t(({ wmts: "map.hintWmts", wms: "map.hintWms", xyz: "map.hintXyz", cog: "map.hintCog" } as const)[kind]);
 
   const connect = async () => {
     if (!engine || !url) return;
@@ -280,7 +280,7 @@ function ServiceForm({ onDone, onError }: { onDone: () => void; onError: (m: str
     <div className="mt-2 rounded-[10px] border border-line bg-s2 p-2">
       <div className="mb-2 flex items-center justify-between">
         <Segmented
-          label="Service type"
+          label={t("map.serviceType")}
           value={kind}
           onChange={(k) => {
             setKind(k);
@@ -294,7 +294,7 @@ function ServiceForm({ onDone, onError }: { onDone: () => void; onError: (m: str
             { value: "cog", label: "COG" },
           ]}
         />
-        <IconButton size="sm" label="Close" onClick={onDone}>
+        <IconButton size="sm" label={t("common.close")} onClick={onDone}>
           <X size={14} />
         </IconButton>
       </div>
@@ -309,7 +309,7 @@ function ServiceForm({ onDone, onError }: { onDone: () => void; onError: (m: str
           className="h-8 min-w-0 flex-1 rounded-[6px] border border-line bg-s1solid px-2 text-[12px] outline-none focus:border-accent"
         />
         <button type="button" className="btn-primary" disabled={!url || busy} onClick={() => void connect()}>
-          {busy ? "…" : kind === "wmts" || kind === "wms" ? "Connect" : "Add"}
+          {busy ? "…" : kind === "wmts" || kind === "wms" ? t("map.connect") : t("map.add")}
         </button>
       </div>
       {(wmts || wms) && (
@@ -319,9 +319,9 @@ function ServiceForm({ onDone, onError }: { onDone: () => void; onError: (m: str
               <span className="min-w-0 flex-1 truncate" title={l.id}>
                 {l.title}
               </span>
-              <span className="text-[10px] text-fg3">{l.crs === "other" ? "unsupported grid" : l.matrixSet}</span>
+              <span className="text-[10px] text-fg3">{l.crs === "other" ? t("map.unsupportedGrid") : l.matrixSet}</span>
               <button type="button" className="btn-ghost h-7" disabled={l.crs === "other"} onClick={() => engine?.userLayers.addWmts(l)}>
-                Add
+                {t("map.add")}
               </button>
               <button
                 type="button"
@@ -332,7 +332,7 @@ function ServiceForm({ onDone, onError }: { onDone: () => void; onError: (m: str
                   engine!.userLayers.setAsBase(u.id, true);
                 }}
               >
-                As base
+                {t("map.asBase")}
               </button>
             </li>
           ))}
@@ -342,11 +342,11 @@ function ServiceForm({ onDone, onError }: { onDone: () => void; onError: (m: str
                 {l.title}
               </span>
               <button type="button" className="btn-ghost h-7" onClick={() => engine?.userLayers.addWms(wms.url, l.name, l.title, l.bounds)}>
-                Add
+                {t("map.add")}
               </button>
             </li>
           ))}
-          {wmts?.length === 0 && <li className="text-fg3">No layers in this service.</li>}
+          {wmts?.length === 0 && <li className="text-fg3">{t("map.noLayers")}</li>}
         </ul>
       )}
     </div>
@@ -354,42 +354,43 @@ function ServiceForm({ onDone, onError }: { onDone: () => void; onError: (m: str
 }
 
 function UserLayerRow({ l, first, last }: { l: UserLayer; first: boolean; last: boolean }) {
+  const { t } = useTranslation();
   const engine = useEngine();
   const u = engine?.userLayers;
   const [open, setOpen] = useState(false);
   return (
     <li className={cx("rounded-[8px] border border-line bg-s2", !l.visible && "opacity-60")}>
       <div className="flex items-center gap-1 p-1">
-        <IconButton size="sm" label={l.visible ? "Hide" : "Show"} onClick={() => u?.setVisible(l.id, !l.visible)}>
+        <IconButton size="sm" label={l.visible ? t("common.hide") : t("common.show")} onClick={() => u?.setVisible(l.id, !l.visible)}>
           {l.visible ? <Eye size={14} /> : <EyeOff size={14} />}
         </IconButton>
         <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: l.kind === "vector" ? l.color : "linear-gradient(135deg,#6a8,#468 60%,#a86)" }} />
         <button type="button" className="min-w-0 flex-1 text-start" onClick={() => setOpen(!open)} aria-expanded={open}>
           <span className="block truncate font-medium">{l.name}</span>
           <span className="block truncate text-[11px] text-fg3">
-            {l.source.toUpperCase()} · {l.asBase ? "base map · " : ""}
-            {l.asTerrain ? "terrain · " : ""}
+            {l.source.toUpperCase()} · {l.asBase ? `${t("map.isBase")} · ` : ""}
+            {l.asTerrain ? `${t("map.isTerrain")} · ` : ""}
             {l.info}
           </span>
         </button>
-        <IconButton size="sm" label="Zoom to layer" onClick={() => u?.zoomTo(l.id)} disabled={!l.bounds && l.kind === "imagery"}>
+        <IconButton size="sm" label={t("map.zoomTo")} onClick={() => u?.zoomTo(l.id)} disabled={!l.bounds && l.kind === "imagery"}>
           <Focus size={14} />
         </IconButton>
-        <IconButton size="sm" label="More" onClick={() => setOpen(!open)}>
+        <IconButton size="sm" label={t("map.more")} onClick={() => setOpen(!open)}>
           <ChevronDown size={14} className={cx("transition-transform", open && "rotate-180")} />
         </IconButton>
       </div>
       {open && (
         <div className="flex flex-col gap-2 border-t border-line p-2">
           <label className="flex items-center gap-2 text-[12px] text-fg3">
-            Opacity
+            {t("map.opacity")}
             <input type="range" min={0} max={100} value={Math.round(l.opacity * 100)} onChange={(e) => u?.setOpacity(l.id, Number(e.target.value) / 100)} className="flex-1 accent-[var(--accent)]" />
             <span className="num w-8 text-end text-fg2">{Math.round(l.opacity * 100)}%</span>
           </label>
           <div className="flex flex-wrap gap-1">
             {l.kind === "imagery" && (
               <button type="button" className="btn-ghost h-7" onClick={() => u?.setAsBase(l.id, !l.asBase)}>
-                {l.asBase ? "Put back on top" : "Use as base map"}
+                {l.asBase ? t("map.backOnTop") : t("map.useAsBase")}
               </button>
             )}
             {l.elevation && (
@@ -397,20 +398,20 @@ function UserLayerRow({ l, first, last }: { l: UserLayer; first: boolean; last: 
                 type="button"
                 className={cx("btn-ghost h-7", l.asTerrain && "text-accent")}
                 aria-pressed={!!l.asTerrain}
-                title="Shape the 3D ground with this file's heights inside its footprint"
+                title={t("map.terrainTitle")}
                 onClick={() => void u?.setAsTerrain(l.id, !l.asTerrain)}
               >
-                {l.asTerrain ? "Stop using as terrain" : "Use as terrain"}
+                {l.asTerrain ? t("map.stopTerrain") : t("map.useTerrain")}
               </button>
             )}
             <button type="button" className="btn-ghost h-7" disabled={first || l.asBase} onClick={() => u?.move(l.id, 1)}>
-              Move up
+              {t("map.moveUp")}
             </button>
             <button type="button" className="btn-ghost h-7" disabled={last || l.asBase} onClick={() => u?.move(l.id, -1)}>
-              Move down
+              {t("map.moveDown")}
             </button>
             <button type="button" className="btn-ghost h-7 text-[var(--bad)]" onClick={() => u?.remove(l.id)}>
-              <Trash2 size={13} /> Remove
+              <Trash2 size={13} /> {t("map.remove")}
             </button>
           </div>
         </div>

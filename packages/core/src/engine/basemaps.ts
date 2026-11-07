@@ -50,14 +50,14 @@ const rel = (p: string) => new URL(p, document.baseURI).href.replace(/%7B/gi, "{
 export const BASE_MAPS: BaseMapDef[] = [
   {
     id: "bundled",
-    label: "Bundled world map (offline)",
+    label: "Bundled world map (offline)", // i18n-ignore: the app shows catalogue.<id>
     online: false,
     attribution: "Natural Earth II",
     create: () => TileMapServiceImageryProvider.fromUrl(buildModuleUrl("Assets/Textures/NaturalEarthII")),
   },
   {
     id: "local-s2",
-    label: "Sentinel-2 demo areas (offline)",
+    label: "Sentinel-2 demo areas (offline)", // i18n-ignore: the app shows catalogue.<id>
     online: false,
     underlay: "bundled",
     attribution: "Contains modified Copernicus Sentinel data 2025",
@@ -71,7 +71,7 @@ export const BASE_MAPS: BaseMapDef[] = [
   },
   {
     id: "esri",
-    label: "Esri World Imagery (online)",
+    label: "Esri World Imagery (online)", // i18n-ignore: the app shows catalogue.<id>
     online: true,
     attribution: "Esri, Maxar, Earthstar Geographics, and the GIS User Community",
     create: async () =>
@@ -83,7 +83,7 @@ export const BASE_MAPS: BaseMapDef[] = [
   },
   {
     id: "s2cloudless",
-    label: "Sentinel-2 cloudless 2016 (online)",
+    label: "Sentinel-2 cloudless 2016 (online)", // i18n-ignore: the app shows catalogue.<id>
     online: true,
     attribution: "Sentinel-2 cloudless 2016 by EOX IT Services GmbH (CC BY 4.0)",
     create: async () =>
@@ -95,7 +95,7 @@ export const BASE_MAPS: BaseMapDef[] = [
   },
   {
     id: "osm",
-    label: "OpenStreetMap (online)",
+    label: "OpenStreetMap (online)", // i18n-ignore: the app shows catalogue.<id>
     online: true,
     attribution: "© OpenStreetMap contributors",
     create: async () => new OpenStreetMapImageryProvider({ url: "https://tile.openstreetmap.org/" }),
@@ -103,17 +103,17 @@ export const BASE_MAPS: BaseMapDef[] = [
 ];
 
 export const TERRAINS: TerrainDef[] = [
-  { id: "none", label: "No terrain (ellipsoid)", online: false, attribution: "", create: async () => new EllipsoidTerrainProvider() },
+  { id: "none", label: "No terrain (ellipsoid)", online: false, attribution: "", create: async () => new EllipsoidTerrainProvider() }, // i18n-ignore
   {
     id: "local",
-    label: "Terrain, demo areas (offline)",
+    label: "Terrain, demo areas (offline)", // i18n-ignore: the app shows catalogue.<id>
     online: false,
     attribution: "Terrain Tiles: SRTM, GMTED, ETOPO1 and others (AWS Open Data)",
     create: async () => createTerrariumTerrain({ url: rel("samples/terrain/{z}/{x}/{y}.png"), maxZoom: 14 }),
   },
   {
     id: "aws",
-    label: "Terrain Tiles, world (online)",
+    label: "Terrain Tiles, world (online)", // i18n-ignore: the app shows catalogue.<id>
     online: true,
     attribution: "Terrain Tiles: SRTM, GMTED, ETOPO1 and others (AWS Open Data)",
     create: async () => createTerrariumTerrain({ url: "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png", maxZoom: 15 }),

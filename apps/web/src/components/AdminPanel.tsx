@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { BASE_MAPS, TERRAINS, fmtBytes } from "@viewer/core";
 import type { BaseMapConfig, BaseMapSource, ClassificationLevel } from "@viewer/shared";
 import { useEngine } from "../engine";
@@ -15,16 +16,10 @@ import { IconButton, cx } from "./primitives";
  * sources, storage quota, permanent delete, the audit log and the password itself.
  */
 type Tab = "levels" | "basemaps" | "storage" | "delete" | "audit" | "password";
-const TABS: { id: Tab; label: string }[] = [
-  { id: "levels", label: "Classification levels" },
-  { id: "basemaps", label: "Base maps" },
-  { id: "storage", label: "Storage" },
-  { id: "delete", label: "Delete models" },
-  { id: "audit", label: "Audit log" },
-  { id: "password", label: "Password" },
-];
+const TABS: Tab[] = ["levels", "basemaps", "storage", "delete", "audit", "password"];
 
 export function AdminPanel() {
+  const { t } = useTranslation();
   const open = useApp((s) => s.adminOpen);
   const server = useApp((s) => s.server);
   const set = useApp((s) => s.set);
@@ -53,10 +48,10 @@ export function AdminPanel() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-6">
-      <div role="dialog" aria-label="Administration" className="flex h-[min(760px,92vh)] border border-line bg-s1solid shadow-2xl w-[min(1040px,96vw)] flex-col rounded-[16px]">
+      <div role="dialog" aria-label={t("admin.title")} className="flex h-[min(760px,92vh)] border border-line bg-s1solid shadow-2xl w-[min(1040px,96vw)] flex-col rounded-[16px]">
         <header className="flex h-14 items-center gap-3 border-b border-line px-5">
           <ShieldCheck size={18} className="text-accent" />
-          <h2 className="flex-1 text-[15px] font-semibold">Administration</h2>
+          <h2 className="flex-1 text-[15px] font-semibold">{t("admin.title")}</h2>
           {state === "signed-in" && (
             <button
               type="button"
@@ -66,42 +61,42 @@ export function AdminPanel() {
                 setState("signed-out");
               }}
             >
-              Sign out
+              {t("admin.signOut")}
             </button>
           )}
-          <IconButton size="sm" label="Close" onClick={close}>
+          <IconButton size="sm" label={t("common.close")} onClick={close}>
             <X size={16} />
           </IconButton>
         </header>
         {!api ? (
           <Centre>
-            <p className="text-fg2">The admin page needs the VIEWER server. This copy of the app is running on its sample library.</p>
+            <p className="text-fg2">{t("admin.needsServer")}</p>
           </Centre>
         ) : state === "loading" ? (
           <Centre>
-            <p className="text-fg3">Checking…</p>
+            <p className="text-fg3">{t("admin.checking")}</p>
           </Centre>
         ) : state === "no-password" ? (
           <Centre>
             <Lock size={22} className="text-fg3" />
             <p className="max-w-md text-center text-fg2">
-              No admin password is set yet. The person who runs the server sets <code dir="ltr">ADMIN_PASSWORD</code> (12 characters or more) and restarts it.
+              <Trans i18nKey="admin.noPassword" components={{ code: <code dir="ltr" /> }} />
             </p>
           </Centre>
         ) : state === "signed-out" ? (
           <SignIn api={api} onDone={() => setState("signed-in")} />
         ) : (
           <div className="flex min-h-0 flex-1">
-            <nav className="flex w-52 shrink-0 flex-col gap-0.5 border-e border-line p-2" aria-label="Admin sections">
-              {TABS.map((t) => (
+            <nav className="flex w-52 shrink-0 flex-col gap-0.5 border-e border-line p-2" aria-label={t("admin.sections")}>
+              {TABS.map((id) => (
                 <button
-                  key={t.id}
+                  key={id}
                   type="button"
-                  aria-current={tab === t.id ? "page" : undefined}
-                  onClick={() => setTab(t.id)}
-                  className={cx("h-9 rounded-[8px] px-3 text-start", tab === t.id ? "bg-accent-soft text-fg" : "text-fg2 hover:bg-s3")}
+                  aria-current={tab === id ? "page" : undefined}
+                  onClick={() => setTab(id)}
+                  className={cx("h-9 rounded-[8px] px-3 text-start", tab === id ? "bg-accent-soft text-fg" : "text-fg2 hover:bg-s3")}
                 >
-                  {t.label}
+                  {t(`admin.tabs.${id}`)}
                 </button>
               ))}
             </nav>
@@ -132,6 +127,7 @@ type Fail = (e: unknown) => void;
 
 /** Shows errors from any tab in one place, and goes back to sign-in when the session has ended. */
 function Guarded({ children, onSignedOut }: { children: (fail: Fail) => React.ReactNode; onSignedOut: () => void }) {
+  const { t } = useTranslation();
   const [error, setError] = useState<string | null>(null);
   const fail: Fail = (e) => {
     const msg = e instanceof Error ? e.message : String(e);
@@ -144,7 +140,7 @@ function Guarded({ children, onSignedOut }: { children: (fail: Fail) => React.Re
         <div role="alert" className="mb-4 flex items-start gap-2 rounded-[10px] border border-[var(--bad)]/40 p-3 text-[13px]">
           <AlertTriangle size={16} className="mt-0.5 shrink-0 text-[var(--bad)]" />
           <p className="flex-1 text-fg2">{error}</p>
-          <IconButton size="sm" label="Dismiss" onClick={() => setError(null)}>
+          <IconButton size="sm" label={t("admin.dismiss")} onClick={() => setError(null)}>
             <X size={14} />
           </IconButton>
         </div>
@@ -155,6 +151,7 @@ function Guarded({ children, onSignedOut }: { children: (fail: Fail) => React.Re
 }
 
 function SignIn({ api, onDone }: { api: AdminApi; onDone: () => void }) {
+  const { t } = useTranslation();
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -176,7 +173,7 @@ function SignIn({ api, onDone }: { api: AdminApi; onDone: () => void }) {
       <form onSubmit={submit} className="flex w-80 flex-col gap-3">
         <Lock size={22} className="self-center text-fg3" />
         <label className="flex flex-col gap-1 text-[12px] text-fg3">
-          Admin password
+          {t("admin.password")}
           <input type="password" autoFocus autoComplete="current-password" className="input" value={password} onChange={(e) => setPassword(e.target.value)} />
         </label>
         {error && (
@@ -185,9 +182,9 @@ function SignIn({ api, onDone }: { api: AdminApi; onDone: () => void }) {
           </p>
         )}
         <button type="submit" className="btn-primary justify-center" disabled={!password || busy}>
-          {busy ? "Signing in…" : "Sign in"}
+          {busy ? t("admin.signingIn") : t("admin.signIn")}
         </button>
-        <p className="text-center text-[11px] text-fg3">Every sign-in, and every wrong password, is recorded in the audit log.</p>
+        <p className="text-center text-[11px] text-fg3">{t("admin.signInNote")}</p>
       </form>
     </Centre>
   );
@@ -221,6 +218,7 @@ async function reloadLevels(api: AdminApi): Promise<void> {
 }
 
 function LevelsTab({ api, fail }: { api: AdminApi; fail: Fail }) {
+  const { t } = useTranslation();
   const levels = useApp((s) => s.levels);
   const [adding, setAdding] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -238,9 +236,7 @@ function LevelsTab({ api, fail }: { api: AdminApi; fail: Fail }) {
 
   return (
     <>
-      <H note="The banner at the top and bottom of the viewer, the library cards, thumbnails and screenshots all use these. Lowest level first; the globe on its own shows the first one. Text must have a contrast of at least 4.5:1 on the band.">
-        Classification levels
-      </H>
+      <H note={t("admin.levelsNote")}>{t("admin.tabs.levels")}</H>
       {note && <p className="mb-3 text-[12px] text-fg2">{note}</p>}
       <ul className="flex flex-col gap-2">
         {levels.map((l, i) => (
@@ -255,7 +251,7 @@ function LevelsTab({ api, fail }: { api: AdminApi; fail: Fail }) {
               try {
                 const r = await api.saveLevel(next);
                 await reloadLevels(api);
-                setNote(r.thumbnailsQueued ? `Saved. ${r.thumbnailsQueued} thumbnail${r.thumbnailsQueued === 1 ? " is" : "s are"} being drawn again with the new band.` : "Saved.");
+                setNote(r.thumbnailsQueued ? t("admin.savedThumbs", { count: r.thumbnailsQueued }) : t("admin.saved"));
                 return true;
               } catch (e) {
                 fail(e);
@@ -266,7 +262,7 @@ function LevelsTab({ api, fail }: { api: AdminApi; fail: Fail }) {
               try {
                 await api.removeLevel(l.id);
                 await reloadLevels(api);
-                setNote(`Removed ${l.label}.`);
+                setNote(t("admin.removed", { name: l.label }));
               } catch (e) {
                 fail(e);
               }
@@ -283,14 +279,14 @@ function LevelsTab({ api, fail }: { api: AdminApi; fail: Fail }) {
             onSave={async (next) => {
               const id = next.label.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || `level-${Date.now().toString(36)}`;
               if (levels.some((l) => l.id === id)) {
-                fail(new Error(`A level called "${next.label}" already exists.`));
+                fail(new Error(t("admin.levelExists", { name: next.label })));
                 return false;
               }
               try {
                 await api.saveLevel({ ...next, id });
                 await reloadLevels(api);
                 setAdding(false);
-                setNote(`Added ${next.label}.`);
+                setNote(t("admin.added", { name: next.label }));
                 return true;
               } catch (e) {
                 fail(e);
@@ -301,7 +297,7 @@ function LevelsTab({ api, fail }: { api: AdminApi; fail: Fail }) {
         </div>
       ) : (
         <button type="button" className="btn-secondary mt-3" onClick={() => setAdding(true)}>
-          <Plus size={14} /> Add a level
+          <Plus size={14} /> {t("admin.addLevel")}
         </button>
       )}
     </>
@@ -319,6 +315,7 @@ function LevelRow(props: {
   onRemove?: () => void;
   onCancel?: () => void;
 }) {
+  const { t } = useTranslation();
   const { level: l, isNew } = props;
   const [label, setLabel] = useState(l.label);
   const [color, setColor] = useState(l.color);
@@ -330,47 +327,47 @@ function LevelRow(props: {
   return (
     <li className="list-none rounded-[10px] border border-line bg-s2 p-3">
       <div className="mb-3 flex h-6 items-center justify-center rounded-[4px] text-[12px] font-semibold uppercase tracking-[0.08em]" style={{ background: isHex(color) ? color : "#000", color: isHex(text) ? text : "#fff" }}>
-        {label || "Level name"}
+        {label || t("admin.levelName")}
       </div>
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex min-w-48 flex-1 flex-col gap-1 text-[12px] text-fg3">
-          Name on the banner
+          {t("admin.bannerName")}
           <input className="input" value={label} maxLength={100} onChange={(e) => setLabel(e.target.value)} />
         </label>
-        <ColourField label="Band" value={color} onChange={setColor} />
-        <ColourField label="Text" value={text} onChange={setText} />
-        <span className={cx("num w-24 pb-2 text-[12px]", ratio >= 4.5 ? "text-fg2" : "text-[var(--bad)]")} title="WCAG contrast of the text on the band; 4.5:1 or more is needed">
-          {valid ? `${ratio.toFixed(1)}:1 ${ratio >= 4.5 ? "readable" : "too low"}` : "—"}
+        <ColourField label={t("admin.band")} value={color} onChange={setColor} />
+        <ColourField label={t("admin.text")} value={text} onChange={setText} />
+        <span className={cx("num w-24 pb-2 text-[12px]", ratio >= 4.5 ? "text-fg2" : "text-[var(--bad)]")} title={t("admin.contrastTitle")}>
+          {valid ? `${ratio.toFixed(1)}:1 ${ratio >= 4.5 ? t("admin.readable") : t("admin.tooLow")}` : "—"}
         </span>
         <div className="ms-auto flex items-center gap-1 pb-0.5">
           {!isNew && (
             <>
-              <IconButton size="sm" label="Move down a level" disabled={props.first} onClick={props.onUp}>
+              <IconButton size="sm" label={t("admin.moveDown")} disabled={props.first} onClick={props.onUp}>
                 <ArrowUp size={14} />
               </IconButton>
-              <IconButton size="sm" label="Move up a level" disabled={props.last} onClick={props.onDown}>
+              <IconButton size="sm" label={t("admin.moveUp")} disabled={props.last} onClick={props.onDown}>
                 <ArrowDown size={14} />
               </IconButton>
             </>
           )}
           <button type="button" className="btn-primary" disabled={!valid || ratio < 4.5 || !changed} onClick={() => void props.onSave({ ...l, label: label.trim(), color: color.toUpperCase(), textColor: text.toUpperCase() })}>
-            <Check size={14} /> {isNew ? "Add" : "Save"}
+            <Check size={14} /> {isNew ? t("admin.add") : t("admin.save")}
           </button>
           {isNew ? (
             <button type="button" className="btn-ghost" onClick={props.onCancel}>
-              Cancel
+              {t("admin.cancel")}
             </button>
           ) : confirm ? (
             <>
               <button type="button" className="btn-ghost text-[var(--bad)]" onClick={() => (setConfirm(false), props.onRemove?.())}>
-                Remove for good
+                {t("admin.removeForGood")}
               </button>
               <button type="button" className="btn-ghost" onClick={() => setConfirm(false)}>
-                Keep
+                {t("admin.keep")}
               </button>
             </>
           ) : (
-            <IconButton size="sm" label="Remove this level" onClick={() => setConfirm(true)}>
+            <IconButton size="sm" label={t("admin.removeLevel")} onClick={() => setConfirm(true)}>
               <Trash2 size={14} />
             </IconButton>
           )}
@@ -381,12 +378,13 @@ function LevelRow(props: {
 }
 
 function ColourField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  const { t } = useTranslation();
   return (
     <label className="flex flex-col gap-1 text-[12px] text-fg3">
       {label}
       <span className="flex items-center gap-1">
-        <input type="color" aria-label={`${label} colour picker`} value={isHex(value) ? value : "#000000"} onChange={(e) => onChange(e.target.value.toUpperCase())} className="h-9 w-9 cursor-pointer rounded-[6px] border border-line bg-transparent" />
-        <input dir="ltr" className="input !w-24 font-mono uppercase" value={value} maxLength={7} onChange={(e) => onChange(e.target.value)} aria-label={`${label} colour, hex`} />
+        <input type="color" aria-label={t("admin.colourPicker", { label })} value={isHex(value) ? value : "#000000"} onChange={(e) => onChange(e.target.value.toUpperCase())} className="h-9 w-9 cursor-pointer rounded-[6px] border border-line bg-transparent" />
+        <input dir="ltr" className="input !w-24 font-mono uppercase" value={value} maxLength={7} onChange={(e) => onChange(e.target.value)} aria-label={t("admin.colourHex", { label })} />
       </span>
     </label>
   );
@@ -394,22 +392,24 @@ function ColourField({ label, value, onChange }: { label: string; value: string;
 
 // ---- Base maps ----
 
+/** Names of source types: an i18n key where the name has words, the standard's own name otherwise. */
 const TYPE_LABEL: Record<BaseMapSource["type"], string> = {
-  xyz: "XYZ tiles",
+  xyz: "admin.types.xyz",
   tms: "TMS",
   wmts: "WMTS",
-  terrarium: "Terrarium heights (PNG)",
-  "quantized-mesh": "Quantized-mesh",
+  terrarium: "admin.types.terrarium",
+  "quantized-mesh": "Quantized-mesh", // i18n-ignore: the format's name
 };
 const URL_HINT: Record<BaseMapSource["type"], string> = {
   xyz: "https://maps.internal/ortho/{z}/{x}/{y}.jpg  or  /basemap/ortho/{z}/{x}/{y}.jpg",
   tms: "https://maps.internal/tms/ortho",
   wmts: "https://maps.internal/wmts/1.0.0/WMTSCapabilities.xml",
   terrarium: "https://maps.internal/terrain/{z}/{x}/{y}.png",
-  "quantized-mesh": "https://maps.internal/terrain  (folder with layer.json)",
+  "quantized-mesh": "admin.folderHint",
 };
 
 function BaseMapsTab({ api, fail }: { api: AdminApi; fail: Fail }) {
+  const { t } = useTranslation();
   const engine = useEngine();
   const [cfg, setCfg] = useState<BaseMapConfig | null>(null);
   const [draft, setDraft] = useState<BaseMapSource | null>(null);
@@ -418,7 +418,7 @@ function BaseMapsTab({ api, fail }: { api: AdminApi; fail: Fail }) {
     void getBaseMaps(api.srv).then(setCfg).catch(fail);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api]);
-  if (!cfg) return <p className="text-fg3">Loading…</p>;
+  if (!cfg) return <p className="text-fg3">{t("admin.loading")}</p>;
 
   const save = async (next: BaseMapConfig) => {
     const before = cfg;
@@ -427,18 +427,18 @@ function BaseMapsTab({ api, fail }: { api: AdminApi; fail: Fail }) {
       const r = await api.saveBaseMaps(next);
       setCfg(r);
       const problems = (await engine?.useSiteBaseMaps(r, api.srv.base)) ?? [];
-      setSaved(problems.length ? `Saved, but the viewer could not open: ${problems.join(" ")}` : "Saved. Every viewer that opens from now on gets these sources.");
+      setSaved(problems.length ? t("admin.savedBadSources", { problems: problems.join(" ") }) : t("admin.savedSources"));
     } catch (e) {
       setCfg(before);
       fail(e);
     }
   };
-  const imagery = [...cfg.sources.filter((s) => s.kind === "imagery").map((s) => ({ id: s.id, label: s.label })), ...BASE_MAPS.filter((b) => !(cfg.hideOnline && b.online)).map((b) => ({ id: b.id, label: b.label }))];
-  const terrain = [...cfg.sources.filter((s) => s.kind === "terrain").map((s) => ({ id: s.id, label: s.label })), ...TERRAINS.filter((t) => !(cfg.hideOnline && t.online)).map((t) => ({ id: t.id, label: t.label }))];
+  const imagery = [...cfg.sources.filter((s) => s.kind === "imagery").map((s) => ({ id: s.id, label: s.label })), ...BASE_MAPS.filter((b) => !(cfg.hideOnline && b.online)).map((b) => ({ id: b.id, label: t(`catalogue.${b.id}`, { defaultValue: b.label }) }))];
+  const terrain = [...cfg.sources.filter((s) => s.kind === "terrain").map((s) => ({ id: s.id, label: s.label })), ...TERRAINS.filter((x) => !(cfg.hideOnline && x.online)).map((x) => ({ id: x.id, label: t(`catalogue.${x.id}`, { defaultValue: x.label }) }))];
 
   return (
     <>
-      <H note="Point the viewer at this site's own map servers or the base map package (RND-11). A path that starts with / is on this server. The viewer works with none of them; the bundled world map is always there.">Base maps and terrain</H>
+      <H note={t("admin.basemapsNote")}>{t("admin.basemapsTitle")}</H>
       {saved && <p className="mb-3 text-[12px] text-fg2">{saved}</p>}
       <ul className="mb-3 flex flex-col gap-1.5">
         {cfg.sources.map((s) => (
@@ -447,19 +447,19 @@ function BaseMapsTab({ api, fail }: { api: AdminApi; fail: Fail }) {
             <span className="min-w-0 flex-1">
               <span className="block truncate font-medium">{s.label}</span>
               <span className="block truncate text-[11px] text-fg3" dir="ltr">
-                {TYPE_LABEL[s.type]} · {s.url}
+                {t(TYPE_LABEL[s.type])} · {s.url}
                 {s.layer ? ` · ${s.layer}` : ""}
               </span>
             </span>
             <button type="button" className="btn-ghost h-7" onClick={() => setDraft(s)}>
-              Edit
+              {t("admin.edit")}
             </button>
-            <IconButton size="sm" label={`Remove ${s.label}`} onClick={() => void save({ ...cfg, sources: cfg.sources.filter((x) => x.id !== s.id) })}>
+            <IconButton size="sm" label={t("admin.removeSource", { name: s.label })} onClick={() => void save({ ...cfg, sources: cfg.sources.filter((x) => x.id !== s.id) })}>
               <Trash2 size={14} />
             </IconButton>
           </li>
         ))}
-        {!cfg.sources.length && <li className="text-[12px] text-fg3">No site sources yet. The viewer offers its built-in list.</li>}
+        {!cfg.sources.length && <li className="text-[12px] text-fg3">{t("admin.noSources")}</li>}
       </ul>
       {draft ? (
         <SourceForm
@@ -474,23 +474,23 @@ function BaseMapsTab({ api, fail }: { api: AdminApi; fail: Fail }) {
         />
       ) : (
         <button type="button" className="btn-secondary" onClick={() => setDraft({ id: "", label: "", kind: "imagery", type: "xyz", url: "" })}>
-          <Plus size={14} /> Add a source
+          <Plus size={14} /> {t("admin.addSource")}
         </button>
       )}
 
       <div className="mt-6 grid max-w-2xl grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2">
-        <span className="text-fg2">Opens with</span>
-        <select className="input" value={cfg.defaultImagery ?? ""} onChange={(e) => void save({ ...cfg, defaultImagery: e.target.value || undefined })} aria-label="Base map the viewer opens with">
-          <option value="">The viewer's own choice</option>
+        <span className="text-fg2">{t("admin.opensWith")}</span>
+        <select className="input" value={cfg.defaultImagery ?? ""} onChange={(e) => void save({ ...cfg, defaultImagery: e.target.value || undefined })} aria-label={t("admin.baseMapDefault")}>
+          <option value="">{t("admin.viewersChoice")}</option>
           {imagery.map((o) => (
             <option key={o.id} value={o.id}>
               {o.label}
             </option>
           ))}
         </select>
-        <span className="text-fg2">Terrain</span>
-        <select className="input" value={cfg.defaultTerrain ?? ""} onChange={(e) => void save({ ...cfg, defaultTerrain: e.target.value || undefined })} aria-label="Terrain the viewer opens with">
-          <option value="">The viewer's own choice</option>
+        <span className="text-fg2">{t("admin.terrain")}</span>
+        <select className="input" value={cfg.defaultTerrain ?? ""} onChange={(e) => void save({ ...cfg, defaultTerrain: e.target.value || undefined })} aria-label={t("admin.terrainDefault")}>
+          <option value="">{t("admin.viewersChoice")}</option>
           {terrain.map((o) => (
             <option key={o.id} value={o.id}>
               {o.label}
@@ -500,7 +500,7 @@ function BaseMapsTab({ api, fail }: { api: AdminApi; fail: Fail }) {
         <span />
         <label className="flex items-center gap-2 text-fg2">
           <input type="checkbox" checked={!!cfg.hideOnline} onChange={(e) => void save({ ...cfg, hideOnline: e.target.checked })} className="accent-[var(--accent)]" />
-          Hide the internet sources (Esri, OpenStreetMap, Sentinel-2 cloudless, AWS terrain)
+          {t("admin.hideOnline")}
         </label>
       </div>
     </>
@@ -508,6 +508,7 @@ function BaseMapsTab({ api, fail }: { api: AdminApi; fail: Fail }) {
 }
 
 function SourceForm({ initial, taken, onSave, onCancel }: { initial: BaseMapSource; taken: string[]; onSave: (s: BaseMapSource) => Promise<void>; onCancel: () => void }) {
+  const { t } = useTranslation();
   const [s, setS] = useState<BaseMapSource>(initial);
   const up = (patch: Partial<BaseMapSource>) => setS((x) => ({ ...x, ...patch }));
   const terrainTypes: BaseMapSource["type"][] = ["terrarium", "quantized-mesh"];
@@ -526,64 +527,64 @@ function SourceForm({ initial, taken, onSave, onCancel }: { initial: BaseMapSour
     >
       <div className="flex flex-wrap gap-3">
         <label className={cx(field, "min-w-48 flex-1")}>
-          Name in the picker
+          {t("admin.pickerName")}
           <input className="input" required value={s.label} onChange={(e) => up({ label: e.target.value })} />
         </label>
         <label className={field}>
-          Kind
+          {t("admin.kind")}
           <select className="input" value={s.kind} onChange={(e) => up({ kind: e.target.value as BaseMapSource["kind"], type: e.target.value === "terrain" ? "terrarium" : "xyz" })}>
-            <option value="imagery">Imagery</option>
-            <option value="terrain">Terrain</option>
+            <option value="imagery">{t("admin.imagery")}</option>
+            <option value="terrain">{t("admin.terrain")}</option>
           </select>
         </label>
         <label className={field}>
-          Type
+          {t("admin.type")}
           <select className="input" value={s.type} onChange={(e) => up({ type: e.target.value as BaseMapSource["type"] })}>
-            {types.map((t) => (
-              <option key={t} value={t}>
-                {TYPE_LABEL[t]}
+            {types.map((ty) => (
+              <option key={ty} value={ty}>
+                {t(TYPE_LABEL[ty])}
               </option>
             ))}
           </select>
         </label>
       </div>
       <label className={field}>
-        Address
-        <input className="input" dir="ltr" required value={s.url} placeholder={URL_HINT[s.type]} onChange={(e) => up({ url: e.target.value })} />
+        {t("admin.address")}
+        <input className="input" dir="ltr" required value={s.url} placeholder={t(URL_HINT[s.type])} onChange={(e) => up({ url: e.target.value })} />
       </label>
       {s.type === "wmts" && (
         <div className="flex flex-wrap gap-3">
           <label className={cx(field, "flex-1")}>
-            Layer
+            {t("admin.layer")}
             <input className="input" dir="ltr" required value={s.layer ?? ""} onChange={(e) => up({ layer: e.target.value })} />
           </label>
           <label className={cx(field, "flex-1")}>
-            Matrix set
-            <input className="input" dir="ltr" value={s.matrixSet ?? ""} placeholder="GoogleMapsCompatible" onChange={(e) => up({ matrixSet: e.target.value })} />
+            {t("admin.matrixSet")}
+            <input className="input" dir="ltr" value={s.matrixSet ?? ""} placeholder="GoogleMapsCompatible" translate="no" onChange={(e) => up({ matrixSet: e.target.value })} />
           </label>
           <label className={cx(field, "flex-1")}>
-            Format
-            <input className="input" dir="ltr" value={s.format ?? ""} placeholder="image/jpeg" onChange={(e) => up({ format: e.target.value })} />
+            {t("admin.format")}
+            <input className="input" dir="ltr" value={s.format ?? ""} placeholder="image/jpeg" translate="no" onChange={(e) => up({ format: e.target.value })} />
           </label>
         </div>
       )}
       <div className="flex flex-wrap gap-3">
         <label className={cx(field, "w-32")}>
-          Deepest zoom
+          {t("admin.maxZoom")}
           <input className="input" type="number" min={0} max={30} value={s.maxZoom ?? ""} onChange={(e) => up({ maxZoom: e.target.value === "" ? undefined : Number(e.target.value) })} />
         </label>
         <label className={cx(field, "flex-1")}>
-          Credit shown on the map
+          {t("admin.credit")}
           <input className="input" value={s.attribution ?? ""} onChange={(e) => up({ attribution: e.target.value })} />
         </label>
       </div>
-      {clash && <p className="text-[12px] text-[var(--bad)]">Another source already has this name.</p>}
+      {clash && <p className="text-[12px] text-[var(--bad)]">{t("admin.nameTaken")}</p>}
       <div className="flex gap-2">
         <button type="submit" className="btn-primary" disabled={!s.label || !s.url || clash}>
-          <Check size={14} /> Save source
+          <Check size={14} /> {t("admin.saveSource")}
         </button>
         <button type="button" className="btn-ghost" onClick={onCancel}>
-          Cancel
+          {t("admin.cancel")}
         </button>
       </div>
     </form>
@@ -593,6 +594,7 @@ function SourceForm({ initial, taken, onSave, onCancel }: { initial: BaseMapSour
 // ---- Storage ----
 
 function StorageTab({ api, fail }: { api: AdminApi; fail: Fail }) {
+  const { t } = useTranslation();
   const [info, setInfo] = useState<StorageInfo | null>(null);
   const [gb, setGb] = useState("");
   const load = () =>
@@ -607,35 +609,35 @@ function StorageTab({ api, fail }: { api: AdminApi; fail: Fail }) {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api]);
-  if (!info) return <p className="text-fg3">Loading…</p>;
+  if (!info) return <p className="text-fg3">{t("admin.loading")}</p>;
   const cap = info.quotaBytes ?? info.disk?.totalBytes ?? null;
   const share = cap ? Math.min(1, info.usedBytes / cap) : 0;
   return (
     <>
-      <H note="The quota counts every published version and the uploads still in progress. An upload that would go past it is refused with a message that names the administrator.">Storage</H>
+      <H note={t("admin.storageNote")}>{t("admin.storage")}</H>
       <div className="mb-5 max-w-2xl rounded-[10px] border border-line bg-s2 p-4">
         <div className="mb-2 flex items-baseline gap-2">
           <HardDrive size={16} className="text-fg3" />
           <span className="num text-[20px] font-semibold">{fmtBytes(info.usedBytes)}</span>
-          <span className="text-fg3">used{info.quotaBytes != null ? ` of ${fmtBytes(info.quotaBytes)} quota` : ", no quota"}</span>
+          <span className="text-fg3">{info.quotaBytes != null ? t("admin.usedOfQuota", { quota: fmtBytes(info.quotaBytes) }) : t("admin.usedNoQuota")}</span>
         </div>
         {cap && (
-          <div className="h-2 overflow-hidden rounded-full bg-s3" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(share * 100)} aria-label="Storage used">
+          <div className="h-2 overflow-hidden rounded-full bg-s3" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(share * 100)} aria-label={t("admin.storageUsed")}>
             <div className={cx("h-full rounded-full", share > 0.9 ? "bg-[var(--bad)]" : "bg-accent")} style={{ width: `${Math.max(share * 100, 1)}%` }} />
           </div>
         )}
         <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[12px]">
-          <dt className="text-fg3">Published</dt>
+          <dt className="text-fg3">{t("admin.published")}</dt>
           <dd className="num">
-            {fmtBytes(info.publishedBytes)} in {info.versions} version{info.versions === 1 ? "" : "s"} of {info.models} model{info.models === 1 ? "" : "s"}
+            {t("admin.publishedValue", { bytes: fmtBytes(info.publishedBytes), versions: t("admin.versions", { count: info.versions }), models: t("admin.models", { count: info.models }) })}
           </dd>
-          <dt className="text-fg3">Uploading</dt>
+          <dt className="text-fg3">{t("admin.uploading")}</dt>
           <dd className="num">{fmtBytes(info.uploadingBytes)}</dd>
           {info.disk && (
             <>
-              <dt className="text-fg3">Disk</dt>
+              <dt className="text-fg3">{t("admin.disk")}</dt>
               <dd className="num">
-                {fmtBytes(info.disk.freeBytes)} free of {fmtBytes(info.disk.totalBytes)}
+                {t("admin.diskValue", { free: fmtBytes(info.disk.freeBytes), total: fmtBytes(info.disk.totalBytes) })}
               </dd>
             </>
           )}
@@ -654,11 +656,11 @@ function StorageTab({ api, fail }: { api: AdminApi; fail: Fail }) {
         }}
       >
         <label className="flex flex-col gap-1 text-[12px] text-fg3">
-          Quota in GB (empty for none)
+          {t("admin.quotaGb")}
           <input className="input !w-40" type="number" min={0} step="any" value={gb} onChange={(e) => setGb(e.target.value)} />
         </label>
         <button type="submit" className="btn-primary">
-          Save quota
+          {t("admin.saveQuota")}
         </button>
       </form>
     </>
@@ -668,6 +670,7 @@ function StorageTab({ api, fail }: { api: AdminApi; fail: Fail }) {
 // ---- Permanent delete ----
 
 function DeleteTab({ api, fail }: { api: AdminApi; fail: Fail }) {
+  const { t } = useTranslation();
   const models = useApp((s) => s.serverModels);
   const [q, setQ] = useState("");
   const [pick, setPick] = useState<string | null>(null);
@@ -677,9 +680,9 @@ function DeleteTab({ api, fail }: { api: AdminApi; fail: Fail }) {
   const m = models.find((x) => x.id === pick);
   return (
     <>
-      <H note="Deleting removes the model, every version and all of its files from the server. It cannot be undone. The audit log keeps the record of the model and of this delete.">Delete models for good</H>
+      <H note={t("admin.deleteNote")}>{t("admin.deleteTitle")}</H>
       {done && <p className="mb-3 text-[12px] text-fg2">{done}</p>}
-      <input className="input mb-2 max-w-md" placeholder="Find a model" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Find a model" />
+      <input className="input mb-2 max-w-md" placeholder={t("admin.findModel")} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t("admin.findModel")} />
       <ul className="mb-4 max-h-64 max-w-2xl overflow-auto rounded-[10px] border border-line scrollbar-thin">
         {shown.map((x) => (
           <li key={x.id}>
@@ -695,7 +698,7 @@ function DeleteTab({ api, fail }: { api: AdminApi; fail: Fail }) {
             </button>
           </li>
         ))}
-        {!shown.length && <li className="px-3 py-2 text-fg3">No models.</li>}
+        {!shown.length && <li className="px-3 py-2 text-fg3">{t("admin.noModels")}</li>}
       </ul>
       {m && (
         <form
@@ -706,7 +709,7 @@ function DeleteTab({ api, fail }: { api: AdminApi; fail: Fail }) {
               const r = await api.deleteModel(m.id, typed);
               setPick(null);
               setTyped("");
-              setDone(`Deleted ${r.name}: ${r.versions} version${r.versions === 1 ? "" : "s"}, ${fmtBytes(r.bytes)}.`);
+              setDone(t("admin.deleted", { name: r.name, versions: t("admin.versions", { count: r.versions }), bytes: fmtBytes(r.bytes) }));
               await refreshLibrary();
             } catch (err) {
               fail(err);
@@ -714,12 +717,12 @@ function DeleteTab({ api, fail }: { api: AdminApi; fail: Fail }) {
           }}
         >
           <p className="mb-2 text-fg2">
-            Type <strong className="select-all text-fg">{m.name}</strong> to delete it and its {m.versions} version{m.versions === 1 ? "" : "s"}.
+            <Trans i18nKey="admin.typeToDelete" values={{ versions: t("admin.versions", { count: m.versions }) }} components={{ name: <strong className="select-all text-fg">{m.name}</strong> }} />
           </p>
           <div className="flex gap-2">
-            <input className="input" value={typed} onChange={(e) => setTyped(e.target.value)} aria-label="Model name to confirm" autoComplete="off" />
+            <input className="input" value={typed} onChange={(e) => setTyped(e.target.value)} aria-label={t("admin.confirmName")} autoComplete="off" />
             <button type="submit" className="btn-primary !bg-[var(--bad)]" disabled={typed.trim() !== m.name.trim()}>
-              <Trash2 size={14} /> Delete for good
+              <Trash2 size={14} /> {t("admin.deleteForGood")}
             </button>
           </div>
         </form>
@@ -731,11 +734,13 @@ function DeleteTab({ api, fail }: { api: AdminApi; fail: Fail }) {
 // ---- Audit log ----
 
 function AuditTab({ api, fail }: { api: AdminApi; fail: Fail }) {
+  const { t } = useTranslation();
   const [rows, setRows] = useState<AuditEntry[] | null>(null);
   const [action, setAction] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [check, setCheck] = useState<string | null>(null);
+  const [chainBroken, setChainBroken] = useState(false);
   const filter = () => ({ action: action || undefined, from: from ? new Date(from).toISOString() : undefined, to: to ? new Date(new Date(to).getTime() + 86_400_000).toISOString() : undefined });
   const load = () => api.audit({ ...filter(), limit: 500 }).then(setRows).catch(fail);
   useEffect(() => {
@@ -745,11 +750,11 @@ function AuditTab({ api, fail }: { api: AdminApi; fail: Fail }) {
   const actions = useMemo(() => [...new Set((rows ?? []).map((r) => r.action))].sort(), [rows]);
   return (
     <>
-      <H note="Every view, upload, change, sign-in and delete, with the address and workstation it came from. Each entry carries a hash of the one before, so an edited entry shows.">Audit log</H>
+      <H note={t("admin.auditNote")}>{t("admin.auditTitle")}</H>
       <div className="mb-3 flex flex-wrap items-end gap-2">
         <label className="flex flex-col gap-1 text-[12px] text-fg3">
-          Action
-          <input className="input !w-48" list="audit-actions" value={action} onChange={(e) => setAction(e.target.value)} placeholder="All" dir="ltr" />
+          {t("admin.action")}
+          <input className="input !w-48" list="audit-actions" value={action} onChange={(e) => setAction(e.target.value)} placeholder={t("admin.all")} dir="ltr" />
           <datalist id="audit-actions">
             {actions.map((a) => (
               <option key={a} value={a} />
@@ -757,15 +762,15 @@ function AuditTab({ api, fail }: { api: AdminApi; fail: Fail }) {
           </datalist>
         </label>
         <label className="flex flex-col gap-1 text-[12px] text-fg3">
-          From
+          {t("admin.from")}
           <input className="input !w-40" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
         </label>
         <label className="flex flex-col gap-1 text-[12px] text-fg3">
-          To
+          {t("admin.to")}
           <input className="input !w-40" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </label>
         <button type="button" className="btn-primary" onClick={() => void load()}>
-          Show
+          {t("admin.show")}
         </button>
         <button
           type="button"
@@ -778,7 +783,7 @@ function AuditTab({ api, fail }: { api: AdminApi; fail: Fail }) {
             }
           }}
         >
-          <Download size={14} /> Export CSV
+          <Download size={14} /> {t("admin.exportCsv")}
         </button>
         <button
           type="button"
@@ -786,21 +791,22 @@ function AuditTab({ api, fail }: { api: AdminApi; fail: Fail }) {
           onClick={async () => {
             try {
               const v = await api.verifyAudit();
-              setCheck(v.ok ? `All ${v.count} entries check out.` : `Entry ${v.brokenAt} does not match its hash: the log was changed from there on.`);
+              setCheck(v.ok ? t("admin.chainOk", { count: v.count }) : t("admin.chainBroken", { n: v.brokenAt }));
+              setChainBroken(!v.ok);
             } catch (e) {
               fail(e);
             }
           }}
         >
-          <ShieldCheck size={14} /> Check the chain
+          <ShieldCheck size={14} /> {t("admin.checkChain")}
         </button>
       </div>
-      {check && <p className={cx("mb-3 text-[12px]", /does not match/.test(check) ? "text-[var(--bad)]" : "text-fg2")}>{check}</p>}
+      {check && <p className={cx("mb-3 text-[12px]", chainBroken ? "text-[var(--bad)]" : "text-fg2")}>{check}</p>}
       <div className="overflow-x-auto rounded-[10px] border border-line">
         <table className="w-full text-[12px]">
           <thead className="bg-s2 text-start text-fg3">
             <tr>
-              {["#", "Time", "Action", "Target", "Address", "Workstation", "Detail"].map((h) => (
+              {["#", t("admin.cols.time"), t("admin.cols.action"), t("admin.cols.target"), t("admin.cols.address"), t("admin.cols.workstation"), t("admin.cols.detail")].map((h) => (
                 <th key={h} className="px-2 py-1.5 text-start font-medium">
                   {h}
                 </th>
@@ -832,14 +838,14 @@ function AuditTab({ api, fail }: { api: AdminApi; fail: Fail }) {
             {rows && !rows.length && (
               <tr>
                 <td colSpan={7} className="px-2 py-3 text-fg3">
-                  Nothing matches.
+                  {t("admin.nothing")}
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
-      {rows && rows.length === 500 && <p className="mt-2 text-[11px] text-fg3">Showing the latest 500. Narrow the dates or export the CSV for the rest.</p>}
+      {rows && rows.length === 500 && <p className="mt-2 text-[11px] text-fg3">{t("admin.latest500")}</p>}
     </>
   );
 }
@@ -847,6 +853,7 @@ function AuditTab({ api, fail }: { api: AdminApi; fail: Fail }) {
 // ---- Password ----
 
 function PasswordTab({ api, fail }: { api: AdminApi; fail: Fail }) {
+  const { t } = useTranslation();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [again, setAgain] = useState("");
@@ -855,8 +862,8 @@ function PasswordTab({ api, fail }: { api: AdminApi; fail: Fail }) {
   const differ = again.length > 0 && again !== next;
   return (
     <>
-      <H note="At least 12 characters. Changing it signs out every other admin session. If it is lost, the person who runs the server can set a new one with ADMIN_PASSWORD and ADMIN_PASSWORD_RESET=1.">Admin password</H>
-      {done && <p className="mb-3 text-[12px] text-fg2">Password changed. Other sessions are signed out.</p>}
+      <H note={t("admin.passwordNote")}>{t("admin.password")}</H>
+      {done && <p className="mb-3 text-[12px] text-fg2">{t("admin.changed")}</p>}
       <form
         className="flex max-w-sm flex-col gap-3"
         onSubmit={async (e) => {
@@ -873,21 +880,21 @@ function PasswordTab({ api, fail }: { api: AdminApi; fail: Fail }) {
         }}
       >
         <label className="flex flex-col gap-1 text-[12px] text-fg3">
-          Current password
+          {t("admin.current")}
           <input className="input" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
         </label>
         <label className="flex flex-col gap-1 text-[12px] text-fg3">
-          New password
+          {t("admin.new")}
           <input className="input" type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
-          {short && <span className="text-[var(--bad)]">{12 - next.length} more characters needed.</span>}
+          {short && <span className="text-[var(--bad)]">{t("admin.moreChars", { n: 12 - next.length })}</span>}
         </label>
         <label className="flex flex-col gap-1 text-[12px] text-fg3">
-          New password again
+          {t("admin.again")}
           <input className="input" type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} />
-          {differ && <span className="text-[var(--bad)]">The two do not match.</span>}
+          {differ && <span className="text-[var(--bad)]">{t("admin.noMatch")}</span>}
         </label>
         <button type="submit" className="btn-primary justify-center" disabled={!current || next.length < 12 || next !== again}>
-          Change password
+          {t("admin.change")}
         </button>
       </form>
     </>

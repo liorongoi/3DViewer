@@ -43,7 +43,7 @@ export function SearchField({ className, autoFocus }: { className?: string; auto
         className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-fg3"
       />
       {query && (
-        <button type="button" aria-label="Clear" onClick={() => setFilters({ query: "" })} className="text-fg3 hover:text-fg">
+        <button type="button" aria-label={t("misc.clear")} onClick={() => setFilters({ query: "" })} className="text-fg3 hover:text-fg">
           <X size={14} />
         </button>
       )}

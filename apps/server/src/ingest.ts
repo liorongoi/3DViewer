@@ -6,7 +6,7 @@ import { pipeline } from "node:stream/promises";
 import { Transform, type Readable } from "node:stream";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Unzip, UnzipInflate } from "fflate";
-import { checkFiles, LIMITS, placementFromGrid, type CheckItem, type CheckReport, type LocalFile } from "@viewer/core/loaders";
+import { checkFiles, checkItem, LIMITS, placementFromGrid, type CheckItem, type CheckReport, type LocalFile } from "@viewer/core/loaders";
 import { UPDATE_STATUSES, type ModelSummary } from "@viewer/shared/model";
 import { quotaError } from "./admin.ts";
 import { audit } from "./audit.ts";
@@ -353,10 +353,10 @@ function run(cmd: string, args: string[], timeoutMs: number): Promise<{ code: nu
 
 /** ClamAV hook. clamdscan exits 0 for clean, 1 for a virus, 2 for an error. */
 async function scan(bin: string | undefined, dir: string): Promise<CheckItem> {
-  if (!bin) return { id: "scan", severity: "warning", title: "Not scanned for viruses", detail: "The administrator has not set up ClamAV (CLAMDSCAN)." };
+  if (!bin) return checkItem("scan", "warning", "notScanned");
   const r = await run(bin, ["--no-summary", "--infected", "--fdpass", dir], 30 * 60_000);
-  if (r.code === 0) return { id: "scan", severity: "ok", title: "Scanned for viruses: clean" };
-  if (r.code === 1) return { id: "scan", severity: "error", title: "A virus was found", detail: r.out.split("\n").slice(0, 5).map((l) => l.replace(dir + path.sep, "")).join("\n") };
+  if (r.code === 0) return checkItem("scan", "ok", "clean");
+  if (r.code === 1) return checkItem("scan", "error", "virus", {}, r.out.split("\n").slice(0, 5).map((l) => l.replace(dir + path.sep, "")).join("\n"));
   throw new Error(`The virus scanner failed: ${r.out.slice(0, 300)}`);
 }
 
@@ -439,7 +439,7 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
         report = {
           ...converted.report,
           format: "fbx",
-          items: [...keep, { id: "conversion", severity: "ok", title: "Converted to glTF with FBX2glTF" }, ...converted.report.items.filter((i) => i.id !== "format")],
+          items: [...keep, checkItem("conversion", "ok", "converted"), ...converted.report.items.filter((i) => i.id !== "format")],
         };
         // The original FBX is kept beside the GLB (FMT-08), under its own folder so names cannot clash.
         publish = [...(converted.files as DiskFile[]), { ...fbx, path: `original/${path.basename(fbx.path)}` }];
@@ -464,7 +464,7 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
       const big = (report.stats.triangles ?? 0) > limit.triangles || meshBytes > limit.bytes;
       // The tiler works in a local frame; a GLB in Earth-centred coordinates would lose its precision there.
       if (big && report.georef && report.format !== "3dtiles")
-        report.items.push({ id: "tiling", severity: "warning", title: "Published as one file, not tiled", detail: "The model carries its own Earth position, which the tiler does not keep yet. Export it in a local frame with a metadata.xml, or as 3D Tiles, to stream it." });
+        report.items.push(checkItem("tiling", "warning", "notTiledGeo"));
       if (main && report.format !== "3dtiles" && big && !report.georef) {
         await setState("converting");
         await ctx.progress({ step: "tile" });
@@ -481,7 +481,7 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
             detail: `${t.triangles.toLocaleString("en")} triangles. Far views draw simplified tiles, close views the full detail.${t.skipped ? ` ${t.skipped} parts that are lines or points were left out of the tiles; the original file keeps them.` : ""}`,
           });
         } catch (e) {
-          report.items.push({ id: "tiling", severity: "warning", title: "Could not tile the model; it is published as one file", detail: e instanceof Error ? e.message : String(e) });
+          report.items.push(checkItem("tiling", "warning", "tilingFailed", {}, e instanceof Error ? e.message : String(e)));
         }
       }
 
@@ -496,10 +496,10 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
             publish = publish.map((f, i) => (i === glbIndex ? diskFile(f.path, dest, o.after) : f));
             // The file as uploaded stays downloadable; a GLB made from an FBX has the FBX for that.
             if (report.format === "glb") publish.push({ ...main!, path: `original/${main!.path}` });
-            report.items.push({ id: "optimise", severity: "ok", title: `Compressed for sending: ${mb(o.before)} to ${mb(o.after)}`, detail: "Geometry is compressed; every point is where it was, so measurements are unchanged." });
+            report.items.push(checkItem("optimise", "ok", "compressed", { before: mb(o.before), after: mb(o.after) }));
           }
         } catch (e) {
-          report.items.push({ id: "optimise", severity: "warning", title: "Could not compress the model; it is published as uploaded", detail: e instanceof Error ? e.message : String(e) });
+          report.items.push(checkItem("optimise", "warning", "compressFailed", {}, e instanceof Error ? e.message : String(e)));
         }
       }
 
@@ -507,7 +507,7 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
       const georef = report.georef;
       let placement = georef ? undefined : (req.placement ?? fromSide);
       const centre = georef ? { lat: georef.lat, lon: georef.lon } : placement ? { lat: placement.lat, lon: placement.lon } : req.centre;
-      if (!centre) return reject({ ...report, ok: false, items: [...report.items, { id: "georef", severity: "error", title: "No position", detail: "The file has none and none was set in the Place step." }] }, "No position");
+      if (!centre) return reject({ ...report, ok: false, items: [...report.items, checkItem("georef", "error", "noPositionSet")] }, "No position");
       // The tiler baked the up axis and scale into the tiles.
       if (tiled) placement = { ...(placement ?? { ...centre, height: 0 }), upAxis: undefined, scale: undefined };
 

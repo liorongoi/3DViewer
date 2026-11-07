@@ -2,7 +2,7 @@ import { FileSet, expandFiles, ext, LoadError, type LocalFile } from "./files";
 import { gltfLoader } from "./gltf";
 import { tiles3dLoader } from "./tiles3d";
 import { readSidecar } from "./sidecar";
-import type { CheckItem, CheckReport, LoaderPlugin, Prepared, UrlMaker } from "./types";
+import { checkItem, type CheckItem, type CheckReport, type LoaderPlugin, type Prepared, type UrlMaker } from "./types";
 
 export * from "./types";
 export { fromBytes, expandFiles, resolvePath, type LocalFile } from "./files";
@@ -22,16 +22,16 @@ const fbxLoader: LoaderPlugin = {
     const version = binary && data.byteLength >= 27 ? new DataView(data.buffer, data.byteOffset + 23, 4).getUint32(0, true) : null;
     const format: CheckItem =
       binary && (version === null || version < 6000 || version > 8000)
-        ? { id: "format", severity: "error", title: "The FBX header is damaged", detail: `It names FBX version ${version ?? "unknown"}, which does not exist.` }
+        ? checkItem("format", "error", "fbxDamaged", { version: version ?? "?" })
         : binary
-          ? { id: "format", severity: "ok", title: `FBX ${(version! / 1000).toFixed(1)} binary` }
+          ? checkItem("format", "ok", "fbxBinary", { version: (version! / 1000).toFixed(1) })
           : /FBXHeaderExtension|FBXVersion/.test(new TextDecoder().decode(data.subarray(0, 2048)))
-            ? { id: "format", severity: "ok", title: "FBX ASCII" }
-            : { id: "format", severity: "error", title: "The file is not FBX", detail: "It does not start with an FBX header." };
+            ? checkItem("format", "ok", "fbxAscii")
+            : checkItem("format", "error", "notFbx");
     return {
       items: [
         format,
-        { id: "conversion", severity: "warning", title: "Converted to glTF on the server", detail: "The server converts FBX with FBX2glTF when you publish. The browser cannot preview FBX before that." },
+        checkItem("conversion", "warning", "fbxConvert"),
       ],
       stats: { files: files.files.length, bytes: files.bytes },
       nodes: [],
@@ -68,22 +68,22 @@ export async function checkFiles(input: LocalFile[]): Promise<{ report: CheckRep
     if (!main) continue;
     const r = await p.check(main, set);
     const big = files.filter((f) => f.size > LIMITS.file);
-    if (p.format !== "3dtiles" && big.length) r.items.push({ id: "size", severity: "error", title: "File is over 2 GB", detail: big.map((f) => f.path).join(", ") });
-    else if (set.bytes > LIMITS.tileset) r.items.push({ id: "size", severity: "error", title: "Tileset is over 50 GB" });
-    else r.items.push({ id: "size", severity: "ok", title: `${files.length} file${files.length > 1 ? "s" : ""}, ${fmtBytes(set.bytes)}` });
+    if (p.format !== "3dtiles" && big.length) r.items.push(checkItem("size", "error", "fileTooBig", {}, big.map((f) => f.path).join(", ")));
+    else if (set.bytes > LIMITS.tileset) r.items.push(checkItem("size", "error", "tilesetTooBig"));
+    else r.items.push(checkItem("size", "ok", "filesSize", { count: files.length, size: fmtBytes(set.bytes) }));
     const side = r.georef ? null : await readSidecar(set, main.path);
     if (side) {
       r.items.push(...side.items);
       r.filePosition = side.position;
     }
-    if (r.georef) r.items.push({ id: "georef", severity: "ok", title: "Georeferenced", detail: `${r.georef.lat.toFixed(5)}°, ${r.georef.lon.toFixed(5)}°` });
-    else if (!r.filePosition) r.items.push({ id: "georef", severity: "warning", title: "No position in the file", detail: "Set it in the next step." });
+    if (r.georef) r.items.push(checkItem("georef", "ok", "georeferenced", { lat: r.georef.lat.toFixed(5), lon: r.georef.lon.toFixed(5) }));
+    else if (!r.filePosition) r.items.push(checkItem("georef", "warning", "noPosition"));
     const report: CheckReport = { ...r, loader: p.id, format: p.format === "glb" && ext(main.path) === "gltf" ? "gltf" : p.format, mainFile: main.path, ok: !r.items.some((i) => i.severity === "error") };
     return { report, files };
   }
   const exts = [...new Set(files.map((f) => ext(f.path) || "(none)"))].join(", ");
   return {
-    report: { loader: null, format: null, mainFile: null, ok: false, items: [{ id: "format", severity: "error", title: "No model found", detail: `VIEWER opens GLB, glTF, FBX and 3D Tiles (tileset.json), also inside a zip. Found: ${exts}.` }], stats: { files: files.length, bytes: set.bytes }, nodes: [], georef: null },
+    report: { loader: null, format: null, mainFile: null, ok: false, items: [checkItem("format", "error", "noModel", { found: exts })], stats: { files: files.length, bytes: set.bytes }, nodes: [], georef: null },
     files,
   };
 }

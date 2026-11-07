@@ -48,6 +48,8 @@ export class MeasureTool {
   private draftEntities: Entity[] = [];
   private shapes = new Map<string, Entity[]>();
   private counters: Record<MeasureKind, number> = { distance: 0, path: 0 };
+  /** The name a new measurement gets; the app sets it to the interface language. */
+  labelFor = (kind: MeasureKind, n: number): string => `${kind === "distance" ? "Distance" : "Path"} ${n}`;
 
   constructor(private readonly entities: EntityCollection, private readonly requestRender: () => void) {}
 
@@ -132,7 +134,7 @@ export class MeasureTool {
     const m: Measurement = {
       id: `m${++seq}`,
       kind,
-      label: kind === "distance" ? `Distance ${this.counters[kind]}` : `Path ${this.counters[kind]}`,
+      label: this.labelFor(kind, this.counters[kind]),
       points: pts,
       visible: true,
       result: measurePath(pts),

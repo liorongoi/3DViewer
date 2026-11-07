@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEngine, useSignal } from "../engine";
 import { useApp } from "../state/store";
 import { Download, Eye, EyeOff, Radar, ScanEye, Trash2, X } from "./icons";
@@ -17,6 +18,7 @@ export function AnalysisTab() {
 }
 
 function SightSection() {
+  const { t } = useTranslation();
   const engine = useEngine();
   const pairs = useSignal(engine?.sight.pairs, []);
   const selected = useSignal(engine?.sight.selected, null);
@@ -27,14 +29,14 @@ function SightSection() {
   return (
     <section className="rounded-[10px] border border-line bg-s2 p-3">
       <h3 className="mb-1 flex items-center gap-2 font-semibold">
-        <ScanEye size={15} className="text-accent" /> Line of sight
+        <ScanEye size={15} className="text-accent" /> {t("analysis.sight")}
       </h3>
       <p className="mb-2 text-[12px] text-fg3">
-        {active ? "Click the observer point A, then the target point B. Add as many pairs as you like; Esc stops." : "Pick two points to see whether A can see B, and the height profile between them."}
+        {active ? t("analysis.sightActive") : t("analysis.sightIdle")}
       </p>
       <div className="mb-2 grid grid-cols-2 gap-2">
-        <NumberField label="Observer above ground" value={defaults.aHeight} onChange={(v) => engine?.sight.defaults.set({ ...defaults, aHeight: v })} />
-        <NumberField label="Target above ground" value={defaults.bHeight} onChange={(v) => engine?.sight.defaults.set({ ...defaults, bHeight: v })} />
+        <NumberField label={t("analysis.observerHeight")} value={defaults.aHeight} onChange={(v) => engine?.sight.defaults.set({ ...defaults, aHeight: v })} />
+        <NumberField label={t("analysis.targetHeight")} value={defaults.bHeight} onChange={(v) => engine?.sight.defaults.set({ ...defaults, bHeight: v })} />
       </div>
       <label className="mb-2 flex items-center gap-2 text-[12px] text-fg2">
         <input
@@ -45,19 +47,19 @@ function SightSection() {
             engine?.sight.recomputeAll();
           }}
         />
-        Earth curvature with standard refraction (k = 0.13)
+        {t("analysis.refraction")}
       </label>
       <div className="flex flex-wrap gap-1.5">
         <button type="button" className={active ? "btn-secondary" : "btn-primary"} onClick={() => set({ tool: active ? "none" : "sight" })}>
-          {active ? "Done adding" : "Add pairs"} <span className="num opacity-70">I</span>
+          {active ? t("analysis.doneAdding") : t("analysis.addPairs")} <span className="num opacity-70">I</span>
         </button>
         {pairs.length > 0 && (
           <>
             <button type="button" className="btn-ghost" onClick={() => saveText("line-of-sight.csv", pairsToCsv(pairs))}>
-              <Download size={14} /> Export CSV
+              <Download size={14} /> {t("analysis.exportCsv")}
             </button>
             <button type="button" className="btn-ghost" onClick={() => engine?.sight.clear()}>
-              Clear all
+              {t("analysis.clearAll")}
             </button>
           </>
         )}
@@ -74,6 +76,7 @@ function SightSection() {
 }
 
 function PairCard({ p, open, onOpen }: { p: SightPair; open: boolean; onOpen: () => void }) {
+  const { t } = useTranslation();
   const engine = useEngine();
   const n = p.name.replace(/^Line of sight /, "");
   const status = p.computing ? null : p.visible;
@@ -86,25 +89,25 @@ function PairCard({ p, open, onOpen }: { p: SightPair; open: boolean; onOpen: ()
           </span>
           <span className="min-w-0 flex-1 truncate">
             {status === null ? (
-              <span className="text-fg3">Computing…</span>
+              <span className="text-fg3">{t("analysis.computing")}</span>
             ) : status ? (
               <span className="font-medium" style={{ color: "var(--ok)" }}>
                 <Eye size={12} className="me-1 inline" />
-                Visible
+                {t("analysis.visible")}
               </span>
             ) : (
               <span className="font-medium" style={{ color: "var(--bad)" }}>
                 <EyeOff size={12} className="me-1 inline" />
-                Blocked · {fmtDist(p.block!.d)}
+                {t("analysis.blocked", { d: fmtDist(p.block!.d) })}
               </span>
             )}
           </span>
           <span className="num text-[12px] text-fg3">{fmtDist(p.distance)}</span>
         </button>
-        <IconButton size="sm" label={p.shown ? "Hide on map" : "Show on map"} onClick={() => engine?.sight.update(p.id, { shown: !p.shown })}>
+        <IconButton size="sm" label={p.shown ? t("analysis.hideOnMap") : t("analysis.showOnMap")} onClick={() => engine?.sight.update(p.id, { shown: !p.shown })}>
           {p.shown ? <Eye size={14} /> : <EyeOff size={14} />}
         </IconButton>
-        <IconButton size="sm" label="Delete pair" onClick={() => engine?.sight.remove(p.id)}>
+        <IconButton size="sm" label={t("analysis.deletePair")} onClick={() => engine?.sight.remove(p.id)}>
           <Trash2 size={14} />
         </IconButton>
       </div>
@@ -113,19 +116,19 @@ function PairCard({ p, open, onOpen }: { p: SightPair; open: boolean; onOpen: ()
           <ProfileChart pair={p} />
           <div className="mt-1 flex justify-end">
             <button type="button" className="btn-ghost h-7 px-2 text-[12px]" disabled={p.computing} onClick={() => saveText(`profile-${slug(p.name)}.csv`, profileToCsv(p))}>
-              <Download size={13} /> Profile CSV
+              <Download size={13} /> {t("analysis.profileCsv")}
             </button>
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2">
-            <NumberField label={`A${n} above ground`} value={p.aHeight} onChange={(v) => engine?.sight.update(p.id, { aHeight: v })} />
-            <NumberField label={`B${n} above ground`} value={p.bHeight} onChange={(v) => engine?.sight.update(p.id, { bHeight: v })} />
+            <NumberField label={t("analysis.aboveGround", { point: `A${n}` })} value={p.aHeight} onChange={(v) => engine?.sight.update(p.id, { aHeight: v })} />
+            <NumberField label={t("analysis.aboveGround", { point: `B${n}` })} value={p.bHeight} onChange={(v) => engine?.sight.update(p.id, { bHeight: v })} />
           </div>
           <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[12px]">
-            <dt className="text-fg3">A{n} ground</dt>
+            <dt className="text-fg3">{t("analysis.groundOf", { point: `A${n}` })}</dt>
             <dd className="num text-fg2">{p.a.h.toFixed(1)} m</dd>
-            <dt className="text-fg3">B{n} ground</dt>
+            <dt className="text-fg3">{t("analysis.groundOf", { point: `B${n}` })}</dt>
             <dd className="num text-fg2">{p.b.h.toFixed(1)} m</dd>
-            <dt className="text-fg3">{p.visible ? "Smallest clearance" : "Worst obstruction"}</dt>
+            <dt className="text-fg3">{p.visible ? t("analysis.smallestClearance") : t("analysis.worstObstruction")}</dt>
             <dd className="num text-fg2">{Math.abs(p.worstDeficit).toFixed(1)} m</dd>
           </dl>
         </div>
@@ -135,6 +138,7 @@ function PairCard({ p, open, onOpen }: { p: SightPair; open: boolean; onOpen: ()
 }
 
 function ViewshedSection() {
+  const { t } = useTranslation();
   const engine = useEngine();
   const s = useSignal(engine?.viewshed.state, null);
   const placing = useSignal(engine?.viewshed.placing, false);
@@ -142,19 +146,19 @@ function ViewshedSection() {
   return (
     <section className="rounded-[10px] border border-line bg-s2 p-3">
       <h3 className="mb-1 flex items-center gap-2 font-semibold">
-        <Radar size={15} className="text-accent" /> 360° visibility
+        <Radar size={15} className="text-accent" /> {t("analysis.viewshed")}
       </h3>
       <p className="mb-2 text-[12px] text-fg3">
         {placing
-          ? "Click where the observer stands."
+          ? t("analysis.vsPlacing")
           : s
-            ? "Drag the white eye to move it. Shift + drag up or down to change its height. The map updates as you move."
-            : "Everything the observer can see within the radius turns green; hidden ground and walls turn red."}
+            ? t("analysis.vsActive")
+            : t("analysis.vsIdle")}
       </p>
       {s && (
         <div className="mb-2 flex flex-col gap-2">
           <Slider
-            label="Eye height above ground"
+            label={t("analysis.eyeHeight")}
             value={s.height}
             min={0.5}
             max={500}
@@ -162,23 +166,23 @@ function ViewshedSection() {
             format={(v) => `${v < 10 ? v.toFixed(1) : Math.round(v)} m`}
             onChange={(v) => engine?.viewshed.setHeight(v)}
           />
-          <Slider label="Radius" value={s.radius} min={100} max={5000} log format={fmtDist} onChange={(v) => engine?.viewshed.setRadius(v)} />
+          <Slider label={t("analysis.radius")} value={s.radius} min={100} max={5000} log format={fmtDist} onChange={(v) => engine?.viewshed.setRadius(v)} />
           <div className="num text-[11px] text-fg3" dir="ltr">
-            {s.lat.toFixed(5)}°, {s.lon.toFixed(5)}° · ground {s.ground.toFixed(1)} m · eye {(s.ground + s.height).toFixed(1)} m
+            {t("analysis.vsPosition", { lat: s.lat.toFixed(5), lon: s.lon.toFixed(5), ground: s.ground.toFixed(1), eye: (s.ground + s.height).toFixed(1) })}
           </div>
           <div className="flex gap-3 text-[11px]">
             <span className="inline-flex items-center gap-1 text-fg2">
-              <i className="inline-block h-2 w-3 rounded-[2px]" style={{ background: "var(--ok)" }} /> Visible
+              <i className="inline-block h-2 w-3 rounded-[2px]" style={{ background: "var(--ok)" }} /> {t("analysis.visible")}
             </span>
             <span className="inline-flex items-center gap-1 text-fg2">
-              <i className="inline-block h-2 w-3 rounded-[2px]" style={{ background: "var(--bad)" }} /> Hidden
+              <i className="inline-block h-2 w-3 rounded-[2px]" style={{ background: "var(--bad)" }} /> {t("analysis.hidden")}
             </span>
           </div>
         </div>
       )}
       <div className="flex flex-wrap gap-1.5">
         <button type="button" className={placing ? "btn-secondary" : "btn-primary"} onClick={() => set({ tool: placing ? "none" : "viewshed" })}>
-          {placing ? "Cancel" : s ? "Move observer" : "Place observer"} <span className="num opacity-70">V</span>
+          {placing ? t("common.cancel") : s ? t("analysis.moveObserver") : t("analysis.placeObserver")} <span className="num opacity-70">V</span>
         </button>
         {s && (
           <button
@@ -189,7 +193,7 @@ function ViewshedSection() {
               set({ tool: "none" });
             }}
           >
-            <X size={14} /> Clear
+            <X size={14} /> {t("misc.clear")}
           </button>
         )}
       </div>

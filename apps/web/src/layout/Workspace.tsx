@@ -177,9 +177,10 @@ function TileProblemsNotice() {
 }
 
 export function FullscreenHint() {
+  const { t } = useTranslation();
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-7 z-10 flex justify-center">
-      <span className="rounded-full bg-black/50 px-3 py-1 text-[12px] text-white/80">Full screen · press F to show the tools</span>
+      <span className="rounded-full bg-black/50 px-3 py-1 text-[12px] text-white/80">{t("misc.fullscreen")}</span>
     </div>
   );
 }

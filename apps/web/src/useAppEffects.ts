@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { findModel, refreshLibrary } from "./state/library";
 import { findServer, getBaseMaps, getLayerManifest, listLevels, recordView } from "./server/api";
 import { readShare } from "./share";
@@ -33,6 +34,11 @@ export function useOpenModel() {
 /** Wires app state to the engine and installs the global keyboard shortcuts (SRS 5.1). */
 export function useAppEffects(): void {
   const engine = useEngine();
+  const { t, i18n } = useTranslation();
+  // New measurements are named in the interface language.
+  useEffect(() => {
+    if (engine) engine.measure.labelFor = (kind, n) => t(`measureNames.${kind}`, { n });
+  }, [engine, t, i18n.language]);
   const tool = useApp((s) => s.tool);
   const quality = useApp((s) => s.quality);
   const adaptive = useApp((s) => s.adaptiveResolution);
