@@ -71,9 +71,16 @@ jobs:
 
   # Production gap 7: the browser acceptance checks run on every pull request, in software
   # rendering (SwiftShader), on the light sample set (Khronos models and CesiumGS tilesets).
+  # Software rendering is slow and runners vary (one check took 12 to 25 minutes), so the checks
+  # run as three jobs side by side, each well inside its limit.
   browser:
+    name: browser (${{ matrix.suite }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [shell, layers, tools]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -98,19 +105,23 @@ jobs:
           for i in $(seq 1 60); do curl -sf http://localhost:4173/ > /dev/null && exit 0; sleep 1; done
           cat "$RUNNER_TEMP/preview.log"; exit 1
       - name: Shell in both languages and themes, with accessibility (AC WP 1.8)
+        if: matrix.suite == 'shell'
         run: node scripts/check-shell.cjs check-out/shell
         env:
           SHELL_MODEL: SciFi Helmet
       - name: Layers (AC-05)
+        if: matrix.suite == 'layers'
         run: node scripts/check-layers.cjs
       - name: A fault in one part keeps the rest working
+        if: matrix.suite == 'tools'
         run: node scripts/check-faults.cjs
       - name: Snapping to corners and edges within 10 px (MSR-03)
+        if: matrix.suite == 'tools'
         run: node scripts/check-snap.cjs
       - name: Screenshots
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: browser-check-screenshots
+          name: browser-check-screenshots-${{ matrix.suite }}
           path: check-out/
           if-no-files-found: ignore
