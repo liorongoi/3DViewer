@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# VIEWER backup: the database and the published model files, in one folder.
+#
+#   viewer-backup [backup root]        (default: $BACKUP_DIR, else /var/backups/viewer)
+#
+# Settings come from the server's environment file (VIEWER_ENV, default /etc/viewer/viewer.env):
+# DATABASE_URL, DATA_DIR and STORAGE_DIR, exactly as the server reads them.
+#
+# It writes <root>/viewer-<UTC time>/ with:
+#   database.dump   pg_dump custom format (PostgreSQL), or
+#   database.tar    the embedded database folder (EMBEDDED_DB=1; stop the server first)
+#   files.tar       STORAGE_DIR/files: every published model file and thumbnail
+#   MANIFEST        when, from where, and the SHA-256 of each file
+#
+# The database is dumped before the files. Published files are never changed in place, only
+# added, so every file the dumped database names is in files.tar. PostgreSQL backups run while
+# the server is up. KEEP (default 14) is how many backups to keep; older ones are removed.
+set -euo pipefail
+umask 077
+
+ENV_FILE="${VIEWER_ENV:-/etc/viewer/viewer.env}"
+if [[ -r "$ENV_FILE" ]]; then set -a; . "$ENV_FILE"; set +a; fi
+DATA_DIR="${DATA_DIR:-./data}"
+STORAGE_DIR="${STORAGE_DIR:-$DATA_DIR/storage}"
+ROOT="${1:-${BACKUP_DIR:-/var/backups/viewer}}"
+KEEP="${KEEP:-14}"
+PG_DUMP="${PG_DUMP:-pg_dump}"
+
+fail() { echo "viewer-backup: $*" >&2; exit 1; }
+[[ -d "$STORAGE_DIR/files" ]] || fail "STORAGE_DIR/files ($STORAGE_DIR/files) does not exist. Is VIEWER_ENV right?"
+[[ "$KEEP" =~ ^[0-9]+$ && "$KEEP" -ge 1 ]] || fail "KEEP must be a whole number of 1 or more."
+
+stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+dest="$ROOT/viewer-$stamp"
+work="$dest.partial"
+mkdir -p "$work"
+trap 'rm -rf "$work"' EXIT
+
+if [[ -n "${DATABASE_URL:-}" ]]; then
+  command -v "${PG_DUMP%% *}" >/dev/null || fail "pg_dump is not installed (the PostgreSQL client, same major version as the server or newer)."
+  $PG_DUMP --format=custom --no-owner --no-privileges --file="$work/database.dump" --dbname="$DATABASE_URL"
+  db_kind=postgres
+else
+  [[ -d "$DATA_DIR/db" ]] || fail "No DATABASE_URL and no embedded database in $DATA_DIR/db."
+  # The embedded database is a folder of files: copying it while the server writes would not
+  # give a consistent copy.
+  if [[ "${ALLOW_RUNNING:-0}" != 1 ]] && curl -fsS -m 2 "http://${HOST:-127.0.0.1}:${PORT:-8787}/api/health/live" >/dev/null 2>&1; then
+    fail "The server is running. Stop it before backing up the embedded database (systemctl stop viewer-server)."
+  fi
+  tar -C "$DATA_DIR" -cf "$work/database.tar" db
+  db_kind=embedded
+fi
+
+tar -C "$STORAGE_DIR" -cf "$work/files.tar" files
+
+{
+  echo "created $stamp"
+  echo "database $db_kind"
+  echo "host $(hostname)"
+  echo "storage $STORAGE_DIR"
+  (cd "$work" && sha256sum database.* files.tar)
+} > "$work/MANIFEST"
+
+mv "$work" "$dest"
+trap - EXIT
+
+# Keep the newest KEEP backups.
+mapfile -t old < <(ls -1d "$ROOT"/viewer-*Z 2>/dev/null | sort | head -n "-$KEEP")
+for d in "${old[@]}"; do rm -rf -- "$d"; done
+
+echo "$dest"

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { ConfigError, loadConfig } from "./config.ts";
 
@@ -39,5 +40,27 @@ describe("server settings", () => {
     const c = loadConfig({ NODE_ENV: "production", DATABASE_URL: "postgres://viewer:pw@db/viewer", CORS_ORIGINS: "https://viewer.internal, viewer-file://app" });
     expect(c).toMatchObject({ production: true, seedSamples: false, corsOrigins: ["https://viewer.internal", "viewer-file://app"] });
     expect(loadConfig({ NODE_ENV: "production", EMBEDDED_DB: "1" }).databaseUrl).toBeNull();
+  });
+});
+
+describe("deploy/viewer.env.example", () => {
+  const file = readFileSync(new URL("../../../deploy/viewer.env.example", import.meta.url), "utf8");
+  it("is a valid production configuration as written", () => {
+    const env: Record<string, string> = { NODE_ENV: "production" };
+    for (const line of file.split("\n")) {
+      const m = /^([A-Z_]+)=(.*)$/.exec(line.trim());
+      if (m) env[m[1]!] = m[2]!;
+    }
+    // The tools are not installed here; the template's paths are checked for shape only.
+    env.CLAMDSCAN = env.FBX2GLTF = process.execPath;
+    const c = loadConfig(env);
+    expect(c).toMatchObject({ production: true, seedSamples: false, host: "127.0.0.1", writeRateLimit: 600 });
+  });
+  it("names every setting the server reads", () => {
+    const src = readFileSync(new URL("./config.ts", import.meta.url), "utf8");
+    const read = new Set([...src.matchAll(/(?:get|bool|int|url|program)\("([A-Z_]+)"/g)].map((m) => m[1]!));
+    read.delete("NODE_ENV"); // set by the service unit
+    const named = new Set([...file.matchAll(/^#?\s*([A-Z_]+)=/gm)].map((m) => m[1]!));
+    expect([...read].filter((k) => !named.has(k))).toEqual([]);
   });
 });
