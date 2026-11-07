@@ -46,8 +46,9 @@ async function fill(db: Db) {
   await audit(db, { ip: "10.0.0.7", host: "ANALYST-07", action: "model.view", target: "m1", detail: {} });
 }
 async function state(db: Db) {
-  const [{ n: models }] = await db.query<{ n: number }>("SELECT count(*)::int AS n FROM models");
-  const [{ n: events }] = await db.query<{ n: number }>("SELECT count(*)::int AS n FROM audit_events");
+  const count = async (table: string) => (await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM ${table}`))[0]!.n;
+  const models = await count("models");
+  const events = await count("audit_events");
   return { models, events, chain: (await verifyAudit(db)).ok };
 }
 

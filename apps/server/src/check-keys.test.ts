@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { hasEnglish } from "@viewer/shared";
 
@@ -7,7 +8,8 @@ import { hasEnglish } from "@viewer/shared";
 // (the i18n test checks that Hebrew has the same keys).
 describe("check report keys", () => {
   it("are all in the strings", () => {
-    const roots = [path.join(__dirname), path.join(__dirname, "../../../../apps/server/src")];
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const roots = [path.join(here, "../../../packages/core/src/loaders"), here];
     const keys = new Set<string>();
     for (const dir of roots)
       for (const f of readdirSync(dir).filter((n) => n.endsWith(".ts") && !n.endsWith(".test.ts")))
