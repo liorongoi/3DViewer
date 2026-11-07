@@ -52,7 +52,9 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
           style={{ paddingInlineStart: 4 + depth * 14 }}
           onPointerEnter={() => {
             if (paint.current !== null && l.visible !== paint.current) toggle(l, paint.current);
+            engine?.highlightLayer(l.id);
           }}
+          onPointerLeave={() => engine?.highlightLayer(null)}
         >
           <button
             type="button"
@@ -73,7 +75,7 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
             type="button"
             aria-label={l.visible ? t("common.hide") : t("common.show")}
             title={`${l.visible ? t("common.hide") : t("common.show")} · ${t("shell.altClick")}: ${t("viewer.isolate")}`}
-            disabled={!l.nodeName && l.id !== "tileset" && !l.children.length}
+            disabled={l.node === undefined && !l.nodeName && l.id !== "tileset" && !l.children.length}
             className={cx("grid h-7 w-7 place-items-center rounded", l.visible ? "text-fg2 hover:text-fg" : "text-fg3", "disabled:opacity-30")}
             onPointerDown={(e) => {
               if (e.altKey) return;
@@ -98,7 +100,7 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
             onClick={() => engine?.selectedLayer.set(l.id === selected ? null : l.id)}
             onDoubleClick={() => (engine?.selectedLayer.set(l.id), void engine?.focusLayer(l.id))}
           >
-            {l.name}
+            <Highlight text={l.name} query={query} />
           </span>
           <span className="flex opacity-0 group-hover:opacity-100 focus-within:opacity-100">
             <IconButton size="sm" label={t("viewer.isolate")} onClick={() => solo(l)}>
@@ -193,5 +195,19 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
       </>
       )}
     </Panel>
+  );
+}
+
+/** The name with the part that matches the search marked. */
+function Highlight({ text, query }: { text: string; query: string }) {
+  const q = query.trim().toLocaleLowerCase();
+  const at = q ? text.toLocaleLowerCase().indexOf(q) : -1;
+  if (at < 0) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, at)}
+      <mark className="rounded-[3px] bg-accent-soft text-fg">{text.slice(at, at + q.length)}</mark>
+      {text.slice(at + q.length)}
+    </>
   );
 }

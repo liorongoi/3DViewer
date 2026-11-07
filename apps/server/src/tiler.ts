@@ -48,7 +48,18 @@ interface Geo {
   tan: Float32Array | null;
   uv: Float32Array | null;
   col: Float32Array | null;
+  /** The glTF node each vertex came from: the layer it belongs to. */
+  fid: Float32Array;
   idx: Uint32Array;
+}
+
+/** A layer of the tiled model: a glTF node of the original, with its extent in tile coordinates. */
+export interface TiledLayer {
+  id: string;
+  name: string;
+  node: number;
+  box: { lo: number[]; hi: number[] };
+  children: TiledLayer[];
 }
 
 /** A cell: for each geometry, the triangles in it. */
@@ -79,7 +90,10 @@ async function flatten(file: string, opts: TileOptions) {
   const materials = root.listMaterials();
   const s = opts.scale ?? 1;
   const zUp = opts.upAxis === "z";
-  const chunks = new Map<string, { mat: number; parts: { pos: Float32Array; nor: Float32Array | null; tan: Float32Array | null; uv: Float32Array | null; col: Float32Array | null; idx: Uint32Array }[] }>();
+  const chunks = new Map<string, { mat: number; parts: { pos: Float32Array; nor: Float32Array | null; tan: Float32Array | null; uv: Float32Array | null; col: Float32Array | null; fid: Float32Array; idx: Uint32Array }[] }>();
+  const allNodes = root.listNodes();
+  // Each mesh node's own extent, in tile coordinates.
+  const nodeBox = new Map<number, { lo: number[]; hi: number[] }>();
   let skipped = 0;
   const el: number[] = [];
 
@@ -99,6 +113,9 @@ async function flatten(file: string, opts: TileOptions) {
       // (packages/core/src/geo/place.ts), so a Y-up file passes through and a Z-up file
       // (east +X, north +Y) is stood up.
       const out = (x: number, y: number, z: number): Vec3 => (zUp ? [x, z, -y] : [x, y, z]);
+      const nodeIndex = allNodes.indexOf(node);
+      const nb = nodeBox.get(nodeIndex) ?? { lo: [Infinity, Infinity, Infinity], hi: [-Infinity, -Infinity, -Infinity] };
+      nodeBox.set(nodeIndex, nb);
       for (const prim of mesh.listPrimitives()) {
         if (prim.getMode() !== 4) {
           skipped++;
@@ -121,6 +138,10 @@ async function flatten(file: string, opts: TileOptions) {
           const x = el[0]!, y = el[1]!, z = el[2]!;
           const w = out((m[0] * x + m[4] * y + m[8] * z + m[12]) * s, (m[1] * x + m[5] * y + m[9] * z + m[13]) * s, (m[2] * x + m[6] * y + m[10] * z + m[14]) * s);
           pos.set(w, i * 3);
+          for (let k = 0; k < 3; k++) {
+            if (w[k]! < nb.lo[k]!) nb.lo[k] = w[k]!;
+            if (w[k]! > nb.hi[k]!) nb.hi[k] = w[k]!;
+          }
           if (N && nor) {
             N.getElement(i, el);
             // (inverse)ᵀ · n: row-major inverse, so the transpose reads its columns.
@@ -157,7 +178,7 @@ async function flatten(file: string, opts: TileOptions) {
         const mat = prim.getMaterial() ? materials.indexOf(prim.getMaterial()!) : -1;
         const key = `${mat}|${nor ? "n" : ""}${tan ? "g" : ""}${uv ? "t" : ""}${col ? "c" : ""}`;
         const c = chunks.get(key) ?? { mat, parts: [] };
-        c.parts.push({ pos, nor, tan, uv, col, idx });
+        c.parts.push({ pos, nor, tan, uv, col, fid: new Float32Array(n).fill(nodeIndex), idx });
         chunks.set(key, c);
       }
     }
@@ -178,6 +199,7 @@ async function flatten(file: string, opts: TileOptions) {
       tan: c.parts[0]!.tan ? new Float32Array(nv * 4) : null,
       uv: c.parts[0]!.uv ? new Float32Array(nv * 2) : null,
       col: c.parts[0]!.col ? new Float32Array(nv * 4) : null,
+      fid: new Float32Array(nv),
       idx: new Uint32Array(ni),
     };
     let vo = 0, io2 = 0;
@@ -187,13 +209,31 @@ async function flatten(file: string, opts: TileOptions) {
       if (g.tan) g.tan.set(p.tan!, vo * 4);
       if (g.uv) g.uv.set(p.uv!, vo * 2);
       if (g.col) g.col.set(p.col!, vo * 4);
+      g.fid.set(p.fid, vo);
       for (let i = 0; i < p.idx.length; i++) g.idx[io2 + i] = p.idx[i]! + vo;
       vo += p.pos.length / 3;
       io2 += p.idx.length;
     }
     geos.push(g);
   }
-  return { doc, materials, geos, skipped };
+  // The layer tree, as the viewer builds it for a single model (packages/core/src/layers):
+  // nodes with no mesh below them are left out, and a lone unnamed wrapper is dropped.
+  const layer = (node: Node, depth: number): TiledLayer | null => {
+    if (depth > 64) return null;
+    const i = allNodes.indexOf(node);
+    const children = node.listChildren().map((c) => layer(c, depth + 1)).filter((x): x is TiledLayer => !!x);
+    // A node whose primitives were all lines or points has no triangles in the tiles.
+    const own = nodeBox.get(i);
+    const boxes = [...(own && Number.isFinite(own.lo[0]!) ? [own] : []), ...children.map((c) => c.box)];
+    if (!boxes.length) return null;
+    const box = { lo: [0, 1, 2].map((k) => Math.min(...boxes.map((b) => b.lo[k]!))), hi: [0, 1, 2].map((k) => Math.max(...boxes.map((b) => b.hi[k]!))) };
+    return { id: `node-${i}`, name: node.getName() || node.getMesh()?.getName() || `Node ${i}`, node: i, box, children };
+  };
+  let layers = (scene?.listChildren() ?? []).map((n) => layer(n, 0)).filter((x): x is TiledLayer => !!x);
+  const names = new Map<string, number>();
+  for (const n of allNodes) if (n.getName()) names.set(n.getName(), (names.get(n.getName()) ?? 0) + 1);
+  if (layers.length === 1 && layers[0]!.children.length && !(allNodes[layers[0]!.node]!.getName() && names.get(allNodes[layers[0]!.node]!.getName()) === 1)) layers = layers[0]!.children;
+  return { doc, materials, geos, skipped, layers };
 }
 
 /** Keeps only the vertices the indices use. */
@@ -201,7 +241,7 @@ function compact(g: Geo, idx: Uint32Array): Geo {
   const map = new Int32Array(g.pos.length / 3).fill(-1);
   let n = 0;
   for (const v of idx) if (map[v] === -1) map[v] = n++;
-  const out: Geo = { key: g.key, mat: g.mat, pos: new Float32Array(n * 3), nor: g.nor && new Float32Array(n * 3), tan: g.tan && new Float32Array(n * 4), uv: g.uv && new Float32Array(n * 2), col: g.col && new Float32Array(n * 4), idx: new Uint32Array(idx.length) };
+  const out: Geo = { key: g.key, mat: g.mat, pos: new Float32Array(n * 3), nor: g.nor && new Float32Array(n * 3), tan: g.tan && new Float32Array(n * 4), uv: g.uv && new Float32Array(n * 2), col: g.col && new Float32Array(n * 4), fid: new Float32Array(n), idx: new Uint32Array(idx.length) };
   for (let v = 0; v < map.length; v++) {
     const k = map[v]!;
     if (k < 0) continue;
@@ -210,6 +250,7 @@ function compact(g: Geo, idx: Uint32Array): Geo {
     if (g.tan) out.tan!.set(g.tan.subarray(v * 4, v * 4 + 4), k * 4);
     if (g.uv) out.uv!.set(g.uv.subarray(v * 2, v * 2 + 2), k * 2);
     if (g.col) out.col!.set(g.col.subarray(v * 4, v * 4 + 4), k * 4);
+    out.fid[k] = g.fid[v]!;
   }
   for (let i = 0; i < idx.length; i++) out.idx[i] = map[idx[i]!]!;
   return out;
@@ -276,7 +317,7 @@ function merge(list: Geo[]): Geo[] {
   return [...by.values()].map((gs) => {
     if (gs.length === 1) return gs[0]!;
     const nv = gs.reduce((t, g) => t + g.pos.length / 3, 0);
-    const out: Geo = { key: gs[0]!.key, mat: gs[0]!.mat, pos: new Float32Array(nv * 3), nor: gs[0]!.nor && new Float32Array(nv * 3), tan: gs[0]!.tan && new Float32Array(nv * 4), uv: gs[0]!.uv && new Float32Array(nv * 2), col: gs[0]!.col && new Float32Array(nv * 4), idx: new Uint32Array(gs.reduce((t, g) => t + g.idx.length, 0)) };
+    const out: Geo = { key: gs[0]!.key, mat: gs[0]!.mat, pos: new Float32Array(nv * 3), nor: gs[0]!.nor && new Float32Array(nv * 3), tan: gs[0]!.tan && new Float32Array(nv * 4), uv: gs[0]!.uv && new Float32Array(nv * 2), col: gs[0]!.col && new Float32Array(nv * 4), fid: new Float32Array(nv), idx: new Uint32Array(gs.reduce((t, g) => t + g.idx.length, 0)) };
     let vo = 0, io = 0;
     for (const g of gs) {
       out.pos.set(g.pos, vo * 3);
@@ -284,6 +325,7 @@ function merge(list: Geo[]): Geo[] {
       if (out.tan) out.tan.set(g.tan!, vo * 4);
       if (out.uv) out.uv.set(g.uv!, vo * 2);
       if (out.col) out.col.set(g.col!, vo * 4);
+      out.fid.set(g.fid, vo);
       for (let i = 0; i < g.idx.length; i++) out.idx[io + i] = g.idx[i]! + vo;
       vo += g.pos.length / 3;
       io += g.idx.length;
@@ -382,14 +424,22 @@ function writeGlb(geos: Geo[], mats: Awaited<ReturnType<typeof exportMaterials>>
   const accessors: Record<string, unknown>[] = [];
   const chunks: Uint8Array[] = [];
   let offset = 0;
-  const add = (data: Float32Array | Uint32Array | Uint16Array, accessor: Record<string, unknown>, target: number) => {
+  const view = (data: Float32Array | Uint32Array | Uint16Array, target?: number) => {
     const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-    views.push({ buffer: 0, byteOffset: offset, byteLength: bytes.length, target });
+    views.push({ buffer: 0, byteOffset: offset, byteLength: bytes.length, ...(target ? { target } : {}) });
     chunks.push(bytes, new Uint8Array(pad4(bytes.length)));
     offset += bytes.length + pad4(bytes.length);
-    accessors.push({ bufferView: views.length - 1, ...accessor });
+    return views.length - 1;
+  };
+  const add = (data: Float32Array | Uint32Array | Uint16Array, accessor: Record<string, unknown>, target: number) => {
+    accessors.push({ bufferView: view(data, target), ...accessor });
     return accessors.length - 1;
   };
+  // Each vertex carries a feature id; the tile's property table turns it into the original
+  // glTF node (EXT_mesh_features, EXT_structural_metadata), so the viewer can show, hide and
+  // pick the original parts by layer.
+  const local = new Map<number, number>();
+  for (const g of geos) for (const f of g.fid) if (!local.has(f)) local.set(f, local.size);
   const gltf: Record<string, unknown> & { materials: unknown[]; textures: unknown[]; images: unknown[]; samplers: unknown[] } = {
     asset: { version: "2.0", generator: "VIEWER tiler" },
     scene: 0,
@@ -431,10 +481,18 @@ function writeGlb(geos: Geo[], mats: Awaited<ReturnType<typeof exportMaterials>>
     if (g.tan) attributes.TANGENT = add(g.tan, { componentType: 5126, count: nv, type: "VEC4" }, 34962);
     if (g.uv) attributes.TEXCOORD_0 = add(g.uv, { componentType: 5126, count: nv, type: "VEC2" }, 34962);
     if (g.col) attributes.COLOR_0 = add(g.col, { componentType: 5126, count: nv, type: "VEC4" }, 34962);
+    attributes._FEATURE_ID_0 = add(Float32Array.from(g.fid, (f) => local.get(f)!), { componentType: 5126, count: nv, type: "SCALAR" }, 34962);
     const small = nv < 65536;
     const indices = add(small ? Uint16Array.from(g.idx) : g.idx, { componentType: small ? 5123 : 5125, count: g.idx.length, type: "SCALAR" }, 34963);
-    return { attributes, indices, material: material(g.mat), mode: 4 };
+    return { attributes, indices, material: material(g.mat), mode: 4, extensions: { EXT_mesh_features: { featureIds: [{ featureCount: local.size, attribute: 0, propertyTable: 0 }] } } };
   });
+  gltf.extensions = {
+    EXT_structural_metadata: {
+      schema: { id: "viewer_layers", classes: { layer: { properties: { node: { type: "SCALAR", componentType: "UINT32", description: "Index of the glTF node in the original model" } } } } },
+      propertyTables: [{ class: "layer", count: local.size, properties: { node: { values: view(Uint32Array.from(local.keys())) } } }],
+    },
+  };
+  extUsed.add("EXT_mesh_features").add("EXT_structural_metadata");
   gltf.meshes = [{ primitives }];
   gltf.buffers = [{ byteLength: offset }];
   gltf.bufferViews = views;
@@ -442,7 +500,7 @@ function writeGlb(geos: Geo[], mats: Awaited<ReturnType<typeof exportMaterials>>
   for (const k of ["materials", "textures", "images", "samplers"] as const) if (!gltf[k].length) delete (gltf as Record<string, unknown>)[k];
   if (extUsed.size) {
     gltf.extensionsUsed = [...extUsed];
-    const required = [...extUsed].filter((e) => e !== "KHR_materials_unlit");
+    const required = [...extUsed].filter((e) => !["KHR_materials_unlit", "EXT_mesh_features", "EXT_structural_metadata"].includes(e));
     if (required.length) gltf.extensionsRequired = required;
   }
   const json = new TextEncoder().encode(JSON.stringify(gltf));
@@ -468,7 +526,7 @@ function writeGlb(geos: Geo[], mats: Awaited<ReturnType<typeof exportMaterials>>
 export async function tileModel(file: string, outDir: string, opts: TileOptions = {}, onProgress?: (done: number, total: number) => void): Promise<TileResult> {
   await MeshoptSimplifier.ready;
   const leaf = opts.leafTriangles ?? 100_000;
-  const { materials, geos, skipped } = await flatten(file, opts);
+  const { materials, geos, skipped, layers } = await flatten(file, opts);
   const total = geos.reduce((t, g) => t + g.idx.length / 3, 0);
   if (!total) throw new Error("The model has no triangles to tile.");
   await mkdir(path.join(outDir, "tiles"), { recursive: true });
@@ -525,6 +583,8 @@ export async function tileModel(file: string, outDir: string, opts: TileOptions 
     asset: { version: "1.1", generator: "VIEWER tiler" },
     geometricError: Math.max(root.error * 2, diag),
     root: { ...root.json, refine: "REPLACE" },
+    // The original's layer tree, for the viewer's Layers panel; each tile's features name their node.
+    extras: { layers },
   };
   await writeFile(path.join(outDir, "tileset.json"), JSON.stringify(tileset));
   files.push("tileset.json");

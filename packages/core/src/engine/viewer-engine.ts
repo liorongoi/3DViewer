@@ -1,4 +1,5 @@
 import {
+  ArcType,
   Axis,
   BoundingSphere,
   Cartesian2,
@@ -6,6 +7,8 @@ import {
   ImageBasedLighting,
   Cartographic,
   Cesium3DTileset,
+  Cesium3DTileFeature,
+  Cesium3DTileStyle,
   type Cesium3DTile,
   OrientedBoundingBox,
   CesiumWidget,
@@ -44,7 +47,7 @@ import { CameraController } from "./camera-controller";
 import { MeasureTool } from "./measure-tool";
 import { FlyByTour, FlyMode, captureViewpoint, type Viewpoint } from "./fly";
 import { signal } from "../signal";
-import { effectiveVisibility, findLayer, layerForNode, layersFromGltf, type Layer } from "../layers/layers";
+import { effectiveVisibility, findLayer, layerForNode, layersFromGltf, layersFromTileset, walk, type Layer } from "../layers/layers";
 import { applySiteConfig, catalogue, makeBaseLayers } from "./basemaps";
 import { ENVIRONMENTS, environmentSh, environmentSpecular, type EnvironmentId } from "./environments";
 import { cubeToKtx2 } from "./ktx2";
@@ -139,6 +142,11 @@ export class ViewerEngine {
   readonly layers = signal<Layer[]>([]);
   /** The layer picked by clicking the model, or in the layers panel; Focus selection (Z) fits it (NAV-05). */
   readonly selectedLayer = signal<string | null>(null);
+  /** The layer the pointer is over in the Layers panel, outlined in 3D (LYR, WP 2.2). */
+  readonly hoveredLayer = signal<string | null>(null);
+  private hoverBox: Entity | null = null;
+  /** The open tileset's layers are its original parts, shown and hidden by feature. */
+  private tilesetParts = false;
   private gltfNodes: { children?: number[] }[] = [];
   readonly loading = signal(false);
   readonly error = signal<OpenError | null>(null);
@@ -318,7 +326,10 @@ export class ViewerEngine {
         // Finer tiles can hold ground the first capture did not see: refine the cut as they load.
         this.offTilesLoaded = tileset.allTilesLoaded.addEventListener(() => this.scheduleGroundCutRefine());
         this.lod.attach(tileset);
-        this.layers.set([{ id: "tileset", name: summary.name, children: [], visible: true }]);
+        // A tileset from our tiler names the original's parts (tileset extras, and a feature per part in each tile).
+        const parts = layersFromTileset(tileset.extras);
+        this.tilesetParts = !!parts;
+        this.layers.set(parts ?? [{ id: "tileset", name: summary.name, children: [], visible: true }]);
         if (summary.source.localFrame && summary.placement) {
           // A tileset in local coordinates: placed like a model, from the upload's Place step.
           this.modelBaseHeight = await this.placementHeight(summary.placement);
@@ -398,6 +409,7 @@ export class ViewerEngine {
     this.tileset = null;
     this.layers.set([]);
     this.selectedLayer.set(null);
+    this.highlightLayer(null);
     this.gltfNodes = [];
     this.current.set(null);
     this.error.set(null);
@@ -456,9 +468,24 @@ export class ViewerEngine {
 
   /** A layer's extent on the Earth, from its glTF box placed the way Cesium draws the model. */
   layerSphere(layerId: string): BoundingSphere | null {
+    const pts = this.layerCorners(layerId);
+    return pts ? BoundingSphere.fromPoints(pts) : null;
+  }
+
+
+  /** Corners of a layer's glTF box on the Earth, in the order Cesium draws the model. */
+  layerCorners(layerId: string): Cartesian3[] | null {
     const l = findLayer(this.layers.get(), layerId);
+    if (l?.box && this.tileset && this.tilesetParts) {
+      // Tile content is Y-up glTF; 3D Tiles stands it up (x, −z, y) before the root transform.
+      const t = this.tileset.root.computedTransform;
+      const b = l.box;
+      return [...Array(8).keys()].map((c) => {
+        const x = c & 1 ? b.hi[0]! : b.lo[0]!, y = c & 2 ? b.hi[1]! : b.lo[1]!, z = c & 4 ? b.hi[2]! : b.lo[2]!;
+        return Matrix4.multiplyByPoint(t, new Cartesian3(x, -z, y), new Cartesian3());
+      });
+    }
     if (!l?.box || !this.model) return null;
-    // modelMatrix · file transform (CESIUM_RTC) · axis correction · scale, as Cesium composes it.
     const m = (this.model as unknown as { sceneGraph?: { computedModelMatrix?: Matrix4 } }).sceneGraph?.computedModelMatrix;
     if (!m) return null;
     const pts: Cartesian3[] = [];
@@ -466,7 +493,27 @@ export class ViewerEngine {
       const v = new Cartesian3(c & 1 ? l.box.hi[0] : l.box.lo[0], c & 2 ? l.box.hi[1] : l.box.lo[1], c & 4 ? l.box.hi[2] : l.box.lo[2]);
       pts.push(Matrix4.multiplyByPoint(m, v, new Cartesian3()));
     }
-    return BoundingSphere.fromPoints(pts);
+    return pts;
+  }
+
+  /**
+   * Outlines a layer in 3D with its box, drawn over the model so it shows through walls
+   * (pointer over its row in the Layers panel). null clears it.
+   */
+  highlightLayer(layerId: string | null): void {
+    if (this.hoverBox) this.widget.entities.remove(this.hoverBox);
+    this.hoverBox = null;
+    this.hoveredLayer.set(layerId);
+    const pts = layerId ? this.layerCorners(layerId) : null;
+    if (pts) {
+      // One line through all 12 edges, retracing three of them.
+      const path = [0, 1, 3, 2, 0, 4, 5, 1, 5, 7, 3, 7, 6, 2, 6, 4].map((i) => pts[i]!);
+      const accent = Color.fromCssColorString("#F05BDC");
+      this.hoverBox = this.widget.entities.add({
+        polyline: { positions: path, width: 2, arcType: ArcType.NONE, material: accent, depthFailMaterial: accent.withAlpha(0.45) },
+      });
+    }
+    this.widget.scene.requestRender();
   }
 
   /** Selects the layer under a window position, or clears the selection. Returns the layer id. */
@@ -476,7 +523,10 @@ export class ViewerEngine {
     if (picked?.primitive && picked.primitive === this.model) {
       const index = picked.detail?.node?.node?.index;
       if (index !== undefined) id = layerForNode(this.layers.get(), this.gltfNodes, index)?.id ?? null;
-    } else if (picked?.primitive && picked.primitive === this.tileset) id = "tileset";
+    } else if (picked?.primitive && picked.primitive === this.tileset) {
+      const node = this.tilesetParts && picked instanceof Cesium3DTileFeature ? Number(picked.getProperty("node")) : NaN;
+      id = Number.isFinite(node) ? (findLayer(this.layers.get(), `node-${node}`)?.id ?? null) : this.tilesetParts ? null : "tileset";
+    }
     this.selectedLayer.set(id);
     return id;
   }
@@ -949,22 +999,30 @@ export class ViewerEngine {
   setLayers(next: Layer[]): void {
     this.layers.set(next);
     const vis = effectiveVisibility(next);
-    if (this.tileset) this.tileset.show = vis.get("tileset") ?? true;
+    if (this.tileset && this.tilesetParts) {
+      const hidden = new Set<number>();
+      walk(next, (l) => {
+        if (l.node !== undefined && vis.get(l.id) === false) hidden.add(l.node);
+      });
+      // Evaluated per feature as tiles load; the property is the part's node in the original.
+      this.tileset.style = hidden.size ? Object.assign(new Cesium3DTileStyle(), { show: { evaluate: (f: Cesium3DTileFeature) => !hidden.has(Number(f.getProperty("node"))) } }) : undefined;
+    } else if (this.tileset) this.tileset.show = vis.get("tileset") ?? true;
     if (this.model) {
-      const apply = (ls: Layer[]) => {
-        for (const l of ls) {
-          if (l.nodeName) {
-            try {
-              const node = this.model!.getNode(l.nodeName);
-              if (node) node.show = vis.get(l.id) ?? true;
-            } catch {
-              /* node not addressable */
-            }
+      // By glTF node index, so parts that share a name toggle on their own too.
+      const runtime = (this.model as unknown as { sceneGraph?: { _runtimeNodes?: ({ show: boolean } | undefined)[] } }).sceneGraph?._runtimeNodes;
+      walk(next, (l) => {
+        const shown = vis.get(l.id) ?? true;
+        const node = l.node !== undefined ? runtime?.[l.node] : undefined;
+        if (node) node.show = shown;
+        else if (l.nodeName) {
+          try {
+            const named = this.model!.getNode(l.nodeName);
+            if (named) named.show = shown;
+          } catch {
+            /* node not addressable */
           }
-          apply(l.children);
         }
-      };
-      apply(next);
+      });
     }
     this.widget.scene.requestRender();
   }

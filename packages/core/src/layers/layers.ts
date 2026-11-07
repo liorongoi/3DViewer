@@ -70,6 +70,35 @@ export function layersFromGltf(gltf: GltfJson): Layer[] {
   return tree;
 }
 
+interface TiledLayerJson {
+  id?: unknown;
+  name?: unknown;
+  node?: unknown;
+  box?: { lo?: unknown; hi?: unknown };
+  children?: unknown;
+}
+
+/**
+ * The layer tree a tileset from our tiler carries in its extras (apps/server/src/tiler.ts):
+ * the original model's parts, with ids and boxes as for a single model. Null when the
+ * tileset has none, or it is not in that shape.
+ */
+export function layersFromTileset(extras: unknown): Layer[] | null {
+  const raw = (extras as { layers?: unknown } | undefined)?.layers;
+  if (!Array.isArray(raw) || !raw.length) return null;
+  const vec = (v: unknown) => (Array.isArray(v) && v.length === 3 && v.every((x) => Number.isFinite(x)) ? (v as [number, number, number]) : null);
+  const read = (j: TiledLayerJson, depth: number): Layer | null => {
+    if (depth > 64 || typeof j !== "object" || !j || !Number.isInteger(j.node)) return null;
+    const lo = vec(j.box?.lo), hi = vec(j.box?.hi);
+    const kids = Array.isArray(j.children) ? j.children.map((c) => read(c as TiledLayerJson, depth + 1)) : [];
+    if (kids.some((k) => !k)) return null;
+    const node = j.node as number;
+    return { id: `node-${node}`, name: typeof j.name === "string" && j.name ? j.name : `Node ${node}`, node, children: kids as Layer[], visible: true, ...(lo && hi ? { box: { lo, hi } } : {}) };
+  };
+  const out = raw.map((j) => read(j as TiledLayerJson, 0));
+  return out.every((l) => !!l) ? (out as Layer[]) : null;
+}
+
 export function walk(layers: Layer[], fn: (l: Layer, parent?: Layer) => void, parent?: Layer): void {
   for (const l of layers) {
     fn(l, parent);

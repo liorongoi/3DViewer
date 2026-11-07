@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { effectiveVisibility, filterLayers, findLayer, isolate, layerForNode, layersFromGltf, setAllVisible, setVisible } from "./layers";
+import { effectiveVisibility, filterLayers, findLayer, isolate, layerForNode, layersFromGltf, layersFromTileset, setAllVisible, setVisible } from "./layers";
 
 const gltf = {
   scenes: [{ nodes: [0] }],
@@ -76,5 +76,23 @@ describe("focus selection (NAV-05)", () => {
     // Node 5 has no geometry, so it is not a layer; its parent is.
     expect(layerForNode(tree, gltf.nodes, 5)?.name).toBe("Root");
     expect(layerForNode(tree, gltf.nodes, 99)).toBeUndefined();
+  });
+});
+
+describe("layers from a tiled model (WP 2.1)", () => {
+  it("reads the tree the tiler writes, with ids and boxes as for a single model", () => {
+    const extras = { layers: [{ id: "node-2", name: "Building", node: 2, box: { lo: [0, 0, -50], hi: [110, 0, 0] }, children: [{ name: "Walls", node: 0, box: { lo: [0, 0, -50], hi: [50, 0, 0] }, children: [] }, { name: "", node: 1, children: [] }] }] };
+    const l = layersFromTileset(extras)!;
+    expect(l).toHaveLength(1);
+    expect(l[0]).toMatchObject({ id: "node-2", name: "Building", node: 2, visible: true, box: { lo: [0, 0, -50], hi: [110, 0, 0] } });
+    expect(l[0]!.children.map((c) => [c.id, c.name, !!c.box])).toEqual([["node-0", "Walls", true], ["node-1", "Node 1", false]]);
+  });
+
+  it("returns null for a tileset with no parts, or parts it cannot read", () => {
+    expect(layersFromTileset(undefined)).toBeNull();
+    expect(layersFromTileset({})).toBeNull();
+    expect(layersFromTileset({ layers: [] })).toBeNull();
+    expect(layersFromTileset({ layers: [{ name: "x", node: "2", children: [] }] })).toBeNull();
+    expect(layersFromTileset({ layers: [{ name: "x", node: 2, children: [{ name: "bad" }] }] })).toBeNull();
   });
 });
