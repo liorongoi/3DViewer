@@ -171,6 +171,32 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
         return false;
       }));
 
+    // When a click misses: what the view holds, for the check's detail.
+    const viewState = () =>
+      page.evaluate(() => {
+        const e = window.viewerEngine;
+        const scene = e.widget.scene;
+        const target = e.tileset ?? e.model;
+        const bs = target?.boundingSphere;
+        const at = bs && scene.cartesianToCanvasCoordinates(bs.center);
+        const kinds = {};
+        const c = scene.canvas;
+        for (let y = 0.2; y <= 0.8; y += 0.15)
+          for (let x = 0.2; x <= 0.8; x += 0.15) {
+            const p = scene.pick({ x: c.clientWidth * x, y: c.clientHeight * y });
+            const k = !p ? "nothing" : p.primitive === e.tileset ? "tileset" : p.primitive === e.model ? "model" : p.primitive?.constructor?.name ?? p.constructor?.name ?? "other";
+            kinds[k] = (kinds[k] ?? 0) + 1;
+          }
+        const t = e.tileset;
+        return JSON.stringify({
+          picks: kinds,
+          centreOnScreen: at ? [Math.round(at.x), Math.round(at.y)] : null,
+          radius: bs ? Math.round(bs.radius * 100) / 100 : null,
+          camHeight: Math.round(scene.camera.positionCartographic.height),
+          tiles: t ? { loaded: t.tilesLoaded, selected: t._selectedTiles.length, commands: t.statistics.numberOfCommands, show: t.show, freeze: t.debugFreezeFrame, style: !!t.style } : null,
+        });
+      });
+
     // ---- LYR-01: the tree mirrors the hierarchy ----
     const layers = await engineLayers();
     let rows = await matches("as opened");
@@ -202,7 +228,10 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
     } else console.log(`INFO ${kind}: no part has children`);
 
     // ---- LYR-03: show all / hide all ----
-    check(await modelHit(), T("the model can be clicked before Hide all"));
+    {
+      const hit = await modelHit();
+      check(hit, T("the model can be clicked before Hide all"), hit ? undefined : await viewState());
+    }
     await button("Hide all").click();
     await page.waitForTimeout(400);
     rows = await matches("Hide all");
@@ -211,7 +240,10 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
     await button("Show all").click();
     await page.waitForTimeout(400);
     rows = await matches("Show all");
-    check(rows.every((r) => r.shown) && (await modelHit()), T("Show all shows every part again"));
+    {
+      const hit = await modelHit();
+      check(rows.every((r) => r.shown) && hit, T("Show all shows every part again"), hit ? undefined : await viewState());
+    }
 
     // ---- LYR-04: search ----
     const search = page.getByRole("textbox", { name: "Search layers" });
@@ -301,7 +333,7 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
       await page.waitForTimeout(400);
       const sel = await page.evaluate(() => window.viewerEngine.selectedLayer.get());
       const selRow = sel ? await row(sel).getAttribute("aria-selected") : null;
-      check(!!sel && selRow === "true", T("clicking a part in 3D selects its row"), sel ? layers.find((l) => l.id === sel)?.name : "nothing picked");
+      check(!!sel && selRow === "true", T("clicking a part in 3D selects its row"), sel ? layers.find((l) => l.id === sel)?.name : `nothing picked at ${Math.round(spot.x)},${Math.round(spot.y)}: ${await viewState()}`);
     }
 
     // ---- WP 2.1: a saved manifest renames, merges, nests and orders the layers ----
