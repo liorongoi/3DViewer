@@ -17,9 +17,11 @@ export interface LodStats {
   /** Points drawn (point clouds) and triangles (meshes). */
   points: number;
   triangles: number;
-  /** GPU memory for geometry and textures, bytes. */
+  /** GPU memory the tileset uses, bytes: Cesium's own total (geometry, textures, batch tables). */
   memory: number;
-  /** Tiles still being requested. */
+  /** Tiles with their content loaded, drawn or not (kept in the cache). */
+  loaded: number;
+  /** Tiles still being requested or processed. */
   loading: number;
 }
 
@@ -41,6 +43,8 @@ export class LodInspector {
   private offVisible: (() => void) | null = null;
   private offFrame: (() => void) | null = null;
   private lastPush = 0;
+  /** Tile contents already coloured by depth, so a tile is coloured once, not every frame. */
+  private tinted = new WeakSet<object>();
 
   constructor(private readonly scene: Scene) {}
 
@@ -50,13 +54,20 @@ export class LodInspector {
     this.offVisible = this.offFrame = null;
     this.tileset = tileset;
     this.stats.set(null);
+    this.tinted = new WeakSet();
     if (!tileset) return;
+    // A frozen selection belongs to the tileset it was frozen on: a new one starts live, or it
+    // would freeze before choosing any tile and show nothing.
+    if (this.settings.get().freeze) this.settings.set({ ...this.settings.get(), freeze: false });
     this.apply();
     this.offVisible = tileset.tileVisible.addEventListener((tile: Cesium3DTile) => {
       const d = depthOf(tile);
       this.frame.perDepth[d] = (this.frame.perDepth[d] ?? 0) + 1;
       this.frame.drawn++;
-      if (this.settings.get().colorByDepth) tint(tile, RAMP[Math.min(d, RAMP.length - 1)]!);
+      if (this.settings.get().colorByDepth && tile.content && !this.tinted.has(tile.content)) {
+        tint(tile, RAMP[Math.min(d, RAMP.length - 1)]!);
+        this.tinted.add(tile.content);
+      }
     });
     this.offFrame = this.scene.postRender.addEventListener(() => this.collect());
   }
@@ -66,7 +77,10 @@ export class LodInspector {
     this.settings.set({ ...was, ...patch });
     this.apply();
     // Turning the colouring off restores the tiles' own colours.
-    if (was.colorByDepth && patch.colorByDepth === false) this.forEachLoaded((t) => tint(t, Color.WHITE));
+    if (was.colorByDepth && patch.colorByDepth === false) {
+      this.forEachLoaded((t) => tint(t, Color.WHITE));
+      this.tinted = new WeakSet();
+    }
   }
 
   private apply(): void {
@@ -96,7 +110,8 @@ export class LodInspector {
       perDepth,
       points: st.numberOfPointsSelected ?? 0,
       triangles: st.numberOfTrianglesSelected ?? 0,
-      memory: (st.geometryByteLength ?? 0) + (st.texturesByteLength ?? 0),
+      memory: t.totalMemoryUsageInBytes,
+      loaded: st.numberOfTilesWithContentReady ?? 0,
       loading: (st.numberOfPendingRequests ?? 0) + (st.numberOfTilesProcessing ?? 0),
     });
   }

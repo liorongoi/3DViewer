@@ -7,6 +7,7 @@ import { setVisible } from "@viewer/core";
 import { useEngine } from "./engine";
 import { useApp } from "./state/store";
 import { useFilteredModels } from "./components/Library";
+import { undo } from "./state/undo";
 
 export function useOpenModel() {
   const engine = useEngine();
@@ -39,6 +40,7 @@ export function useAppEffects(): void {
   useEffect(() => {
     if (!engine) return;
     engine.measure.labelFor = (kind, n) => t(`measureNames.${kind}`, { n });
+    engine.sight.nameFor = (n) => t("measureNames.sight", { n });
     engine.measure.snapLabel = (kind, px) =>
         kind === "surface" ? "" : t(kind === "vertex" ? "measure.snapVertex" : "measure.snapEdge", { px: px.toFixed(1) });
     engine.measure.modelUnitName = t("measure.modelUnitName");
@@ -172,6 +174,10 @@ export function useAppEffects(): void {
         return;
       }
       if (typing || s.paletteOpen) return;
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "z") {
+        if (undo()) e.preventDefault();
+        return;
+      }
       if (e.key === "Escape") {
         if (s.helpOpen) return s.set({ helpOpen: false });
         if (s.tool !== "none") return s.set({ tool: "none" });

@@ -356,6 +356,63 @@ export class GeoTiffImageryProvider {
     return out;
   }
 
+  /**
+   * Heights at points (radians), bilinear between pixel centres of the full-resolution image;
+   * NaN outside the file or on no-data (DemSource.sampleHeights).
+   */
+  async sampleHeights(points: { longitude: number; latitude: number }[]): Promise<Float64Array> {
+    const out = new Float64Array(points.length).fill(NaN);
+    if (!this.elevation || !points.length) return out;
+    const W = this.info.width;
+    const H = this.info.height;
+    const px = new Float64Array(points.length);
+    const py = new Float64Array(points.length);
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
+    points.forEach((p, i) => {
+      const [sx, sy] = this.crs.fromLonLat(CMath.toDegrees(p.longitude), CMath.toDegrees(p.latitude));
+      px[i] = (sx - this.origin[0]) / this.res[0] - 0.5;
+      py[i] = (sy - this.origin[1]) / this.res[1] - 0.5;
+      if (px[i]! > -1 && py[i]! > -1 && px[i]! < W && py[i]! < H) {
+        minX = Math.min(minX, px[i]!);
+        maxX = Math.max(maxX, px[i]!);
+        minY = Math.min(minY, py[i]!);
+        maxY = Math.max(maxY, py[i]!);
+      }
+    });
+    if (minX > maxX) return out;
+    const x0 = Math.max(0, Math.floor(minX));
+    const y0 = Math.max(0, Math.floor(minY));
+    const x1 = Math.min(W, Math.floor(maxX) + 2);
+    const y1 = Math.min(H, Math.floor(maxY) + 2);
+    const image = this.levels[0]!.image;
+    const [band] = (await image.readRasters({ window: [x0, y0, x1, y1], samples: [0], interleave: false })) as unknown as ArrayLike<number>[];
+    const bw = x1 - x0;
+    const bh = y1 - y0;
+    const nd = this.noData;
+    const at = (x: number, y: number) => {
+      const v = band![Math.max(0, Math.min(bh - 1, y - y0)) * bw + Math.max(0, Math.min(bw - 1, x - x0))]!;
+      return (nd !== null && v === nd) || v < -1e4 ? NaN : v;
+    };
+    for (let i = 0; i < points.length; i++) {
+      const fx = px[i]!;
+      const fy = py[i]!;
+      // Half a pixel past the outer pixel centres still belongs to the file.
+      if (!(fx >= -0.5 && fy >= -0.5 && fx <= W - 0.5 && fy <= H - 0.5)) continue;
+      const cx = Math.max(0, Math.min(W - 1, fx));
+      const cy = Math.max(0, Math.min(H - 1, fy));
+      const ix = Math.min(W - 2, Math.floor(cx));
+      const iy = Math.min(H - 2, Math.floor(cy));
+      const tx = cx - ix;
+      const ty = cy - iy;
+      const h = (at(ix, iy) * (1 - tx) + at(ix + 1, iy) * tx) * (1 - ty) + (at(ix, iy + 1) * (1 - tx) + at(ix + 1, iy + 1) * tx) * ty;
+      out[i] = Number.isFinite(h) ? h : at(Math.round(cx), Math.round(cy));
+    }
+    return out;
+  }
+
   /** Cesium's ImageryLayer takes any object with the ImageryProvider shape. */
   asProvider(): ImageryProvider {
     return this as unknown as ImageryProvider;

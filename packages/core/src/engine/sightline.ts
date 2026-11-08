@@ -3,14 +3,20 @@ import {
   Cartesian2,
   Cartesian3,
   Cartographic,
+  Cesium3DTileset,
   Color,
   ColorMaterialProperty,
   ConstantProperty,
+  Ellipsoid,
   EllipsoidGeodesic,
   HorizontalOrigin,
   LabelStyle,
+  Model,
+  PrimitiveCollection,
   PolylineDashMaterialProperty,
+  Ray,
   VerticalOrigin,
+  type BoundingSphere,
   type Entity,
   type EntityCollection,
   type Scene,
@@ -43,6 +49,8 @@ export interface ProfileSample {
 
 export interface SightPair {
   id: string;
+  /** Number shown on the map as A1 and B1, kept when the pair is renamed. */
+  seq: number;
   name: string;
   a: { lon: number; lat: number; h: number };
   b: { lon: number; lat: number; h: number };
@@ -62,6 +70,8 @@ export interface SightPair {
 const VISIBLE = Color.fromCssColorString("#3DD68C");
 const BLOCKED = Color.fromCssColorString("#FF5A5F");
 const R_EARTH = 6371000;
+/** Rays for the objects along the line start this high, above any terrain or building. */
+const RAY_TOP = 12000;
 
 export class SightlineTool {
   readonly pairs = signal<SightPair[]>([]);
@@ -74,6 +84,8 @@ export class SightlineTool {
   private draftEntity: Entity | null = null;
   private drawn = new Map<string, Entity[]>();
   private seq = 0;
+  /** Name for a new pair; the app sets it to the translated wording. */
+  nameFor = (n: number): string => `Line of sight ${n}`;
 
   constructor(
     private readonly scene: Scene,
@@ -119,7 +131,8 @@ export class SightlineTool {
     const d = this.defaults.get();
     const pair: SightPair = {
       id: `los-${++this.seq}`,
-      name: `Line of sight ${this.seq}`,
+      seq: this.seq,
+      name: this.nameFor(this.seq),
       a: this.draftA,
       b: pt,
       aHeight: d.aHeight,
@@ -146,10 +159,25 @@ export class SightlineTool {
     else this.draw(this.pairs.get().find((p) => p.id === id)!);
   }
 
-  remove(id: string): void {
+  /** Deletes a pair. Returns it and where it was, so it can be put back. */
+  remove(id: string): { pair: SightPair; index: number } | null {
+    const list = this.pairs.get();
+    const index = list.findIndex((p) => p.id === id);
+    if (index < 0) return null;
     this.undraw(id);
-    this.pairs.set(this.pairs.get().filter((p) => p.id !== id));
+    this.pairs.set(list.filter((p) => p.id !== id));
     if (this.selected.get() === id) this.selected.set(this.pairs.get().at(-1)?.id ?? null);
+    return { pair: list[index]!, index };
+  }
+
+  /** Puts a deleted pair back where it was (undo). */
+  restore(pair: SightPair, index: number): void {
+    if (this.pairs.get().some((p) => p.id === pair.id)) return;
+    const list = [...this.pairs.get()];
+    list.splice(Math.min(index, list.length), 0, pair);
+    this.pairs.set(list);
+    this.selected.set(pair.id);
+    this.draw(pair);
   }
 
   clear(): void {
@@ -205,10 +233,35 @@ export class SightlineTool {
       if (!computing) this.draw(this.pairs.get().find((p) => p.id === id)!);
     };
     finish(build(null), true);
-    const surf = await this.scene
-      .sampleHeightMostDetailed(pts.map((p) => Cartographic.clone(p)), this.entities.values)
-      .catch(() => null);
-    finish(build(surf), false);
+    finish(build(await this.sampleObjects(pts)), false);
+  }
+
+  /**
+   * Height of the models, 3D Tiles and other objects over each point, or undefined where there
+   * are none. A ray down onto the globe is ignored: the ground comes from sampleGround at the
+   * terrain's full resolution, while the globe is drawn from whatever tiles are loaded, and a
+   * coarse tile over a valley would block a line of sight that is clear.
+   */
+  private async sampleObjects(pts: Cartographic[]): Promise<(Cartographic | undefined)[] | null> {
+    // Each ray renders the scene once, so skip them all when no model or 3D Tiles is near the line.
+    const ends = [pts[0]!, pts[pts.length - 1]!].map((p) => Cartographic.toCartesian(p));
+    if (!objectsNear(this.scene.primitives, ends[0]!, ends[1]!)) return null;
+    const exclude = this.entities.values;
+    // Public in all but name: sampleHeightMostDetailed is built on it, and it also says what was hit.
+    const scene = this.scene as unknown as { pickFromRayMostDetailed(ray: Ray, exclude?: unknown[]): Promise<{ object?: unknown; position?: Cartesian3 } | undefined> };
+    try {
+      return await Promise.all(
+        pts.map(async (p) => {
+          const up = Ellipsoid.WGS84.geodeticSurfaceNormalCartographic(p, new Cartesian3());
+          const ray = new Ray(Cartesian3.fromRadians(p.longitude, p.latitude, RAY_TOP), Cartesian3.negate(up, new Cartesian3()));
+          const hit = await scene.pickFromRayMostDetailed(ray, exclude);
+          if (!hit?.object || !hit.position) return undefined;
+          return Cartographic.fromCartesian(hit.position);
+        }),
+      );
+    } catch {
+      return null;
+    }
   }
 
   private patch(id: string, p: Partial<SightPair>): void {
@@ -273,11 +326,41 @@ export class SightlineTool {
         this.entities.add({ polyline: { positions: [ground, pos], width: 1.5, material: new ColorMaterialProperty(Color.WHITE.withAlpha(0.7)) } }),
       );
     };
-    const n = pair.name.replace(/^Line of sight /, "");
+    const n = pair.seq;
     end(A, Cartesian3.fromDegrees(pair.a.lon, pair.a.lat, pair.a.h), `A${n}`);
     end(B, Cartesian3.fromDegrees(pair.b.lon, pair.b.lat, pair.b.h), `B${n}`);
     for (const e of list) if (e.polyline) e.polyline.clampToGround = new ConstantProperty(false);
     this.drawn.set(pair.id, list);
     this.scene.requestRender();
   }
+}
+
+/** Is any shown model or 3D Tiles set within reach of the segment between a and b? */
+function objectsNear(collection: PrimitiveCollection, a: Cartesian3, b: Cartesian3): boolean {
+  const ab = Cartesian3.subtract(b, a, new Cartesian3());
+  const len2 = Cartesian3.magnitudeSquared(ab) || 1;
+  const near = (sphere: BoundingSphere | undefined) => {
+    if (!sphere) return false;
+    const ac = Cartesian3.subtract(sphere.center, a, new Cartesian3());
+    const t = Math.min(1, Math.max(0, Cartesian3.dot(ac, ab) / len2));
+    const closest = Cartesian3.add(a, Cartesian3.multiplyByScalar(ab, t, new Cartesian3()), new Cartesian3());
+    // The segment runs on the ground; the sight line can be a few hundred metres above it.
+    return Cartesian3.distance(closest, sphere.center) <= sphere.radius + 1000;
+  };
+  for (let i = 0; i < collection.length; i++) {
+    const p = collection.get(i) as unknown;
+    if (p instanceof PrimitiveCollection) {
+      if (p.show && objectsNear(p, a, b)) return true;
+    } else if (p instanceof Cesium3DTileset || p instanceof Model) {
+      // A model that is still loading has no bounding sphere yet.
+      let sphere: BoundingSphere | undefined;
+      try {
+        sphere = p.boundingSphere;
+      } catch {
+        sphere = undefined;
+      }
+      if (p.show && near(sphere)) return true;
+    }
+  }
+  return false;
 }

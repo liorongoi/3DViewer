@@ -85,3 +85,25 @@ describe("placementFrame", () => {
     expect(p.lat).toBeCloseTo(33.4163, 6);
   });
 });
+
+describe("a model placed from a projected grid keeps true heights (WP 2.7)", () => {
+  it("puts every surveyed corner of the accuracy block where PROJ puts it, to 1 mm", async () => {
+    const survey = (await import("../../../../scripts/fixtures/survey-reference.json")).default as unknown as {
+      epsg: number;
+      origin: [number, number, number];
+      points: { name: string; grid: [number, number, number]; ecef: [number, number, number] }[];
+    };
+    const [e0, n0, h0] = survey.origin;
+    const p = placementFromGrid({ epsg: survey.epsg, x: e0, y: n0, height: h0 });
+    // Grid scale stretches distances along the ground only.
+    expect(p.verticalFactor).toBeCloseTo(1 / p.scale!, 12);
+    const frame = placementFrame(p, h0);
+    for (const c of survey.points) {
+      const [e, n, h] = c.grid;
+      // Model frame (x east, y north, z up), in file metres: scale, then heights by verticalFactor.
+      const local: [number, number, number] = [(e - e0) * p.scale!, (n - n0) * p.scale!, (h - h0) * p.scale! * p.verticalFactor!];
+      const w = transformPoint(frame, local);
+      expect(Math.hypot(w[0] - c.ecef[0], w[1] - c.ecef[1], w[2] - c.ecef[2])).toBeLessThan(0.001);
+    }
+  });
+});

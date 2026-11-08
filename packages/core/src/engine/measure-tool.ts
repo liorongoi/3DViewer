@@ -168,11 +168,28 @@ export class MeasureTool {
     this.update(id, (m) => ({ ...m, visible }));
   }
 
-  remove(id: string): void {
+  /** Deletes a measurement. Returns it and where it stood, so restore can put it back (Ctrl+Z). */
+  remove(id: string): { measurement: Measurement; index: number } | undefined {
+    const list = this.measurements.get();
+    const index = list.findIndex((m) => m.id === id);
+    if (index < 0) return undefined;
     for (const e of this.shapes.get(id) ?? []) this.entities.remove(e);
     this.shapes.delete(id);
-    this.measurements.set(this.measurements.get().filter((m) => m.id !== id));
+    this.measurements.set(list.filter((m) => m.id !== id));
     this.requestRender();
+    return { measurement: list[index]!, index };
+  }
+
+  /** Puts a deleted measurement back where it stood. False when it is already there. */
+  restore(m: Measurement, index: number): boolean {
+    const list = this.measurements.get();
+    if (list.some((x) => x.id === m.id)) return false;
+    const next = [...list];
+    next.splice(Math.min(Math.max(0, index), next.length), 0, m);
+    this.measurements.set(next);
+    this.drawMeasurement(m);
+    this.requestRender();
+    return true;
   }
 
   clear(): void {
@@ -259,7 +276,38 @@ export class MeasureTool {
         disableDepthTestDistance: Number.POSITIVE_INFINITY,
       },
     });
-    this.draftEntities = [line, liveLabel, glyph];
+    // The measurement triangle while the second point is being chosen: horizontal and vertical
+    // legs, each with its length, so the three numbers are seen before the click.
+    const liveLegs = () => {
+      const pts = livePoints();
+      if (this.active.get() !== "distance" || pts.length !== 2) return undefined;
+      return triangle(pts[0]!, pts[1]!);
+    };
+    const legStyle = legPolyline();
+    const legLow = this.entities.add({
+      polyline: { positions: new CallbackProperty(() => { const t = liveLegs(); return t ? [t.low, t.corner] : []; }, false), ...legStyle },
+    });
+    const legHigh = this.entities.add({
+      polyline: { positions: new CallbackProperty(() => { const t = liveLegs(); return t ? [t.corner, t.high] : []; }, false), ...legStyle },
+    });
+    const legLabel = (which: "horizontal" | "vertical") =>
+      this.entities.add({
+        position: new CallbackPositionProperty(() => {
+          const t = liveLegs();
+          return t ? midpoint(which === "horizontal" ? t.low : t.corner, which === "horizontal" ? t.corner : t.high) : undefined;
+        }, false),
+        label: {
+          text: new CallbackProperty(() => {
+            const t = liveLegs();
+            if (!t) return "";
+            const r = measurePath([t.low, t.high]).segments[0]!;
+            if (which === "horizontal") return r.horizontal > 0.01 ? `↔ ${this.format(r.horizontal)}` : "";
+            return Math.abs(r.heightDelta) > 0.01 ? `↕ ${this.format(Math.abs(r.heightDelta))}` : "";
+          }, false),
+          ...labelStyle(true),
+        },
+      });
+    this.draftEntities = [line, liveLabel, glyph, legLow, legHigh, legLabel("horizontal"), legLabel("vertical")];
   }
 
   private drawMeasurement(m: Measurement): void {
@@ -288,15 +336,10 @@ export class MeasureTool {
       // Measurement triangle for two-point distances: horizontal and vertical legs.
       if (m.points.length === 2) {
         const [a, b] = m.points as [Cartesian3, Cartesian3];
-        const corner = triangleCorner(a, b);
-        if (corner) {
-          const legStyle = {
-            width: 1.5,
-            material: new PolylineDashMaterialProperty({ color: LEG, dashLength: 8 }),
-            depthFailMaterial: new PolylineDashMaterialProperty({ color: LEG.withAlpha(0.35), dashLength: 8 }),
-            arcType: ArcType.NONE,
-          };
-          const [low, high] = Cartographic.fromCartesian(a).height <= Cartographic.fromCartesian(b).height ? [a, b] : [b, a];
+        const tri = triangle(a, b);
+        if (tri) {
+          const { low, high, corner } = tri;
+          const legStyle = legPolyline();
           list.push(this.entities.add({ polyline: { positions: [low, corner], ...legStyle } }));
           list.push(this.entities.add({ polyline: { positions: [corner, high], ...legStyle } }));
           const r = m.result.segments[0]!;
@@ -339,13 +382,26 @@ function midpoint(a: Cartesian3, b: Cartesian3): Cartesian3 {
   return Cartesian3.midpoint(a, b, new Cartesian3());
 }
 
-/** Corner of the right-angle triangle: the higher point's position at the lower point's height. */
-function triangleCorner(a: Cartesian3, b: Cartesian3): Cartesian3 | undefined {
+/**
+ * The right-angle triangle between two points: the lower and higher point, and the corner, which
+ * is the higher point's position at the lower point's height.
+ */
+function triangle(a: Cartesian3, b: Cartesian3): { low: Cartesian3; high: Cartesian3; corner: Cartesian3 } | undefined {
   const ca = Cartographic.fromCartesian(a);
   const cb = Cartographic.fromCartesian(b);
   if (!ca || !cb) return undefined;
-  const [low, high] = ca.height <= cb.height ? [ca, cb] : [cb, ca];
-  return Cartesian3.fromRadians(high.longitude, high.latitude, low.height);
+  const [low, high, cl, ch] = ca.height <= cb.height ? [a, b, ca, cb] : [b, a, cb, ca];
+  return { low, high, corner: Cartesian3.fromRadians(ch.longitude, ch.latitude, cl.height) };
+}
+
+/** The dashed style of the triangle's horizontal and vertical legs. */
+function legPolyline() {
+  return {
+    width: 1.5,
+    material: new PolylineDashMaterialProperty({ color: LEG, dashLength: 8 }),
+    depthFailMaterial: new PolylineDashMaterialProperty({ color: LEG.withAlpha(0.35), dashLength: 8 }),
+    arcType: ArcType.NONE,
+  };
 }
 
 const glyphs = new Map<SnapKind, string>();

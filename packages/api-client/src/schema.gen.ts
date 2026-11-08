@@ -1068,6 +1068,7 @@ export type paths = {
                             scale?: number;
                             /** @enum {unknown} */
                             upAxis?: "y" | "z";
+                            verticalFactor?: number;
                         };
                     };
                 };
@@ -1315,6 +1316,7 @@ export type paths = {
                             scale?: number;
                             /** @enum {unknown} */
                             upAxis?: "y" | "z";
+                            verticalFactor?: number;
                         };
                         project?: string;
                         responsibleEntity?: string;
@@ -1631,6 +1633,7 @@ export type paths = {
                             scale?: number;
                             /** @enum {unknown} */
                             upAxis?: "y" | "z";
+                            verticalFactor?: number;
                         };
                         sizeBytes?: number;
                         source: {
@@ -1899,6 +1902,7 @@ export type components = {
             scale?: number;
             /** @enum {unknown} */
             upAxis?: "y" | "z";
+            verticalFactor?: number;
         };
         Version: {
             /** Format: date-time */

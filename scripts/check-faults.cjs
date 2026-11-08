@@ -51,7 +51,8 @@ const TEXT = {
         const scene = window.viewerEngine.widget.scene;
         let n = 0;
         const off = scene.postRender.addEventListener(() => n++);
-        for (let i = 0; i < 10; i++) (scene.requestRender(), await new Promise((r) => setTimeout(r, 100)));
+        // A frame of the whole globe can take most of a second in software rendering: wait up to 10 s for one.
+        for (let i = 0; i < 100 && n < 2; i++) (scene.requestRender(), await new Promise((r) => setTimeout(r, 100)));
         off();
         return n;
       });

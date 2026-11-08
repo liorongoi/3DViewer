@@ -104,6 +104,8 @@ export function placementFromGrid(g: GridPosition): Placement {
     ...(g.aboveGround !== undefined ? { aboveGround: g.aboveGround } : {}),
     headingDeg: (g.headingDeg ?? 0) + f.northDeg,
     scale: (g.scale ?? 1) * f.groundPerGrid * elevation,
+    // Grid scale is for distances along the ground; heights stay in the file's own unit.
+    ...(projected ? { verticalFactor: 1 / (f.groundPerGrid * elevation) } : {}),
     ...(g.upAxis === "z" ? { upAxis: "z" as const } : {}),
     ...(projected ? { grid: { epsg: g.epsg, x: g.x, y: g.y, northDeg: f.northDeg, groundPerGrid: f.groundPerGrid * elevation } } : {}),
   };

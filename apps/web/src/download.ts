@@ -12,6 +12,18 @@ export function saveText(name: string, text: string, type = "text/csv;charset=ut
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/** Saves binary data (for example a GeoTIFF) the same way. */
+export function saveBytes(name: string, data: ArrayBuffer, type = "application/octet-stream"): void {
+  const url = URL.createObjectURL(new Blob([data], { type }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 /** File-safe name: letters, digits, dash. */
 export const slug = (s: string) => s.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "").toLowerCase() || "export";
 

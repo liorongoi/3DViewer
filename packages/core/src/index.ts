@@ -10,7 +10,7 @@ export type { Viewpoint } from "./engine/fly";
 export { BASE_MAPS, TERRAINS, catalogue, type BaseMapDef, type TerrainDef } from "./engine/basemaps";
 export { pairsToCsv, profileToCsv } from "./engine/sight-csv";
 export { SightlineTool, type SightPair, type ProfileSample } from "./engine/sightline";
-export { Viewshed, type ViewshedState } from "./engine/viewshed";
+export { Viewshed, type ViewshedState, type ViewshedArea } from "./engine/viewshed";
 export { UserLayers, type UserLayer, type UserLayerSource, type PickedFeature } from "./engine/user-layers";
 export type { WmtsLayerInfo, WmsLayerInfo } from "./engine/ogc";
 export { LodInspector, type LodStats, type LodSettings } from "./engine/lod-inspector";

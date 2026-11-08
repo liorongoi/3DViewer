@@ -1,11 +1,12 @@
 import { useTranslation } from "react-i18next";
 import { useEngine, useSignal } from "../engine";
 import { useApp } from "../state/store";
-import { Download, Eye, EyeOff, Radar, ScanEye, Trash2, X } from "./icons";
+import { Download, Eye, EyeOff, Radar, Ruler, ScanEye, Trash2, X } from "./icons";
 import { IconButton, cx } from "./primitives";
 import { ProfileChart, fmtDist } from "./ProfileChart";
 import { pairsToCsv, profileToCsv, type SightPair } from "@viewer/core";
-import { saveText, slug } from "../download";
+import { saveBytes, saveText, slug } from "../download";
+import { pushUndo } from "../state/undo";
 
 /** Right panel tab: line of sight pairs with profiles (WP 2.8) and the 360° viewshed (WP 2.9). */
 export function AnalysisTab() {
@@ -78,12 +79,12 @@ function SightSection() {
 function PairCard({ p, open, onOpen }: { p: SightPair; open: boolean; onOpen: () => void }) {
   const { t } = useTranslation();
   const engine = useEngine();
-  const n = p.name.replace(/^Line of sight /, "");
+  const n = p.seq;
   const status = p.computing ? null : p.visible;
   return (
-    <li className={cx("rounded-[8px] border bg-s1solid", open ? "border-accent/50" : "border-line", !p.shown && "opacity-60")}>
+    <li data-pair={p.id} aria-label={p.name} className={cx("rounded-[8px] border bg-s1solid", open ? "border-accent/50" : "border-line", !p.shown && "opacity-60")}>
       <div className="flex items-center gap-1 p-1.5 ps-2">
-        <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-2 text-start" aria-expanded={open}>
+        <button type="button" onClick={onOpen} title={p.name} className="flex min-w-0 flex-1 items-center gap-2 text-start" aria-expanded={open}>
           <span className="num rounded bg-s3 px-1.5 text-[11px] text-fg2">
             A{n}–B{n}
           </span>
@@ -98,7 +99,7 @@ function PairCard({ p, open, onOpen }: { p: SightPair; open: boolean; onOpen: ()
             ) : (
               <span className="font-medium" style={{ color: "var(--bad)" }}>
                 <EyeOff size={12} className="me-1 inline" />
-                {t("analysis.blocked", { d: fmtDist(p.block!.d) })}
+                {t("analysis.blocked", { d: fmtDist(p.block?.d ?? 0) })}
               </span>
             )}
           </span>
@@ -107,12 +108,38 @@ function PairCard({ p, open, onOpen }: { p: SightPair; open: boolean; onOpen: ()
         <IconButton size="sm" label={p.shown ? t("analysis.hideOnMap") : t("analysis.showOnMap")} onClick={() => engine?.sight.update(p.id, { shown: !p.shown })}>
           {p.shown ? <Eye size={14} /> : <EyeOff size={14} />}
         </IconButton>
-        <IconButton size="sm" label={t("analysis.deletePair")} onClick={() => engine?.sight.remove(p.id)}>
+        <IconButton
+          size="sm"
+          label={t("analysis.deletePair")}
+          onClick={() => {
+            const gone = engine?.sight.remove(p.id);
+            if (gone) pushUndo(t("measure.deleted", { name: p.name }), () => engine?.sight.restore(gone.pair, gone.index));
+          }}
+        >
           <Trash2 size={14} />
         </IconButton>
       </div>
       {open && (
         <div className="border-t border-line p-2">
+          <input
+            key={p.name}
+            aria-label={t("common.rename")}
+            className="mb-1 w-full bg-transparent font-medium outline-none decoration-accent focus:underline"
+            defaultValue={p.name}
+            onBlur={(e) => {
+              const name = e.target.value.trim();
+              if (name && name !== p.name) engine?.sight.update(p.id, { name });
+              else e.target.value = p.name;
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.currentTarget.blur();
+              else if (e.key === "Escape") {
+                e.currentTarget.value = p.name;
+                e.currentTarget.blur();
+                e.stopPropagation();
+              }
+            }}
+          />
           <ProfileChart pair={p} />
           <div className="mt-1 flex justify-end">
             <button type="button" className="btn-ghost h-7 px-2 text-[12px]" disabled={p.computing} onClick={() => saveText(`profile-${slug(p.name)}.csv`, profileToCsv(p))}>
@@ -142,6 +169,7 @@ function ViewshedSection() {
   const engine = useEngine();
   const s = useSignal(engine?.viewshed.state, null);
   const placing = useSignal(engine?.viewshed.placing, false);
+  const area = useSignal(engine?.viewshed.area, null);
   const set = useApp((x) => x.set);
   return (
     <section className="rounded-[10px] border border-line bg-s2 p-3">
@@ -177,6 +205,38 @@ function ViewshedSection() {
             <span className="inline-flex items-center gap-1 text-fg2">
               <i className="inline-block h-2 w-3 rounded-[2px]" style={{ background: "var(--bad)" }} /> {t("analysis.hidden")}
             </span>
+          </div>
+          <div data-testid="viewshed-area" className="flex flex-col gap-1 rounded-[8px] border border-line bg-s1solid p-2 text-[12px]">
+            {!area ? (
+              <button type="button" className="btn-ghost h-7 self-start px-2 text-[12px]" onClick={() => void engine?.viewshed.computeArea()}>
+                <Ruler size={13} /> {t("analysis.vsArea")}
+              </button>
+            ) : area.computing ? (
+              <span className="text-fg3">{t("analysis.vsAreaComputing")}</span>
+            ) : area.result ? (
+              <>
+                <span className="text-fg2" data-seen={area.result.visibleArea} data-total={area.result.area}>
+                  {t("analysis.vsAreaResult", {
+                    seen: fmtArea(area.result.visibleArea),
+                    total: fmtArea(area.result.area),
+                    pct: ((area.result.visibleArea / (area.result.area || 1)) * 100).toFixed(1),
+                  })}
+                </span>
+                <span className="text-[11px] text-fg3">{t("analysis.vsAreaNote", { cell: area.result.cell })}</span>
+                <button
+                  type="button"
+                  className="btn-ghost h-7 self-start px-2 text-[12px]"
+                  onClick={async () => {
+                    const tif = await engine?.viewshed.areaGeoTiff();
+                    if (tif) saveBytes(`viewshed-${area.for.lat.toFixed(5)}-${area.for.lon.toFixed(5)}.tif`, tif, "image/tiff");
+                  }}
+                >
+                  <Download size={13} /> {t("analysis.vsGeoTiff")}
+                </button>
+              </>
+            ) : (
+              <span style={{ color: "var(--bad)" }}>{t("analysis.vsAreaFailed", { error: area.error ?? "" })}</span>
+            )}
           </div>
         </div>
       )}
@@ -256,4 +316,9 @@ function Slider({
       <input type="range" min={0} max={1000} value={Math.round(to(value))} onChange={(e) => onChange(from(Number(e.target.value)))} className="w-full accent-[var(--accent)]" />
     </label>
   );
+}
+
+/** Square metres, as m² below a hectare-ish size and km² above. */
+function fmtArea(m2: number): string {
+  return m2 < 100000 ? `${Math.round(m2).toLocaleString()} m²` : `${(m2 / 1e6).toFixed(m2 < 1e7 ? 2 : 1)} km²`;
 }

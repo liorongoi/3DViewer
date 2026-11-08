@@ -1,3 +1,4 @@
+import { copyText } from "../clipboard";
 import { useState } from "react";
 import { useClassOf } from "../state/classification";
 import { useTranslation } from "react-i18next";
@@ -61,12 +62,10 @@ export function ModelHeader({ onBack, backLabel, className, compact }: { onBack:
         onClick={async () => {
           if (!engine) return;
           const url = shareUrl({ m: model.id, v: model.version, c: engine.getView(), mode: engine.viewMode.get(), hidden: hiddenLayers(engine.layers.get()) });
-          try {
-            await navigator.clipboard.writeText(url);
+          // If copying fails, the link is still in the address bar.
+          if (await copyText(url)) {
             setShared(true);
             setTimeout(() => setShared(false), 1500);
-          } catch {
-            /* the link is still in the address bar */
           }
           history.replaceState(null, "", url);
         }}
