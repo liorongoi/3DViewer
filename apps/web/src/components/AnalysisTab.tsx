@@ -6,6 +6,7 @@ import { IconButton, cx } from "./primitives";
 import { ProfileChart, fmtDist } from "./ProfileChart";
 import { pairsToCsv, profileToCsv, type SightPair } from "@viewer/core";
 import { saveText, slug } from "../download";
+import { pushUndo } from "../state/undo";
 
 /** Right panel tab: line of sight pairs with profiles (WP 2.8) and the 360° viewshed (WP 2.9). */
 export function AnalysisTab() {
@@ -78,12 +79,12 @@ function SightSection() {
 function PairCard({ p, open, onOpen }: { p: SightPair; open: boolean; onOpen: () => void }) {
   const { t } = useTranslation();
   const engine = useEngine();
-  const n = p.name.replace(/^Line of sight /, "");
+  const n = p.seq;
   const status = p.computing ? null : p.visible;
   return (
-    <li className={cx("rounded-[8px] border bg-s1solid", open ? "border-accent/50" : "border-line", !p.shown && "opacity-60")}>
+    <li data-pair={p.id} aria-label={p.name} className={cx("rounded-[8px] border bg-s1solid", open ? "border-accent/50" : "border-line", !p.shown && "opacity-60")}>
       <div className="flex items-center gap-1 p-1.5 ps-2">
-        <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-2 text-start" aria-expanded={open}>
+        <button type="button" onClick={onOpen} title={p.name} className="flex min-w-0 flex-1 items-center gap-2 text-start" aria-expanded={open}>
           <span className="num rounded bg-s3 px-1.5 text-[11px] text-fg2">
             A{n}–B{n}
           </span>
@@ -98,7 +99,7 @@ function PairCard({ p, open, onOpen }: { p: SightPair; open: boolean; onOpen: ()
             ) : (
               <span className="font-medium" style={{ color: "var(--bad)" }}>
                 <EyeOff size={12} className="me-1 inline" />
-                {t("analysis.blocked", { d: fmtDist(p.block!.d) })}
+                {t("analysis.blocked", { d: fmtDist(p.block?.d ?? 0) })}
               </span>
             )}
           </span>
@@ -107,12 +108,38 @@ function PairCard({ p, open, onOpen }: { p: SightPair; open: boolean; onOpen: ()
         <IconButton size="sm" label={p.shown ? t("analysis.hideOnMap") : t("analysis.showOnMap")} onClick={() => engine?.sight.update(p.id, { shown: !p.shown })}>
           {p.shown ? <Eye size={14} /> : <EyeOff size={14} />}
         </IconButton>
-        <IconButton size="sm" label={t("analysis.deletePair")} onClick={() => engine?.sight.remove(p.id)}>
+        <IconButton
+          size="sm"
+          label={t("analysis.deletePair")}
+          onClick={() => {
+            const gone = engine?.sight.remove(p.id);
+            if (gone) pushUndo(t("measure.deleted", { name: p.name }), () => engine?.sight.restore(gone.pair, gone.index));
+          }}
+        >
           <Trash2 size={14} />
         </IconButton>
       </div>
       {open && (
         <div className="border-t border-line p-2">
+          <input
+            key={p.name}
+            aria-label={t("common.rename")}
+            className="mb-1 w-full bg-transparent font-medium outline-none decoration-accent focus:underline"
+            defaultValue={p.name}
+            onBlur={(e) => {
+              const name = e.target.value.trim();
+              if (name && name !== p.name) engine?.sight.update(p.id, { name });
+              else e.target.value = p.name;
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.currentTarget.blur();
+              else if (e.key === "Escape") {
+                e.currentTarget.value = p.name;
+                e.currentTarget.blur();
+                e.stopPropagation();
+              }
+            }}
+          />
           <ProfileChart pair={p} />
           <div className="mt-1 flex justify-end">
             <button type="button" className="btn-ghost h-7 px-2 text-[12px]" disabled={p.computing} onClick={() => saveText(`profile-${slug(p.name)}.csv`, profileToCsv(p))}>

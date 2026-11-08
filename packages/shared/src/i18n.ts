@@ -644,6 +644,7 @@ export const en = {
   measureNames: {
     distance: "Distance {{n}}",
     path: "Path {{n}}",
+    sight: "Line of sight {{n}}",
   },
   checks: {
     fbxDamaged: {
@@ -1487,6 +1488,7 @@ export const he: Shape<typeof en> = {
   measureNames: {
     distance: "מרחק {{n}}",
     path: "מסלול {{n}}",
+    sight: "קו ראייה {{n}}",
   },
   checks: {
     fbxDamaged: {

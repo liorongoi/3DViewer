@@ -60,7 +60,7 @@ export function ProfileChart({ pair, height = 150 }: { pair: SightPair; height?:
         viewBox={`0 0 ${W} ${H}`}
         className="block w-full select-none"
         role="img"
-        aria-label={t("profile.label", { name: pair.name, length: Math.round(D), state: pair.visible ? t("profile.clear") : t("profile.blockedAt", { d: Math.round(pair.block!.d) }) })}
+        aria-label={t("profile.label", { name: pair.name, length: Math.round(D), state: pair.block ? t("profile.blockedAt", { d: Math.round(pair.block.d) }) : pair.visible === null ? t("analysis.computing") : t("profile.clear") })}
         onPointerMove={onMove}
         onPointerLeave={() => setHover(null)}
       >

@@ -4,6 +4,7 @@ import type { SightPair } from "./sightline";
 
 const pair: SightPair = {
   id: "p1",
+  seq: 1,
   name: 'Ridge, "north"',
   a: { lon: 4.8357, lat: 45.764, h: 170 },
   b: { lon: 4.84, lat: 45.77, h: 180.5 },

@@ -4,6 +4,7 @@ import {
   BoundingSphere,
   Cartesian2,
   Cartesian3,
+  Rectangle,
   ImageBasedLighting,
   Cartographic,
   Cesium3DTileset,
@@ -827,8 +828,20 @@ export class ViewerEngine {
   async sampleGround(points: Cartographic[], level = 14): Promise<Cartographic[]> {
     // The ground itself, not the cut the globe draws under the open model.
     const tp = this.groundTerrain;
-    if (tp instanceof EllipsoidTerrainProvider) return points.map((p) => ((p.height = 0), p));
-    return tp.availability ? sampleTerrainMostDetailed(tp, points) : sampleTerrain(tp, level, points);
+    const out = tp instanceof EllipsoidTerrainProvider ? points.map((p) => ((p.height = 0), p)) : await (tp.availability ? sampleTerrainMostDetailed(tp, points) : sampleTerrain(tp, level, points));
+    // Inside the user's DEMs, their own full resolution rather than the terrain tiles' spacing.
+    // Later DEMs win, as they do in the terrain.
+    for (const dem of this.userDems) {
+      if (!dem.sampleHeights || (dem.mode ?? "replace") !== "replace") continue;
+      const inside = out.filter((p) => Rectangle.contains(dem.rectangle, p));
+      if (!inside.length) continue;
+      const h = await dem.sampleHeights(inside).catch(() => null);
+      inside.forEach((p, i) => {
+        const v = h?.[i];
+        if (v !== undefined && Number.isFinite(v)) p.height = v;
+      });
+    }
+    return out;
   }
 
   /** The point on the globe at the centre of the view, used as the default place for uploads. */

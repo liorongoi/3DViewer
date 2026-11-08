@@ -48,6 +48,12 @@ export interface DemSource {
   heightGrid(rect: Rectangle, n: number): Promise<Float32Array | null>;
   /** "replace" (default): its heights win. "lower": it can only lower the terrain (the ground cut under a model). */
   mode?: "replace" | "lower";
+  /**
+   * Heights at points (radians), read at the file's full resolution; NaN outside it or on
+   * no-data. Terrain tiles hold a DEM at the tile's own spacing (about 19 m at the deepest
+   * level), so analysis reads the file itself through this.
+   */
+  sampleHeights?(points: { longitude: number; latitude: number }[]): Promise<Float64Array>;
 }
 
 export function createTerrariumTerrain(

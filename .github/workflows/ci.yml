@@ -127,6 +127,9 @@ jobs:
       - name: Measurements against survey data, in the web app and the desktop app (WP 2.7, NFR-07, NFR-18)
         if: matrix.suite == 'accuracy'
         run: xvfb-run -a node scripts/check-accuracy.cjs
+      - name: Line of sight against a GDAL reference on a DEM, and the analysis panel (WP 2.8, ANL-01, ANL-02)
+        if: matrix.suite == 'accuracy'
+        run: node scripts/check-sight.cjs
       - name: Screenshots
         if: failure()
         uses: actions/upload-artifact@v4
