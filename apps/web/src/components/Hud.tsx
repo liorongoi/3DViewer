@@ -75,7 +75,7 @@ export function CoordinatesHud({ className }: { className?: string }) {
         {copied ? t("common.copied") : f ? f.parts.join("   ") : "—"}
       </button>
       <span className="num ms-2 text-fg3" title={t("shell.fps")}>
-        {fps} fps
+        {fps || "—"} fps
       </span>
     </div>
   );
