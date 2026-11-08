@@ -6,6 +6,7 @@ import { ChevronRight, Eye, EyeOff, Focus, Layers, Scan, Search, X } from "./ico
 import { IconButton, Panel, cx } from "./primitives";
 import { MapTab } from "./MapTab";
 import { useApp } from "../state/store";
+import { pushUndo } from "../state/undo";
 
 /** Layers panel (LYR-01..05): tree, eye toggles, search, show/hide all, isolate, Alt+click solo, drag-paint. */
 export function LayersPanel({ onClose, className }: { onClose?: () => void; className?: string }) {
@@ -27,8 +28,18 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
   const apply = (next: Layer[]) => engine?.setLayers(next);
   const toggle = (l: Layer, value = !l.visible) => apply(setVisible(engine!.layers.get(), l.id, value));
   const solo = (l: Layer) => {
-    setBeforeIsolate((b) => b ?? layers);
+    const before = beforeIsolate ?? layers;
+    setBeforeIsolate(before);
     apply(isolate(layers, l.id));
+    pushUndo(t("viewer.isolated", { name: l.name }), () => {
+      apply(before);
+      setBeforeIsolate(null);
+    });
+  };
+  const hideAll = () => {
+    const before = layers;
+    apply(setAllVisible(layers, false));
+    pushUndo(t("viewer.allHidden"), () => apply(before));
   };
 
   // A part clicked in the 3D view: open its branch and bring its row into view.
@@ -168,7 +179,7 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
           <button type="button" className="h-7 flex-1 rounded-[6px] bg-s2 text-[12px] font-medium hover:bg-s3" onClick={() => apply(setAllVisible(layers, true))}>
             {t("viewer.showAll")}
           </button>
-          <button type="button" className="h-7 flex-1 rounded-[6px] bg-s2 text-[12px] font-medium hover:bg-s3" onClick={() => apply(setAllVisible(layers, false))}>
+          <button type="button" className="h-7 flex-1 rounded-[6px] bg-s2 text-[12px] font-medium hover:bg-s3" onClick={hideAll}>
             {t("viewer.hideAll")}
           </button>
           {beforeIsolate && (

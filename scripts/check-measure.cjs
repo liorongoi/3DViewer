@@ -1,4 +1,4 @@
-// WP 2.4 acceptance (MSR-01, MSR-02, MSR-06, NFR-07): measurements land on the model's own
+// WP 2.4 and 2.5 acceptance (MSR-01, MSR-02, MSR-04, MSR-05, MSR-06, NFR-07): measurements land on the model's own
 // surface to 1 cm, also on a tileset whose coarse levels are drawn, and a model without a
 // reliable scale is measured in model units.
 //
@@ -12,6 +12,11 @@
 //      panel warns and gives lengths in model units (metres ÷ 0.5); m and ft are not offered.
 //   3. A path over three points on the GLB: its total is the sum of its segments, and its points
 //      lie on the surface.
+//   4. WP 2.5 (MSR-04, MSR-05), on the GLB at true scale: while the second point is chosen the
+//      view shows the measurement triangle's three lengths; the card gives the same 3D,
+//      horizontal and height numbers; m/ft switches card and view; rename (Enter keeps, Esc
+//      drops), hide and show, copy values, copy coordinates and copy one number; delete, then
+//      Ctrl+Z or the Undo button brings it back in its place; Ctrl+Z also takes back Hide all.
 //
 // Usage: build apps/web, start `vite preview` on :4173, then
 //   node scripts/check-measure.cjs
@@ -106,7 +111,7 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
 
   // Opens the hills in the app, as tiles or as a GLB, with the given placement extras.
   const open = async (kind, extra) => {
-    const ctx = await browser.newContext({ viewport: { width: 1200, height: 800 } });
+    const ctx = await browser.newContext({ viewport: { width: 1200, height: 800 }, permissions: ["clipboard-read", "clipboard-write"] });
     await ctx.addInitScript(() => {
       localStorage.setItem("viewer.lang", "en");
       localStorage.setItem("viewer.fadeTools", "false");
@@ -254,7 +259,7 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
     await page.keyboard.press("Escape");
     const chip = page.getByTestId("model-units");
     check(await chip.isVisible().catch(() => false), "model units: the measure panel warns that the model has no reliable scale");
-    check(!(await page.getByRole("radio", { name: "Feet" }).isVisible().catch(() => false)) && !(await page.getByRole("button", { name: "Feet" }).isVisible().catch(() => false)), "model units: m and ft are not offered");
+    check(!(await page.getByRole("radio", { name: "ft", exact: true }).isVisible().catch(() => false)), "model units: m and ft are not offered");
     const m = await page.evaluate(() => window.viewerEngine.measure.measurements.get()[0]?.result.total3d);
     const want = m !== undefined ? `${(m / 0.5).toLocaleString("en", { minimumFractionDigits: m / 0.5 < 10 ? 3 : 2, maximumFractionDigits: m / 0.5 < 10 ? 3 : 2 })} model units` : "?";
     const card = page.locator("article").filter({ hasText: want }).first();
@@ -282,6 +287,144 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
       check(off.every((o) => Math.abs(o.off) * 0.5 <= 0.01), "path: its points lie on the surface within 1 cm", off.map((o) => `${(o.off * 50).toFixed(1)} cm`).join(", "));
     }
     check(errors.length === 0, "GLB: no page errors", errors.slice(0, 3).join(" | "));
+    await ctx.close();
+  }
+
+  // ---- 4. The measurement UI (WP 2.5) ----
+  {
+    const { ctx, page, errors } = await open("glb", {});
+    // Clicks at the element's centre: Playwright's own click waits for a "stable" page, which
+    // software rendering can hold off for longer than its timeout.
+    const press = async (loc) => {
+      const b = await loc.boundingBox();
+      await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
+    };
+    const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
+    // The labels the view draws now, by entity: text as of this frame.
+    const viewLabels = () =>
+      page.evaluate(() => {
+        const e = window.viewerEngine;
+        const now = e.widget.clock.currentTime;
+        return e.widget.entities.values
+          .filter((x) => x.label && x.show !== false)
+          .map((x) => (typeof x.label.text?.getValue === "function" ? x.label.text.getValue(now) : x.label.text))
+          .filter((t) => t);
+      });
+    const fmt = (metres, unit) =>
+      page.evaluate(({ metres, unit }) => {
+        const m = window.viewerEngine.measure;
+        const was = m.unit;
+        m.unit = unit;
+        const t = m.format(metres);
+        m.unit = was;
+        return t;
+      }, { metres, unit });
+    const [a, b] = await look(page, [[-18.3, -6.1], [16.7, 9.4]]);
+    const box = await page.locator("canvas").first().boundingBox();
+    await page.keyboard.press("m");
+    await page.mouse.move(box.x + a[0], box.y + a[1], { steps: 3 });
+    await page.waitForTimeout(300);
+    await page.mouse.click(box.x + a[0], box.y + a[1]);
+    await page.waitForTimeout(300);
+    await page.mouse.move(box.x + b[0], box.y + b[1], { steps: 4 });
+    await page.waitForTimeout(600);
+    const live = await viewLabels();
+    check(live.some((t) => t.startsWith("↔ ")) && live.some((t) => t.startsWith("↕ ")) && live.some((t) => /^\d[\d,.]* m$/.test(t)), "triangle: before the second click the view shows the 3D, horizontal and vertical lengths", live.join(" | "));
+    await page.mouse.click(box.x + b[0], box.y + b[1]);
+    await page.waitForTimeout(500);
+    await page.keyboard.press("Escape");
+
+    const r = await page.evaluate(() => {
+      const m = window.viewerEngine.measure.measurements.get()[0];
+      const s = m.result.segments[0];
+      return { id: m.id, label: m.label, d3: s.distance3d, h: s.horizontal, v: s.heightDelta };
+    });
+    const card = page.locator(`article[data-measurement="${r.id}"]`);
+    const shown = async () => ({
+      total: (await card.locator('[data-value="total"]').innerText()).trim(),
+      horizontal: (await card.locator('[data-value="horizontal"]').innerText()).trim(),
+      height: (await card.locator('[data-value="height"]').innerText()).trim(),
+    });
+    let c = await shown();
+    const want = { total: await fmt(r.d3, "m"), horizontal: await fmt(r.h, "m"), height: `${r.v > 0 ? "+" : ""}${await fmt(r.v, "m")}` };
+    check(c.total === want.total && c.horizontal === want.horizontal && c.height === want.height && (await card.getByRole("textbox", { name: "Rename" }).inputValue()) === r.label, "card: label, 3D distance, horizontal and height difference, with units", JSON.stringify({ ...c, want }));
+    check(Math.abs(Math.hypot(r.h, r.v) - r.d3) < 0.005, "card: the three numbers make a right-angle triangle", `${r.d3.toFixed(3)} m`);
+    const after = await viewLabels();
+    check(after.some((t) => t === `${r.label} · ${want.total}`) && after.includes(`↔ ${want.horizontal}`) && after.includes(`↕ ${(await fmt(Math.abs(r.v), "m"))}`), "view: the finished measurement keeps the triangle's three labels", after.join(" | "));
+
+    // Units.
+    await press(page.getByRole("radio", { name: "ft", exact: true }));
+    await page.waitForTimeout(300);
+    c = await shown();
+    const ft = await fmt(r.d3, "ft");
+    const viewFt = await viewLabels();
+    check(c.total === ft && ft.endsWith(" ft") && viewFt.some((t) => t.endsWith(ft)), "units: ft switches the card and the view", `${c.total}; ${(r.d3 / 0.3048).toFixed(2)} ft expected`);
+    check(Math.abs(parseFloat(ft.replace(/,/g, "")) - r.d3 / 0.3048) < 0.01, "units: feet are international feet (0.3048 m)");
+    await press(page.getByRole("radio", { name: "m", exact: true }));
+    await page.waitForTimeout(300);
+
+    // Rename: Enter keeps, Esc drops.
+    const name = card.getByRole("textbox", { name: "Rename" });
+    await name.fill("Ridge to valley");
+    await name.press("Enter");
+    await page.waitForTimeout(200);
+    let label = await page.evaluate(() => window.viewerEngine.measure.measurements.get()[0].label);
+    check(label === "Ridge to valley" && (await viewLabels()).some((t) => t.startsWith("Ridge to valley · ")), "rename: Enter keeps the new name, in the card and the view", label);
+    await name.fill("Something else");
+    await name.press("Escape");
+    await page.waitForTimeout(200);
+    label = await page.evaluate(() => window.viewerEngine.measure.measurements.get()[0].label);
+    check(label === "Ridge to valley" && (await name.inputValue()) === "Ridge to valley", "rename: Esc puts the name back", label);
+
+    // Hide and show.
+    const count = () => page.evaluate(() => window.viewerEngine.widget.entities.values.length);
+    const before = await count();
+    await press(card.getByRole("button", { name: "Hide" }));
+    await page.waitForTimeout(200);
+    const hidden = await count();
+    await press(card.getByRole("button", { name: "Show" }));
+    await page.waitForTimeout(200);
+    check(hidden < before && (await count()) === before, "hide and show: the measurement leaves the view and comes back", `${before} → ${hidden} → ${await count()} entities`);
+
+    // Copy.
+    await press(card.getByRole("button", { name: "Copy values" }));
+    await page.waitForTimeout(200);
+    const values = await clipboard();
+    check(values.includes("Ridge to valley") && values.includes(want.total) && values.includes(want.horizontal) && values.includes(want.height), "copy values: the name and all three numbers", values.split("\n").slice(0, 4).join(" / "));
+    await press(card.getByRole("button", { name: "Copy coordinates" }));
+    await page.waitForTimeout(200);
+    const coords = (await clipboard()).split("\n");
+    check(coords.length === 2 && coords.every((l) => /\d+\.\d+°?.*\d+\.\d+/.test(l)), "copy coordinates: one line per point", coords.join(" / "));
+    await press(card.locator('[data-value="total"]'));
+    await page.waitForTimeout(200);
+    check((await clipboard()) === want.total && (await card.locator('[data-value="total"]').innerText()).includes("Copied"), "copy one number: clicking it copies it, with a Copied tick", await clipboard());
+
+    // Delete and undo, by key and by button.
+    await page.evaluate(() => document.activeElement?.blur());
+    for (const how of ["Ctrl+Z", "Undo button"]) {
+      await press(card.getByRole("button", { name: "Delete" }));
+      await page.waitForTimeout(200);
+      const gone = (await card.count()) === 0 && (await page.getByTestId("undo-bar").isVisible());
+      if (how === "Ctrl+Z") await page.keyboard.press("Control+z");
+      else await press(page.getByTestId("undo-bar").getByRole("button", { name: "Undo" }));
+      await page.waitForTimeout(300);
+      const back = await page.evaluate(() => window.viewerEngine.measure.measurements.get().map((m) => m.label));
+      check(gone && back.length === 1 && back[0] === "Ridge to valley" && (await card.count()) === 1 && (await count()) === before, `delete, then ${how}: the measurement is back with its name`, back.join());
+    }
+    await page.keyboard.press("Control+z");
+    await page.waitForTimeout(200);
+    check((await card.count()) === 1, "Ctrl+Z with nothing left to undo changes nothing");
+
+    // Ctrl+Z also takes back Hide all.
+    await press(page.getByRole("button", { name: "Hide all", exact: true }));
+    await page.waitForTimeout(200);
+    const off = await page.evaluate(() => window.viewerEngine.layers.get().every((l) => !l.visible));
+    await page.keyboard.press("Control+z");
+    await page.waitForTimeout(300);
+    const on = await page.evaluate(() => window.viewerEngine.layers.get().every((l) => l.visible));
+    check(off && on, "Hide all, then Ctrl+Z: the parts are shown again");
+
+    check(errors.length === 0, "measurement UI: no page errors", errors.slice(0, 3).join(" | "));
     await ctx.close();
   }
 

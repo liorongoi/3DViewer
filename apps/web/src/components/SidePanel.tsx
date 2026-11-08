@@ -4,7 +4,9 @@ import { useTranslation } from "react-i18next";
 import { ecefToGeodetic, formatCoordinate, formatLength, formatModelLength, type Measurement } from "@viewer/core";
 import { useEngine, useSignal } from "../engine";
 import { useApp } from "../state/store";
-import { AlertTriangle, Bookmark, Copy, Eye, EyeOff, Info, Orbit, Play, Route, Ruler, StopCircle, Trash2, Video, X } from "./icons";
+import { pushUndo } from "../state/undo";
+import { copyText } from "../clipboard";
+import { AlertTriangle, Bookmark, Copy, Crosshair, Eye, EyeOff, Info, Orbit, Play, Route, Ruler, StopCircle, Trash2, Video, X } from "./icons";
 import { IconButton, Panel, Segmented, StatusBadge, cx } from "./primitives";
 import { AnalysisTab } from "./AnalysisTab";
 
@@ -118,71 +120,90 @@ function MeasurementCard({ m, unit, locale }: { m: Measurement; unit: "m" | "ft"
   const engine = useEngine();
   const length = useLength(unit);
   const coordSystem = useApp((s) => s.coordSystem);
-  const [copied, setCopied] = useState(false);
+  // Which copy just happened ("values", "coords" or a row's name), and whether it worked.
+  const [copied, setCopied] = useState<{ what: string; ok: boolean } | null>(null);
   const r = m.result;
   const seg = r.segments[0];
-  const rows: [string, number][] =
-    m.kind === "distance" && seg
-      ? [
-          [t("measure.horizontal"), seg.horizontal],
-          [t("measure.height"), seg.heightDelta],
-        ]
-      : [
-          [t("measure.horizontal"), r.totalHorizontal],
-          [t("measure.height"), r.heightDelta],
-        ];
-  const copy = async () => {
-    const coords = m.points
+  const signed = (v: number) => `${v > 0 ? "+" : ""}${length(v)}`;
+  const rows: { key: string; name: string; text: string }[] = [
+    { key: "horizontal", name: t("measure.horizontal"), text: length(m.kind === "distance" && seg ? seg.horizontal : r.totalHorizontal) },
+    { key: "height", name: t("measure.height"), text: signed(m.kind === "distance" && seg ? seg.heightDelta : r.heightDelta) },
+  ];
+  const total = length(r.total3d, locale === "he" ? "en" : locale);
+  const coords = () =>
+    m.points
       .map((p) => {
         const g = ecefToGeodetic(p);
         return formatCoordinate(g.lat, g.lon, g.height, coordSystem).text;
       })
       .join("\n");
-    const text = [
-      m.label,
-      `${t("measure.d3")}: ${length(r.total3d)}`,
-      ...rows.map(([k, v]) => `${k}: ${length(v)}`),
-      coords,
-    ].join("\n");
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1200);
-    } catch {
-      /* clipboard unavailable */
-    }
+  const copy = async (what: string, text: string) => {
+    const ok = await copyText(text);
+    setCopied({ what, ok });
+    setTimeout(() => setCopied((c) => (c?.what === what ? null : c)), 1400);
+  };
+  const values = () =>
+    [m.label, `${m.kind === "path" ? t("measure.total") : t("measure.d3")}: ${length(r.total3d)}`, ...rows.map((x) => `${x.name}: ${x.text}`), coords()].join("\n");
+  const copyLabel = (what: string, idle: string) => (copied?.what === what ? (copied.ok ? t("common.copied") : t("common.copyFailed")) : idle);
+  const remove = () => {
+    const gone = engine?.measure.remove(m.id);
+    if (gone) pushUndo(t("measure.deleted", { name: m.label }), () => engine?.measure.restore(gone.measurement, gone.index));
   };
   return (
-    <article className={cx("rounded-[10px] border border-line bg-s2 p-3", !m.visible && "opacity-60")}>
-      <div className="mb-1 flex items-center gap-2">
-        {m.kind === "distance" ? <Ruler size={14} className="text-accent" /> : <Route size={14} className="text-accent" />}
+    <article data-measurement={m.id} aria-label={m.label} className={cx("rounded-[10px] border border-line bg-s2 p-3", !m.visible && "opacity-60")}>
+      <div className="mb-1 flex items-center gap-1">
+        {m.kind === "distance" ? <Ruler size={14} className="me-1 shrink-0 text-accent" /> : <Route size={14} className="me-1 shrink-0 text-accent" />}
         <input
+          key={m.label}
           aria-label={t("common.rename")}
           className="min-w-0 flex-1 bg-transparent font-medium outline-none focus:underline decoration-accent"
           defaultValue={m.label}
-          onBlur={(e) => engine?.measure.rename(m.id, e.target.value || m.label)}
+          onBlur={(e) => {
+            const name = e.target.value.trim();
+            if (name && name !== m.label) engine?.measure.rename(m.id, name);
+            else e.target.value = m.label;
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+            else if (e.key === "Escape") {
+              e.currentTarget.value = m.label;
+              e.currentTarget.blur();
+              e.stopPropagation();
+            }
+          }}
         />
         <IconButton size="sm" label={m.visible ? t("common.hide") : t("common.show")} onClick={() => engine?.measure.setVisible(m.id, !m.visible)}>
           {m.visible ? <Eye size={14} /> : <EyeOff size={14} />}
         </IconButton>
-        <IconButton size="sm" label={copied ? t("common.copied") : t("measure.copyValues")} onClick={() => void copy()}>
+        <IconButton size="sm" label={copyLabel("values", t("measure.copyValues"))} onClick={() => void copy("values", values())}>
           <Copy size={14} />
         </IconButton>
-        <IconButton size="sm" label={t("common.delete")} onClick={() => engine?.measure.remove(m.id)}>
+        <IconButton size="sm" label={copyLabel("coords", t("measure.copyCoords"))} onClick={() => void copy("coords", coords())}>
+          <Crosshair size={14} />
+        </IconButton>
+        <IconButton size="sm" label={t("common.delete")} onClick={remove}>
           <Trash2 size={14} />
         </IconButton>
       </div>
       <div className="text-[11px] uppercase tracking-wide text-fg3">{m.kind === "path" ? t("measure.total") : t("measure.d3")}</div>
-      <div className="num text-[22px] leading-7 font-medium text-fg" dir="ltr">
-        {length(r.total3d, locale === "he" ? "en" : locale)}
-      </div>
+      <button
+        type="button"
+        data-value="total"
+        title={copyLabel("total", t("common.copy"))}
+        className="num block text-start text-[22px] leading-7 font-medium text-fg hover:text-accent"
+        dir="ltr"
+        onClick={() => void copy("total", total)}
+      >
+        {copied?.what === "total" ? copyLabel("total", "") : total}
+      </button>
       <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
-        {rows.map(([k, v]) => (
-          <div key={k}>
-            <dt className="text-[11px] text-fg3">{k}</dt>
-            <dd className="num text-fg2" dir="ltr">
-              {k === t("measure.height") && v > 0 ? "+" : ""}
-              {length(v)}
+        {rows.map((x) => (
+          <div key={x.key}>
+            <dt className="text-[11px] text-fg3">{x.name}</dt>
+            <dd>
+              <button type="button" data-value={x.key} title={copyLabel(x.key, t("common.copy"))} className="num text-start text-fg2 hover:text-accent" dir="ltr" onClick={() => void copy(x.key, x.text)}>
+                {copied?.what === x.key ? copyLabel(x.key, "") : x.text}
+              </button>
             </dd>
           </div>
         ))}

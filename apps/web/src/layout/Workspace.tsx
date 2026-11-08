@@ -15,6 +15,7 @@ import { Globe, Layers, PanelIcon, Ruler, Upload } from "./parts";
 import { IconButton, cx } from "../components/primitives";
 import { fadeClasses, useChromeFade } from "./useChromeFade";
 import { Guard } from "../components/Guard";
+import { UndoBar } from "../components/UndoBar";
 
 /**
  * The workspace (chosen direction: A + C). A Google Earth-style globe is home; every model
@@ -112,6 +113,7 @@ export function Workspace() {
       {/* bottom */}
       <div className={cx("pointer-events-none fixed inset-x-0 z-10 flex flex-col items-center gap-2", bottom, fade.ambient)}>
         <Guard part="dock">
+          <UndoBar />
           <HintLine />
           <Dock className="pointer-events-auto" />
         </Guard>

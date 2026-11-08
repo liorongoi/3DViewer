@@ -118,7 +118,7 @@ jobs:
       - name: Snapping to corners and edges within 10 px (MSR-03)
         if: matrix.suite == 'tools'
         run: node scripts/check-snap.cjs
-      - name: Measuring on the model's own surface, in its own units (WP 2.4)
+      - name: Measuring on the model's own surface, in its own units, and the measurement panel (WP 2.4, 2.5)
         if: matrix.suite == 'tools'
         run: node scripts/check-measure.cjs
       - name: Screenshots

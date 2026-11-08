@@ -1,3 +1,4 @@
+import { copyText } from "../clipboard";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { formatCoordinate, type PresetView } from "@viewer/core";
@@ -32,13 +33,9 @@ export function CoordinatesHud({ className }: { className?: string }) {
         title={t("common.copy")}
         onClick={async () => {
           if (!f) return;
-          try {
-            await navigator.clipboard.writeText(f.text);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1000);
-          } catch {
-            /* ignore */
-          }
+          if (!(await copyText(f.text))) return;
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1000);
         }}
       >
         {copied ? t("common.copied") : f ? f.parts.join("   ") : "—"}
