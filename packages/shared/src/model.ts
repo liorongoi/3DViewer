@@ -67,6 +67,11 @@ export interface ModelSummary {
      * already folded into headingDeg and scale; these are kept to show what was entered.
      */
     grid?: { epsg: number; x: number; y: number; northDeg: number; groundPerGrid: number };
+    /**
+     * Set when the file has no reliable scale (MSR-06): one of the file's units is drawn this many
+     * metres long, and measurements are shown in model units, not metres.
+     */
+    modelUnit?: number;
   };
   thumbnail?: string;
   sizeBytes: number;

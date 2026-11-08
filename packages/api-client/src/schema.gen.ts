@@ -1064,6 +1064,7 @@ export type paths = {
                             height: number;
                             lat: number;
                             lon: number;
+                            modelUnit?: number;
                             scale?: number;
                             /** @enum {unknown} */
                             upAxis?: "y" | "z";
@@ -1310,6 +1311,7 @@ export type paths = {
                             height: number;
                             lat: number;
                             lon: number;
+                            modelUnit?: number;
                             scale?: number;
                             /** @enum {unknown} */
                             upAxis?: "y" | "z";
@@ -1625,6 +1627,7 @@ export type paths = {
                             height: number;
                             lat: number;
                             lon: number;
+                            modelUnit?: number;
                             scale?: number;
                             /** @enum {unknown} */
                             upAxis?: "y" | "z";
@@ -1892,6 +1895,7 @@ export type components = {
             height: number;
             lat: number;
             lon: number;
+            modelUnit?: number;
             scale?: number;
             /** @enum {unknown} */
             upAxis?: "y" | "z";

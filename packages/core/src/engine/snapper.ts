@@ -24,6 +24,7 @@ import {
   PrimitiveType,
   type Scene,
 } from "cesium";
+import { rayMeshHit } from "../measure/ray-mesh";
 import { buildSnapIndex, querySnapIndex, type SnapGeometry, type SnapIndex } from "../measure/snap-index";
 import { signal } from "../signal";
 
@@ -219,6 +220,57 @@ export class Snapper {
       }
     }
     return surface ? { position: surface, kind: "surface", pixels: 0 } : undefined;
+  }
+
+  /**
+   * The surface under a window position, from the triangles themselves rather than the depth
+   * buffer, which is good to a few centimetres at a hundred metres (NFR-07 asks for 1 cm).
+   * surface is the depth-buffer point; the triangle met nearest it along the ray is taken.
+   * Undefined when no drawn triangle is near it (the globe, a point cloud).
+   */
+  onMesh(pos: Cartesian2, surface: Cartesian3): Cartesian3 | undefined {
+    const scene = this.scene;
+    const ray = scene.camera.getPickRay(pos);
+    if (!ray) return undefined;
+    const O = ray.origin;
+    const D = Cartesian3.normalize(ray.direction, new Cartesian3());
+    const tS = Cartesian3.dot(Cartesian3.subtract(surface, O, new Cartesian3()), D);
+    if (!(tS > 0)) return undefined;
+    const pd = scene.camera.frustum.getPixelDimensions(scene.drawingBufferWidth, scene.drawingBufferHeight, Math.max(tS, 1), scene.drawingBufferWidth / Math.max(scene.canvas.clientWidth, 1), new Cartesian2()).y;
+    // How far the depth buffer can be off: its precision, and a few pixels across a slope.
+    const tol = Math.max(0.05, tS * 0.003, pd * 4);
+    let bestT = Number.POSITIVE_INFINITY;
+    const inv = new Matrix4();
+    const o = new Cartesian3();
+    const d = new Cartesian3();
+    for (const { model, content } of this.drawnModels()) {
+      const bs = model.boundingSphere;
+      if (bs && Cartesian3.distance(bs.center, surface) > bs.radius + tol) continue;
+      const hidden = new Set<RuntimePrimitive>();
+      for (const node of (model as unknown as { sceneGraph?: { _runtimeNodes: RuntimeNode[] } }).sceneGraph?._runtimeNodes ?? []) {
+        if (node.show === false) for (const rp of node.runtimePrimitives) hidden.add(rp);
+      }
+      internals.ModelReader.forEachPrimitive(model, {}, (rp, primitive, instances, computed) => {
+        if (hidden.has(rp)) return;
+        if (rp.boundingSphere && instances.length === 1) {
+          const b = BoundingSphere.transform(rp.boundingSphere, computed, new BoundingSphere());
+          if (Cartesian3.distance(b.center, surface) > b.radius + tol) return;
+        }
+        const g = this.geometryOf(primitive, content);
+        if (!g) return;
+        const ids = g.featureIds;
+        const skip = content && ids ? (tri: number) => content.getFeature(ids[g.indices[tri * 3]!]!)?.show === false : undefined;
+        for (const { transform } of instances) {
+          // In the mesh's own frame; with the direction carried through unnormalised, t stays in metres.
+          Matrix4.inverse(transform, inv);
+          Matrix4.multiplyByPoint(inv, O, o);
+          Matrix4.multiplyByPointAsVector(inv, D, d);
+          const hit = rayMeshHit(g.positions, g.indices, o, d, tS - tol, Math.min(tS + tol, bestT), skip);
+          if (hit) bestT = hit.t;
+        }
+      });
+    }
+    return Number.isFinite(bestT) ? Cartesian3.add(O, Cartesian3.multiplyByScalar(D, bestT, new Cartesian3()), new Cartesian3()) : undefined;
   }
 
   /** Resolves when no index is being built. */

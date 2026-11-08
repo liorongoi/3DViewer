@@ -133,6 +133,9 @@
           "scale": {
             "type": "number"
           },
+          "modelUnit": {
+            "type": "number"
+          },
           "upAxis": {
             "enum": [
               "y",
@@ -1117,6 +1120,10 @@
                         "type": "number",
                         "exclusiveMinimum": 0
                       },
+                      "modelUnit": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
                       "upAxis": {
                         "enum": [
                           "y",
@@ -1433,6 +1440,10 @@
                         "type": "number"
                       },
                       "scale": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      "modelUnit": {
                         "type": "number",
                         "exclusiveMinimum": 0
                       },
@@ -2886,6 +2897,10 @@
                         "type": "number"
                       },
                       "scale": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      "modelUnit": {
                         "type": "number",
                         "exclusiveMinimum": 0
                       },

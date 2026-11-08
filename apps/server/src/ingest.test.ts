@@ -257,14 +257,16 @@ describe("ingest job", () => {
     opts.tileIf = { triangles: 1000, bytes: 1e12 };
     opts.leafTriangles = 1000;
     try {
-      const zPlacement = { ...placement, upAxis: "z", scale: 0.01 };
+      // A file of unknown units (MSR-06): drawn at the scale given, measured in model units.
+      const zPlacement = { ...placement, upAxis: "z", scale: 0.01, modelUnit: 0.01 };
       const r = await submitAndRun((await upload([{ path: "site.glb", data: gridGlb(50, true) }], { model: { ...model, name: "Site" }, placement: zPlacement })).id);
       expect(r, r.error).toMatchObject({ state: "ready", report: { format: "glb", ok: true } });
       expect(r.report.items.find((i: { id: string }) => i.id === "tiling")).toMatchObject({ severity: "ok", title: expect.stringMatching(/^Tiled for streaming: \d+ tiles in \d+ levels$/) });
       const m = (await app.inject(`/api/models/${r.modelId}`)).json();
       expect(m.source).toEqual({ kind: "3dtiles", url: `files/${r.modelId}/${r.id}/tileset.json`, localFrame: true });
-      // The axis and scale are in the tiles now, so the placement no longer applies them.
-      expect(m.placement).toEqual({ lat: placement.lat, lon: placement.lon, height: placement.height, aboveGround: placement.aboveGround });
+      // The axis and scale are in the tiles now, so the placement no longer applies them; the
+      // model unit stays, as it says how long one unit of the file is drawn.
+      expect(m.placement).toEqual({ lat: placement.lat, lon: placement.lon, height: placement.height, aboveGround: placement.aboveGround, modelUnit: 0.01 });
       const ts = (await app.inject(`/files/${r.modelId}/${r.id}/tileset.json`)).json();
       expect(ts.root.children.length).toBeGreaterThan(1);
       expect((await app.inject(`/files/${r.modelId}/${r.id}/${ts.root.content.uri}`)).statusCode).toBe(200);

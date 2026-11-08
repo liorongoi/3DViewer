@@ -22,6 +22,7 @@ import {
   Math as CMath,
   Matrix4,
   Model,
+  type Ray,
   NearFarScalar,
   PerspectiveFrustum,
   PostProcessStageLibrary,
@@ -315,6 +316,8 @@ export class ViewerEngine {
   async open(summary: ModelSummary, opts: { fly?: boolean } = {}): Promise<void> {
     this.close();
     this.current.set(summary);
+    // A model without a reliable scale is measured in its own units (MSR-06).
+    this.measure.setModelUnit(summary.placement?.modelUnit);
     this.loading.set(true);
     this.error.set(null);
     const scene = this.widget.scene;
@@ -419,6 +422,7 @@ export class ViewerEngine {
     this.tour.stop();
     this.measure.cancel();
     this.measure.clear();
+    this.measure.setModelUnit(null);
     this.sight.cancel();
     this.sight.clear();
     this.viewshed.clear();
@@ -753,6 +757,10 @@ export class ViewerEngine {
       // destroyed buffers (seen when one upload replaced another).
       for (let w = 0; w < 50 && (this.widget.scene as unknown as { tweens: { length: number } }).tweens.length > 0 && current(); w++) await this.afterFrames(1);
       if (!current()) break;
+      // A capture draws with the tile choice frozen, and Cesium cancels every tile request a
+      // frame does not touch. Capturing while tiles load would cancel them, and the next try
+      // again, so a model whose tiles take longer than the wait above would never load.
+      if (target instanceof Cesium3DTileset && (!target.tilesLoaded || !(target as unknown as { _selectedTiles: unknown[] })._selectedTiles.length)) continue;
       const u = captureUnderside(this.widget.scene, target, () => this.widget.render());
       if (coverage(u) > coverage(best)) best = u;
       if (coverage(best) >= MIN_COVERAGE) break;
@@ -1151,6 +1159,49 @@ export class ViewerEngine {
     return this.snapper.snap(pos, surface);
   }
 
+  /**
+   * A point placed on a tileset sits on the level of detail drawn, which away from the camera can
+   * be a simplified surface. Ask for the full-detail tiles along the same ray, and move the point
+   * onto them when they come (WP 2.4). Corners and edges stay where they were snapped.
+   */
+  private refineOnTiles(pos: Cartesian2, placed: Cartesian3): void {
+    const tileset = this.tileset;
+    const scene = this.widget.scene;
+    // Public in Cesium's source but left out of its typings: the async form of pickFromRay.
+    const mostDetailed = (scene as unknown as {
+      pickFromRayMostDetailed?: (ray: Ray, exclude?: unknown[]) => Promise<{ object?: unknown; position?: Cartesian3 } | undefined>;
+    }).pickFromRayMostDetailed;
+    if (!tileset || !mostDetailed) return;
+    const ray = scene.camera.getPickRay(pos);
+    if (!ray) return;
+    const before = Cartesian3.distance(ray.origin, placed);
+    const onTiles = (o: unknown) => {
+      // A feature of the tileset, or the model of one of its tiles.
+      const x = o as { primitive?: { _content?: { tileset?: unknown } }; tileset?: unknown; content?: { tileset?: unknown } } | undefined;
+      return !!x && (x.primitive === tileset || x.tileset === tileset || x.content?.tileset === tileset || x.primitive?._content?.tileset === tileset);
+    };
+    // Whatever else is first on the ray (a label, the outline of a part) is passed over, a few times at most.
+    const exclude: unknown[] = [...this.widget.entities.values];
+    const attempt = async (tries: number): Promise<void> => {
+      const hit = await mostDetailed.call(scene, ray, exclude);
+      if (!hit?.position || this.tileset !== tileset) return;
+      if (!onTiles(hit.object)) {
+        const other = (hit.object as { primitive?: unknown } | undefined)?.primitive ?? hit.object;
+        if (other && tries > 1) {
+          exclude.push(other);
+          return attempt(tries - 1);
+        }
+        return;
+      }
+      // The same surface, finer: a coarse level is off by its geometric error, not by more
+      // than a twentieth of the distance. Anything farther is something else on the ray.
+      const after = Cartesian3.distance(ray.origin, hit.position);
+      if (Math.abs(after - before) > Math.max(1, before * 0.05)) return;
+      if (this.measure.replacePoint(placed, hit.position)) scene.requestRender();
+    };
+    void attempt(3).catch(() => undefined);
+  }
+
   private bindPointer(): void {
     const canvas = this.widget.canvas;
     let pending: Cartesian2 | null = null;
@@ -1225,7 +1276,11 @@ export class ViewerEngine {
       const pos = new Cartesian2(e.offsetX, e.offsetY);
       if (this.measure.active.get()) {
         const p = this.measurePoint(pos, e.altKey);
-        if (p) this.measure.addPoint(p.position);
+        // A surface point from the triangles, not the depth buffer (NFR-07: 1 cm).
+        const at = p?.kind === "surface" ? (this.snapper.onMesh(pos, p.position) ?? p.position) : p?.position;
+        const kept = at && this.measure.addPoint(at);
+        // A tileset draws coarse levels farther off: measure on its full detail (NFR-07).
+        if (kept && p?.kind === "surface") this.refineOnTiles(pos, kept);
         return;
       }
       if (this.viewshed.placing.get()) {

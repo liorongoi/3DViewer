@@ -70,3 +70,12 @@ export function formatLength(metres: number, unit: LengthUnit, locale = "en"): s
   const digits = abs < 10 ? 3 : 2;
   return `${v.toLocaleString(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits })} ${unit}`;
 }
+
+/**
+ * A length in the model's own units (MSR-06), for a model with no reliable scale: no km, and the
+ * unit is named in words, so it is never read as metres.
+ */
+export function formatModelLength(units: number, unitName: string, locale = "en"): string {
+  const digits = Math.abs(units) < 10 ? 3 : 2;
+  return `${units.toLocaleString(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits })} ${unitName}`;
+}

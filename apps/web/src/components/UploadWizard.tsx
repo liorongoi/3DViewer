@@ -132,9 +132,11 @@ export function UploadWizard() {
       height: parseFloat(place.height) || 0,
       aboveGround: place.onTerrain ? 0 : undefined,
       headingDeg: parseFloat(place.heading) || 0,
-      scale: (parseFloat(place.scale) || 1) * place.unit,
+      scale: (parseFloat(place.scale) || 1) * (place.unit || 1),
       upAxis: place.upAxis,
     });
+    // One file unit is drawn placement.scale metres long: measurements divide by it.
+    if (!place.unit) placement.modelUnit = placement.scale;
     return { useFile, lat: placement.lat, lon: placement.lon, placement };
   };
 
@@ -404,6 +406,7 @@ export function UploadWizard() {
                     </Field>
                   </div>
                   <SizeReadout size={report?.stats.size} place={place} fbx={report?.format === "fbx"} />
+                  {!place.unit && <p className="text-[12px] text-[var(--status-production)]" data-testid="units-unknown">{t("wizard.unitsUnknownHint")}</p>}
                 </>
               )}
               <p className="text-[12px] text-fg3">{t("wizard.adjustLater")}</p>
@@ -513,13 +516,15 @@ const UNITS = [
   ["wizard.millimetres", 0.001],
   ["wizard.feet", 0.3048],
   ["wizard.inches", 0.0254],
+  // No reliable scale (MSR-06): drawn as if in metres, measured in model units.
+  ["wizard.unitsUnknown", 0],
 ] as const;
 
 /** The model's size as it will stand on the ground, so a wrong unit or up axis shows before publishing. */
 function SizeReadout({ size, place, fbx }: { size?: [number, number, number]; place: Place; fbx: boolean }) {
   const { t } = useTranslation();
   if (!size) return <p className="text-[12px] text-fg3">{fbx ? t("wizard.sizeAfterFbx") : t("wizard.noSize")}</p>;
-  const k = (parseFloat(place.scale) || 1) * place.unit;
+  const k = (parseFloat(place.scale) || 1) * (place.unit || 1);
   // glTF y-up: x east-west, z north-south, y height. Z-up files: y north-south, z height.
   const [w, d, h] = place.upAxis === "z" ? [size[0], size[1], size[2]] : [size[0], size[2], size[1]];
   const f = (v: number) => (v * k >= 100 ? (v * k).toFixed(0) : (v * k).toPrecision(3));
