@@ -23,6 +23,8 @@ interface AppState {
   theme: "dark" | "light";
   lang: "en" | "he";
   coordSystem: CoordinateSystem;
+  /** The UTM zone to show: "auto" takes the open model's zone (MSR-08), else "1" to "60". */
+  utmZone: string;
   unit: LengthUnit;
   quality: Quality;
   /** Lighting environment (WP 1.4). */
@@ -65,7 +67,7 @@ interface AppState {
   addUpload: (m: ModelSummary) => void;
   setClassification: (modelId: string, classificationId: string) => void;
   set: (patch: Partial<AppState>) => void;
-  setPref: <K extends "theme" | "lang" | "coordSystem" | "unit" | "quality" | "environment" | "memoryGb" | "fadeTools" | "adaptiveResolution">(k: K, v: AppState[K]) => void;
+  setPref: <K extends "theme" | "lang" | "coordSystem" | "utmZone" | "unit" | "quality" | "environment" | "memoryGb" | "fadeTools" | "adaptiveResolution">(k: K, v: AppState[K]) => void;
   setFilters: (patch: Partial<Filters>) => void;
 }
 
@@ -76,6 +78,7 @@ export const useApp = create<AppState>((set) => ({
   theme: readPref<"dark" | "light">("theme", "dark"),
   lang: readPref<"en" | "he">("lang", "en"),
   coordSystem: readPref<CoordinateSystem>("coordSystem", "wgs84"),
+  utmZone: readPref<string>("utmZone", "auto"),
   unit: readPref<LengthUnit>("unit", "m"),
   quality: readPref<Quality>("quality", "high"),
   environment: readPref<EnvironmentId>("environment", "atmosphere"),

@@ -1,21 +1,44 @@
 import { copyText } from "../clipboard";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { formatCoordinate, type PresetView } from "@viewer/core";
+import { type PresetView } from "@viewer/core";
+import { useCoordinates, useUtmZone } from "../useCoordinates";
 import { useEngine, useSignal } from "../engine";
 import { useApp } from "../state/store";
 import { cx } from "./primitives";
 
-/** Cursor coordinates in WGS84 or UTM, click to copy (MSR-08). */
+/** Cursor coordinates in WGS84 or UTM, in the chosen or the model's zone; click or Ctrl+C to copy (MSR-08). */
 export function CoordinatesHud({ className }: { className?: string }) {
   const { t } = useTranslation();
   const engine = useEngine();
   const cursor = useSignal(engine?.cursor, null);
   const system = useApp((s) => s.coordSystem);
+  const zonePref = useApp((s) => s.utmZone);
   const setPref = useApp((s) => s.setPref);
+  const { zone, auto } = useUtmZone();
+  const coordinates = useCoordinates();
   const fps = useSignal(engine?.fps, 0);
   const [copied, setCopied] = useState(false);
-  const f = cursor ? formatCoordinate(cursor.lat, cursor.lon, cursor.height, system) : null;
+  const f = cursor ? coordinates(cursor.lat, cursor.lon, cursor.height) : null;
+  const copy = async () => {
+    if (!f || !(await copyText(f.text))) return;
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1000);
+  };
+  // Ctrl+C copies what is under the cursor, unless text is selected or being typed (UI spec 3.3).
+  const copyRef = useRef(copy);
+  copyRef.current = copy;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== "c") return;
+      const target = e.target instanceof Element ? e.target : null;
+      if (target?.closest("input, textarea, select, [contenteditable]") || String(window.getSelection() ?? "")) return;
+      e.preventDefault();
+      void copyRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   return (
     <div className={cx("glass flex h-8 items-center gap-1 rounded-[10px] ps-1 pe-2 text-[12px]", className)}>
       <button
@@ -26,17 +49,28 @@ export function CoordinatesHud({ className }: { className?: string }) {
       >
         {system === "wgs84" ? t("coords.wgs84") : t("coords.utm")}
       </button>
+      {system === "utm" && (
+        <select
+          aria-label={t("coords.zone")}
+          value={zonePref}
+          onChange={(e) => setPref("utmZone", e.target.value)}
+          className="num h-6 rounded-[6px] bg-transparent px-1 text-fg2 hover:bg-s3 hover:text-fg"
+        >
+          <option value="auto">{auto && zone ? t("coords.zoneAuto", { zone }) : t("coords.zoneAutoNone")}</option>
+          {Array.from({ length: 60 }, (_, i) => (
+            <option key={i + 1} value={String(i + 1)}>
+              {i + 1}
+            </option>
+          ))}
+        </select>
+      )}
       <button
         type="button"
         dir="ltr"
+        data-testid="cursor-coordinates"
         className="num min-w-[300px] text-start text-fg hover:text-accent"
-        title={t("common.copy")}
-        onClick={async () => {
-          if (!f) return;
-          if (!(await copyText(f.text))) return;
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1000);
-        }}
+        title={`${t("common.copy")} · ${t("coords.copyCursor")}. ${t("coords.heightNote")}`}
+        onClick={() => void copy()}
       >
         {copied ? t("common.copied") : f ? f.parts.join("   ") : "—"}
       </button>

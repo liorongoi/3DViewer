@@ -1,0 +1,350 @@
+{
+  "proj": "9.8.1",
+  "pyproj": "3.8.0",
+  "utm": [
+    {
+      "name": "Jerusalem",
+      "lat": 31.7767,
+      "lon": 35.2345,
+      "zone": 36,
+      "forced": false,
+      "hemisphere": "N",
+      "easting": 711594.452,
+      "northing": 3517858.4965
+    },
+    {
+      "name": "Tel Aviv",
+      "lat": 32.0853,
+      "lon": 34.7818,
+      "zone": 36,
+      "forced": false,
+      "hemisphere": "N",
+      "easting": 668156.4353,
+      "northing": 3551279.7668
+    },
+    {
+      "name": "Eilat",
+      "lat": 29.5577,
+      "lon": 34.9519,
+      "zone": 36,
+      "forced": false,
+      "hemisphere": "N",
+      "easting": 689104.356,
+      "northing": 3271365.9389
+    },
+    {
+      "name": "Haifa",
+      "lat": 32.794,
+      "lon": 34.9896,
+      "zone": 36,
+      "forced": false,
+      "hemisphere": "N",
+      "easting": 686306.4465,
+      "northing": 3630202.5775
+    },
+    {
+      "name": "East of 36\u00b0E, in its own zone 37",
+      "lat": 33.0,
+      "lon": 36.1,
+      "zone": 37,
+      "forced": false,
+      "hemisphere": "N",
+      "easting": 229046.6685,
+      "northing": 3655023.5217
+    },
+    {
+      "name": "The same point shown in zone 36",
+      "lat": 33.0,
+      "lon": 36.1,
+      "zone": 36,
+      "forced": true,
+      "hemisphere": "N",
+      "easting": 789646.9971,
+      "northing": 3655557.1067
+    },
+    {
+      "name": "Lyon",
+      "lat": 45.764,
+      "lon": 4.8357,
+      "zone": 31,
+      "forced": false,
+      "hemisphere": "N",
+      "easting": 642744.9849,
+      "northing": 5069465.4559
+    },
+    {
+      "name": "Bergen (Norway exception, zone 32)",
+      "lat": 60.3913,
+      "lon": 5.3221,
+      "zone": 32,
+      "forced": false,
+      "hemisphere": "N",
+      "easting": 297353.9327,
+      "northing": 6700648.3452
+    },
+    {
+      "name": "Svalbard (zone 33)",
+      "lat": 78.2232,
+      "lon": 15.6267,
+      "zone": 33,
+      "forced": false,
+      "hemisphere": "N",
+      "easting": 514278.7151,
+      "northing": 8683355.4695
+    },
+    {
+      "name": "Cape Town (south)",
+      "lat": -33.9249,
+      "lon": 18.4241,
+      "zone": 34,
+      "forced": false,
+      "hemisphere": "S",
+      "easting": 261881.5985,
+      "northing": 6243182.3545
+    },
+    {
+      "name": "Sydney (south)",
+      "lat": -33.8688,
+      "lon": 151.2093,
+      "zone": 56,
+      "forced": false,
+      "hemisphere": "S",
+      "easting": 334368.6336,
+      "northing": 6250948.3454
+    },
+    {
+      "name": "Quito (just south of the equator)",
+      "lat": -0.1807,
+      "lon": -78.4678,
+      "zone": 17,
+      "forced": false,
+      "hemisphere": "S",
+      "easting": 781861.4575,
+      "northing": 9980007.5669
+    },
+    {
+      "name": "Just north of the equator",
+      "lat": 0.0001,
+      "lon": 33.0,
+      "zone": 36,
+      "forced": false,
+      "hemisphere": "N",
+      "easting": 500000.0,
+      "northing": 11.053
+    },
+    {
+      "name": "Central meridian of zone 36",
+      "lat": 10.0,
+      "lon": 33.0,
+      "zone": 36,
+      "forced": false,
+      "hemisphere": "N",
+      "easting": 500000.0,
+      "northing": 1105412.4913
+    },
+    {
+      "name": "Zone 36 edge at 30\u00b0E",
+      "lat": 31.0,
+      "lon": 30.0001,
+      "zone": 36,
+      "forced": false,
+      "hemisphere": "N",
+      "easting": 213549.4719,
+      "northing": 3433466.411
+    },
+    {
+      "name": "Zone 1 near the antimeridian",
+      "lat": 51.0,
+      "lon": -179.9,
+      "zone": 1,
+      "forced": false,
+      "hemisphere": "N",
+      "easting": 296526.1722,
+      "northing": 5653828.2367
+    },
+    {
+      "name": "Zone 60 near the antimeridian",
+      "lat": -40.0,
+      "lon": 179.9,
+      "zone": 60,
+      "forced": false,
+      "hemisphere": "S",
+      "easting": 747561.6932,
+      "northing": 5568213.7614
+    },
+    {
+      "name": "Dead Sea (below sea level)",
+      "lat": 31.5,
+      "lon": 35.5,
+      "zone": 36,
+      "forced": false,
+      "hemisphere": "N",
+      "easting": 737445.2642,
+      "northing": 3487724.3855
+    }
+  ],
+  "ecef": [
+    {
+      "name": "Jerusalem",
+      "lat": 31.7767,
+      "lon": 35.2345,
+      "height": 812.4,
+      "x": 4433438.0223,
+      "y": 3131446.1586,
+      "z": 3339835.5667
+    },
+    {
+      "name": "Tel Aviv",
+      "lat": 32.0853,
+      "lon": 34.7818,
+      "height": 5.0,
+      "x": 4442612.6794,
+      "y": 3085603.836,
+      "z": 3368451.7957
+    },
+    {
+      "name": "Eilat",
+      "lat": 29.5577,
+      "lon": 34.9519,
+      "height": 12.0,
+      "x": 4551109.7761,
+      "y": 3181030.8047,
+      "z": 3127825.6256
+    },
+    {
+      "name": "Haifa",
+      "lat": 32.794,
+      "lon": 34.9896,
+      "height": 250.0,
+      "x": 4397024.1265,
+      "y": 3077640.1557,
+      "z": 3434911.501
+    },
+    {
+      "name": "East of 36\u00b0E, in its own zone 37",
+      "lat": 33.0,
+      "lon": 36.1,
+      "height": 900.0,
+      "x": 4326971.335,
+      "y": 3155281.7675,
+      "z": 3454448.8163
+    },
+    {
+      "name": "The same point shown in zone 36",
+      "lat": 33.0,
+      "lon": 36.1,
+      "height": 900.0,
+      "x": 4326971.335,
+      "y": 3155281.7675,
+      "z": 3454448.8163
+    },
+    {
+      "name": "Lyon",
+      "lat": 45.764,
+      "lon": 4.8357,
+      "height": 170.0,
+      "x": 4441404.7121,
+      "y": 375742.1955,
+      "z": 4547108.8325
+    },
+    {
+      "name": "Bergen (Norway exception, zone 32)",
+      "lat": 60.3913,
+      "lon": 5.3221,
+      "height": 20.0,
+      "x": 3145664.5903,
+      "y": 293038.3054,
+      "z": 5522163.8881
+    },
+    {
+      "name": "Svalbard (zone 33)",
+      "lat": 78.2232,
+      "lon": 15.6267,
+      "height": 10.0,
+      "x": 1257701.1973,
+      "y": 351788.3476,
+      "z": 6222079.8351
+    },
+    {
+      "name": "Cape Town (south)",
+      "lat": -33.9249,
+      "lon": 18.4241,
+      "height": 30.0,
+      "x": 5026381.3864,
+      "y": 1674403.047,
+      "z": -3539554.1905
+    },
+    {
+      "name": "Sydney (south)",
+      "lat": -33.8688,
+      "lon": 151.2093,
+      "height": 40.0,
+      "x": -4646080.3791,
+      "y": 2553222.3378,
+      "z": -3534394.6796
+    },
+    {
+      "name": "Quito (just south of the equator)",
+      "lat": -0.1807,
+      "lon": -78.4678,
+      "height": 2850.0,
+      "x": 1275671.7923,
+      "y": -6252139.977,
+      "z": -19989.7275
+    },
+    {
+      "name": "Just north of the equator",
+      "lat": 0.0001,
+      "lon": 33.0,
+      "height": 0.0,
+      "x": 5349155.7802,
+      "y": 3473782.3809,
+      "z": 11.0574
+    },
+    {
+      "name": "Central meridian of zone 36",
+      "lat": 10.0,
+      "lon": 33.0,
+      "height": 0.0,
+      "x": 5268421.8538,
+      "y": 3421353.156,
+      "z": 1100248.5477
+    },
+    {
+      "name": "Zone 36 edge at 30\u00b0E",
+      "lat": 31.0,
+      "lon": 30.0001,
+      "height": 0.0,
+      "x": 4738878.5781,
+      "y": 2736003.8506,
+      "z": 3265893.5167
+    },
+    {
+      "name": "Zone 1 near the antimeridian",
+      "lat": 51.0,
+      "lon": -179.9,
+      "height": 0.0,
+      "x": -4022024.5362,
+      "y": -7019.7642,
+      "z": 4933544.6202
+    },
+    {
+      "name": "Zone 60 near the antimeridian",
+      "lat": -40.0,
+      "lon": 179.9,
+      "height": 0.0,
+      "x": -4892700.1481,
+      "y": 8539.3814,
+      "z": -4077985.5722
+    },
+    {
+      "name": "Dead Sea (below sea level)",
+      "lat": 31.5,
+      "lon": 35.5,
+      "height": -430.0,
+      "x": 4431121.2175,
+      "y": 3160688.0475,
+      "z": 3313062.3432
+    }
+  ]
+}

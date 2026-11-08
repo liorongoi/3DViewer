@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { useClassOf, useLevels } from "../state/classification";
 import { useTranslation } from "react-i18next";
-import { ecefToGeodetic, formatCoordinate, formatLength, formatModelLength, type Measurement } from "@viewer/core";
+import { ecefToGeodetic, formatLength, formatModelLength, type Measurement } from "@viewer/core";
 import { useEngine, useSignal } from "../engine";
 import { useApp } from "../state/store";
 import { pushUndo } from "../state/undo";
 import { copyText } from "../clipboard";
+import { useCoordinates } from "../useCoordinates";
 import { AlertTriangle, Bookmark, Copy, Crosshair, Eye, EyeOff, Info, Orbit, Play, Route, Ruler, StopCircle, Trash2, Video, X } from "./icons";
 import { IconButton, Panel, Segmented, StatusBadge, cx } from "./primitives";
 import { AnalysisTab } from "./AnalysisTab";
@@ -119,7 +120,7 @@ function MeasurementCard({ m, unit, locale }: { m: Measurement; unit: "m" | "ft"
   const { t } = useTranslation();
   const engine = useEngine();
   const length = useLength(unit);
-  const coordSystem = useApp((s) => s.coordSystem);
+  const coordinates = useCoordinates();
   // Which copy just happened ("values", "coords" or a row's name), and whether it worked.
   const [copied, setCopied] = useState<{ what: string; ok: boolean } | null>(null);
   const r = m.result;
@@ -130,13 +131,11 @@ function MeasurementCard({ m, unit, locale }: { m: Measurement; unit: "m" | "ft"
     { key: "height", name: t("measure.height"), text: signed(m.kind === "distance" && seg ? seg.heightDelta : r.heightDelta) },
   ];
   const total = length(r.total3d, locale === "he" ? "en" : locale);
-  const coords = () =>
-    m.points
-      .map((p) => {
-        const g = ecefToGeodetic(p);
-        return formatCoordinate(g.lat, g.lon, g.height, coordSystem).text;
-      })
-      .join("\n");
+  const points = m.points.map((p) => {
+    const g = ecefToGeodetic(p);
+    return coordinates(g.lat, g.lon, g.height);
+  });
+  const coords = () => points.map((p) => p.text).join("\n");
   const copy = async (what: string, text: string) => {
     const ok = await copyText(text);
     setCopied({ what, ok });
@@ -208,6 +207,21 @@ function MeasurementCard({ m, unit, locale }: { m: Measurement; unit: "m" | "ft"
           </div>
         ))}
       </dl>
+      <details className="mt-2 text-[12px]" data-testid="measurement-points">
+        <summary className="cursor-pointer text-fg3" title={t("coords.heightNote")}>
+          {t("coords.points")} · {points.length}
+        </summary>
+        <ol className="mt-1 space-y-0.5">
+          {points.map((p, i) => (
+            <li key={i} className="flex items-baseline gap-2">
+              <span className="num w-4 shrink-0 text-fg3">{i + 1}</span>
+              <button type="button" data-point={i} title={copyLabel(`point-${i}`, t("common.copy"))} className="num min-w-0 text-start text-fg2 hover:text-accent" dir="ltr" onClick={() => void copy(`point-${i}`, p.text)}>
+                {copied?.what === `point-${i}` ? copyLabel(`point-${i}`, "") : p.parts.join("  ")}
+              </button>
+            </li>
+          ))}
+        </ol>
+      </details>
       {m.kind === "path" && (
         <details className="mt-2 text-[12px]">
           <summary className="cursor-pointer text-fg3">{t("measure.segments", { count: r.segments.length })}</summary>

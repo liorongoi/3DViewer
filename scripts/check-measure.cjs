@@ -17,6 +17,9 @@
 //      horizontal and height numbers; m/ft switches card and view; rename (Enter keeps, Esc
 //      drops), hide and show, copy values, copy coordinates and copy one number; delete, then
 //      Ctrl+Z or the Undo button brings it back in its place; Ctrl+Z also takes back Hide all.
+//   5. WP 2.6 (MSR-08): the cursor and each measured point in WGS84 and in UTM, in the model's
+//      zone or a chosen one, each value checked against proj4 here; the choice is remembered
+//      after a reload; Ctrl+C and a click copy coordinates.
 //
 // Usage: build apps/web, start `vite preview` on :4173, then
 //   node scripts/check-measure.cjs
@@ -425,6 +428,91 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
     check(off && on, "Hide all, then Ctrl+Z: the parts are shown again");
 
     check(errors.length === 0, "measurement UI: no page errors", errors.slice(0, 3).join(" | "));
+    await ctx.close();
+  }
+
+  // ---- 5. Coordinates (WP 2.6) ----
+  {
+    const proj4 = require(path.join(ROOT, "packages/core/node_modules/proj4"));
+    const utm = (lat, lon, zone) => proj4("EPSG:4326", `+proj=utm +zone=${zone} ${lat < 0 ? "+south " : ""}+datum=WGS84 +units=m +no_defs`, [lon, lat]);
+    const { ctx, page, errors } = await open("glb", {});
+    const press = async (loc) => {
+      const b = await loc.boundingBox();
+      await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
+    };
+    const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
+    const [a, b] = await look(page, [[-12.1, 4.4], [9.7, -15.3]]);
+    await measureWithMouse(page, [a, b], "m");
+    await page.keyboard.press("Escape");
+    const truth = await page.evaluate(() => {
+      const e = window.viewerEngine;
+      const C = e.widget.scene.globe.ellipsoid;
+      const m = e.measure.measurements.get()[0];
+      const centre = e.current.get().centre;
+      return {
+        id: m.id,
+        centre,
+        points: m.points.map((p) => {
+          const c = C.cartesianToCartographic(p);
+          return { lat: (c.latitude * 180) / Math.PI, lon: (c.longitude * 180) / Math.PI, height: c.height };
+        }),
+      };
+    });
+    const card = page.locator(`article[data-measurement="${truth.id}"]`);
+    await card.getByTestId("measurement-points").locator("summary").click();
+    const pointText = (i) => card.locator(`[data-point="${i}"]`).innerText();
+
+    // WGS84.
+    let shown = await pointText(0);
+    const p0 = truth.points[0];
+    const wgs = shown.match(/([\d.]+)° ([NS])\s+([\d.]+)° ([EW])\s+(-?[\d.]+) m/);
+    check(!!wgs && Math.abs(Number(wgs[1]) - Math.abs(p0.lat)) < 1e-6 && Math.abs(Number(wgs[3]) - Math.abs(p0.lon)) < 1e-6 && Math.abs(Number(wgs[5]) - p0.height) < 0.06, "WGS84: a measured point's latitude, longitude and height", shown);
+
+    // UTM in the model's own zone.
+    const hud = page.getByTestId("cursor-coordinates");
+    await press(page.getByRole("button", { name: /WGS84 · Coordinate system/ }));
+    await page.waitForTimeout(200);
+    const modelZone = Math.floor((truth.centre.lon + 180) / 6) + 1;
+    const zoneSelect = page.getByRole("combobox", { name: "Zone" });
+    const autoLabel = await zoneSelect.locator("option[value=auto]").innerText();
+    check(autoLabel.includes(String(modelZone)), "UTM: the zone is the model's own by default", autoLabel);
+    const utmOk = async (zone) => {
+      const text = await pointText(1);
+      const m = text.match(/^(\d+)([NS])\s+([\d.]+) E\s+([\d.]+) N\s+(-?[\d.]+) m$/);
+      const [e, n] = utm(truth.points[1].lat, truth.points[1].lon, zone);
+      return { ok: !!m && Number(m[1]) === zone && Math.abs(Number(m[3]) - e) <= 0.051 && Math.abs(Number(m[4]) - n) <= 0.051, text, want: `${zone} ${e.toFixed(1)} E ${n.toFixed(1)} N` };
+    };
+    let u = await utmOk(modelZone);
+    check(u.ok, `UTM: a measured point in zone ${modelZone} matches proj4 to 0.1 m`, `${u.text}; ${u.want}`);
+    const other = modelZone - 1;
+    await zoneSelect.selectOption(String(other));
+    await page.waitForTimeout(200);
+    u = await utmOk(other);
+    check(u.ok, `UTM: the same point in a chosen zone (${other}) matches proj4`, `${u.text}; ${u.want}`);
+
+    // The cursor, and Ctrl+C.
+    const box = await page.locator("canvas").first().boundingBox();
+    await page.mouse.move(box.x + a[0], box.y + a[1], { steps: 3 });
+    await page.waitForTimeout(500);
+    const cursorText = (await hud.innerText()).trim();
+    check(new RegExp(`^${other}N\\s`).test(cursorText), "cursor: shown in the chosen zone", cursorText);
+    await page.keyboard.press("Control+c");
+    await page.waitForTimeout(200);
+    const copiedCursor = await clipboard();
+    check(copiedCursor.replace(/\s+/g, " ") === cursorText.replace(/\s+/g, " ") || copiedCursor.startsWith(`${other}N `), "Ctrl+C copies the coordinates under the cursor", copiedCursor);
+    await press(card.locator('[data-point="0"]'));
+    await page.waitForTimeout(200);
+    const copiedPoint = await clipboard();
+    check(copiedPoint.startsWith(`${other}N `), "clicking a point's coordinates copies them", copiedPoint);
+
+    // Remembered on this workstation.
+    await page.reload({ waitUntil: "load" });
+    await page.waitForFunction(() => !!window.viewerEngine, null, { timeout: 60000 });
+    const remembered = await page.evaluate(() => [localStorage.getItem("viewer.coordSystem"), localStorage.getItem("viewer.utmZone")]);
+    const hudSystem = await page.getByRole("button", { name: /· Coordinate system/ }).innerText();
+    check(remembered[0] === "utm" && remembered[1] === String(other) && hudSystem.trim() === "UTM", "the system and zone are remembered after a reload", remembered.join(", "));
+
+    check(errors.length === 0, "coordinates: no page errors", errors.slice(0, 3).join(" | "));
     await ctx.close();
   }
 
