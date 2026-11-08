@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { CoordinateSystem, EnvironmentId, LengthUnit, Quality, ViewMode } from "@viewer/core";
 import { SAMPLE_CLASSIFICATIONS, type ClassificationLevel, type ModelSummary, type UpdateStatus } from "@viewer/shared";
 import { readPref, writePref } from "./prefs";
+import type { VersionInfo } from "../server/api";
 
 export type Route = "home" | "viewer";
 export type Tool = "none" | "distance" | "path" | "fly" | "sight" | "viewshed";
@@ -60,6 +61,8 @@ interface AppState {
   server: import("../server/api").ServerInfo | null;
   /** The server's library, when there is a server. */
   serverModels: ModelSummary[];
+  /** The open server model's versions, newest first (WP 4.4); read when the model is opened. */
+  versionHistory: { id: string; list: VersionInfo[] } | null;
   /** True once the server lookup has finished, with or without a server. */
   libraryReady: boolean;
   /** Classification levels, lowest first: the admin's from the server, or the prototype set. */
@@ -113,6 +116,7 @@ export const useApp = create<AppState>((set) => ({
   uploads: [],
   server: null,
   serverModels: [],
+  versionHistory: null,
   libraryReady: false,
   levels: SAMPLE_CLASSIFICATIONS,
   addUpload: (m) => set((s) => ({ uploads: [m, ...s.uploads.filter((x) => x.id !== m.id)] })),

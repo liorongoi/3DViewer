@@ -51,6 +51,7 @@ import { Snapper, type Snap } from "./snapper";
 import { FlyByTour, FlyMode, captureViewpoint, type Viewpoint } from "./fly";
 import { signal } from "../signal";
 import { applyManifest, effectiveVisibility, findLayer, layerForNode, layerNodes, layersFromGltf, layersFromTileset, walk, type Layer, type LayerManifest } from "../layers/layers";
+import { editableTree, type EditLayer } from "../layers/manifest-edit";
 import { applySiteConfig, catalogue, makeBaseLayers } from "./basemaps";
 import { ENVIRONMENTS, environmentSh, environmentSpecular, type EnvironmentId } from "./environments";
 import { cubeToKtx2 } from "./ktx2";
@@ -162,6 +163,7 @@ export class ViewerEngine {
   readonly error = signal<OpenError | null>(null);
   readonly tileProblems = signal<TileProblems | null>(null);
   readonly current = signal<ModelSummary | null>(null);
+  private openSeq = 0;
   readonly viewMode = signal<ViewMode>("shaded");
   readonly viewpoints = signal<Viewpoint[]>([]);
   readonly baseMapId = signal("bundled");
@@ -318,6 +320,8 @@ export class ViewerEngine {
 
   async open(summary: ModelSummary, opts: { fly?: boolean } = {}): Promise<void> {
     this.close();
+    // Another open or a close while this one loads makes it stale (two versions of one model share an id).
+    const seq = this.openSeq;
     this.current.set(summary);
     // A model without a reliable scale is measured in its own units (MSR-06).
     this.measure.setModelUnit(summary.placement?.modelUnit);
@@ -332,7 +336,7 @@ export class ViewerEngine {
           imageBasedLighting: this.makeIbl(),
           shadows: ShadowMode.ENABLED,
         });
-        if (this.current.get()?.id !== summary.id) return tileset.destroy();
+        if (seq !== this.openSeq) return tileset.destroy();
         // A missing or damaged tile leaves a hole; say which, and keep showing the rest.
         this.offTileFailed = tileset.tileFailed.addEventListener((f: { url: string; message: string }) => {
           const prev = this.tileProblems.get();
@@ -387,7 +391,7 @@ export class ViewerEngine {
             gltfJson = g;
           },
         });
-        if (this.current.get()?.id !== summary.id) return model.destroy();
+        if (seq !== this.openSeq) return model.destroy();
         scene.primitives.add(model);
         this.model = model;
         await new Promise<void>((resolve, reject) => {
@@ -409,6 +413,7 @@ export class ViewerEngine {
       if (opts.fly !== false) await this.home(1.6);
       else await this.home(0);
     } catch (e) {
+      if (seq !== this.openSeq) return;
       const err = e instanceof Error ? e : new Error(String(e));
       this.error.set({
         file: summary.source.url.split("/").pop() ?? summary.source.url,
@@ -422,6 +427,7 @@ export class ViewerEngine {
   }
 
   close(): void {
+    this.openSeq++;
     this.tour.stop();
     this.measure.cancel();
     this.measure.clear();
@@ -1067,6 +1073,11 @@ export class ViewerEngine {
   setLayerManifest(manifest: LayerManifest | null): void {
     this.manifest = manifest;
     if (this.derivedLayers.length) this.setLayers(applyManifest(this.derivedLayers, manifest));
+  }
+
+  /** The open model's layers as the layer editor edits them (WP 4.3): the file's tree as the saved manifest arranges it. */
+  editableLayers(): EditLayer[] {
+    return editableTree(this.derivedLayers, this.manifest);
   }
 
   setLayers(next: Layer[]): void {

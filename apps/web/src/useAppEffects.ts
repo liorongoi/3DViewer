@@ -1,9 +1,10 @@
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { findModel, refreshLibrary } from "./state/library";
-import { findServer, getBaseMaps, getLayerManifest, listLevels, recordView } from "./server/api";
+import { findServer, getBaseMaps, getLayerManifest, getModelDetail, listLevels, type ModelDetail } from "./server/api";
 import { readShare } from "./share";
 import { setVisible } from "@viewer/core";
+import type { ModelSummary } from "@viewer/shared";
 import { useEngine } from "./engine";
 import { useApp } from "./state/store";
 import { useFilteredModels } from "./components/Library";
@@ -19,10 +20,30 @@ export function useOpenModel() {
       set({ modelId: id, route: "viewer", tool: "none" });
       const srv = useApp.getState().server;
       const fromServer = srv && !m.id.startsWith("upload-");
-      if (fromServer) recordView(srv, m.id);
+      useApp.setState({ versionHistory: null });
+      // Reading the model's details records the view in the audit log, and gives its versions.
+      if (fromServer) void getModelDetail(srv, m.id).then(noteHistory, () => undefined);
       void engine.open(m);
       // The producer's layer arrangement, applied as soon as it arrives (the model may still be loading).
-      if (fromServer) void getLayerManifest(srv, m.id, m.version).then((man) => man && engine.current.get()?.id === m.id && engine.setLayerManifest(man));
+      if (fromServer) void getLayerManifest(srv, m.id, m.version).then((man) => man && engine.current.get() === m && engine.setLayerManifest(man));
+    },
+    /**
+     * Another version of the open model, from the same viewpoint, to compare (WP 4.4). Throws
+     * when the server cannot give it; the open model stays.
+     */
+    openVersion: async (id: string, version: number) => {
+      const srv = useApp.getState().server;
+      if (!srv || !engine) return;
+      const d = await getModelDetail(srv, id, version);
+      noteHistory(d);
+      const m = withoutHistory(d);
+      const man = getLayerManifest(srv, id, version);
+      const view = engine.getView();
+      await engine.open(m, { fly: false });
+      if (engine.current.get() !== m) return;
+      engine.setView(view);
+      const arranged = await man;
+      if (arranged && engine.current.get() === m) engine.setLayerManifest(arranged);
     },
     close: () => {
       engine?.close();
@@ -30,6 +51,15 @@ export function useOpenModel() {
       engine?.flyHome(1.4);
     },
   };
+}
+
+function noteHistory(d: ModelDetail): void {
+  useApp.setState({ versionHistory: { id: d.id, list: d.history } });
+}
+
+function withoutHistory<T extends ModelSummary>(d: T & { history?: unknown }): ModelSummary {
+  const { history: _, ...m } = d;
+  return m;
 }
 
 /** Wires app state to the engine and installs the global keyboard shortcuts (SRS 5.1). */
@@ -105,17 +135,24 @@ export function useAppEffects(): void {
     const apply = async () => {
       const st = readShare();
       if (!st) return;
-      const m = findModel(st.m);
-      if (!m) return;
-      useApp.getState().set({ modelId: m.id, route: "viewer", tool: "none" });
+      const latest = findModel(st.m);
+      if (!latest) return;
       const srv = useApp.getState().server;
-      const man = srv && !m.id.startsWith("upload-") ? getLayerManifest(srv, m.id, m.version) : null;
+      const fromServer = !!srv && !latest.id.startsWith("upload-");
+      // The link opens the version it was made on, if the server still has it.
+      const older = fromServer && Number.isInteger(st.v) && st.v !== latest.version;
+      useApp.setState({ versionHistory: null });
+      const m = older ? await getModelDetail(srv!, latest.id, st.v).then((d) => (noteHistory(d), withoutHistory(d)), () => latest) : latest;
+      useApp.getState().set({ modelId: m.id, route: "viewer", tool: "none" });
+      if (fromServer && !older) void getModelDetail(srv!, m.id).then(noteHistory, () => undefined);
+      const man = fromServer ? getLayerManifest(srv!, m.id, m.version) : null;
       await engine.open(m, { fly: false });
       const arranged = await man;
       if (arranged) engine.setLayerManifest(arranged);
       engine.setView(st.c);
       engine.setViewMode(st.mode);
       if (st.hidden.length) engine.setLayers(st.hidden.reduce((ls, id) => setVisible(ls, id, false), engine.layers.get()));
+      if (st.ms?.length) engine.measure.importShared(st.ms);
       history.replaceState(null, "", location.pathname + location.search);
     };
     void apply();

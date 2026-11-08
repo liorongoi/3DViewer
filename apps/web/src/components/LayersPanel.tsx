@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { effectiveVisibility, filterLayers, isolate, setAllVisible, setVisible, type Layer } from "@viewer/core";
 import { useEngine, useSignal } from "../engine";
-import { ChevronRight, Eye, EyeOff, Focus, Layers, Scan, Search, X } from "./icons";
+import { ChevronRight, Eye, EyeOff, Focus, Layers, ListTree, Scan, Search, X } from "./icons";
+import { LayerEditor } from "./LayerEditor";
 import { IconButton, Panel, cx } from "./primitives";
 import { MapTab } from "./MapTab";
 import { useApp } from "../state/store";
@@ -21,6 +23,13 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
   const paint = useRef<boolean | null>(null);
   const leftTab = useApp((s) => s.leftTab);
   const setApp = useApp((s) => s.set);
+
+  const model = useSignal(engine?.current, null);
+  const server = useApp((s) => s.server);
+  const [editing, setEditing] = useState(false);
+  // Only the library's models are arranged, for everyone, on their current version.
+  const arrangeable = !!server && !!model && !model.id.startsWith("upload-") && layers.length > 0;
+  const older = !!model && model.version < model.versions;
 
   const vis = useMemo(() => effectiveVisibility(layers), [layers]);
   const shown = useMemo(() => filterLayers(layers, query), [layers, query]);
@@ -86,7 +95,7 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
             type="button"
             aria-label={l.visible ? t("common.hide") : t("common.show")}
             title={`${l.visible ? t("common.hide") : t("common.show")} · ${t("shell.altClick")}: ${t("viewer.isolate")}`}
-            disabled={l.node === undefined && !l.nodeName && l.id !== "tileset" && !l.children.length}
+            disabled={l.node === undefined && !l.nodes?.length && !l.nodeName && l.id !== "tileset" && !l.children.length}
             className={cx("grid h-7 w-7 place-items-center rounded", l.visible ? "text-fg2 hover:text-fg" : "text-fg3", "disabled:opacity-30")}
             onPointerDown={(e) => {
               if (e.altKey) return;
@@ -182,6 +191,11 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
           <button type="button" className="h-7 flex-1 rounded-[6px] bg-s2 text-[12px] font-medium hover:bg-s3" onClick={hideAll}>
             {t("viewer.hideAll")}
           </button>
+          {arrangeable && (
+            <IconButton size="sm" label={older ? t("layerEditor.onlyCurrent") : t("layerEditor.open")} disabled={older} onClick={() => setEditing(true)}>
+              <ListTree size={15} />
+            </IconButton>
+          )}
           {beforeIsolate && (
             <button
               type="button"
@@ -205,6 +219,7 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
       </div>
       </>
       )}
+      {editing && createPortal(<LayerEditor onClose={() => setEditing(false)} />, document.body)}
     </Panel>
   );
 }

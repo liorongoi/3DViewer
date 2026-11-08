@@ -64,6 +64,30 @@ export async function getLayerManifest(srv: ServerInfo, id: string, version?: nu
   return (r?.data?.manifest as LayerManifest | null | undefined) ?? null;
 }
 
+export type VersionInfo = Schemas["Version"];
+export type ModelDetail = ModelSummary & { history: VersionInfo[] };
+
+/**
+ * A model with its version history, or one earlier version of it (WP 4.4). Reading it records
+ * a view in the audit log, with the version opened.
+ */
+export async function getModelDetail(srv: ServerInfo, id: string, version?: number): Promise<ModelDetail> {
+  const d = must(await apiFor(srv).GET("/api/models/{id}", { params: { path: { id }, query: version ? { version } : {} } }));
+  return { ...absolute(srv, d as ModelSummary), history: d.history };
+}
+
+export type ModelPatch = paths["/api/models/{id}"]["patch"]["requestBody"]["content"]["application/json"];
+
+/** Changes a model's details for everyone (UPL-04); answers the model as it now is. */
+export async function updateModelDetails(srv: ServerInfo, id: string, patch: ModelPatch): Promise<ModelSummary> {
+  return absolute(srv, must(await apiFor(srv).PATCH("/api/models/{id}", { params: { path: { id } }, body: patch })));
+}
+
+/** Saves the arrangement of a model's layers on its current version (WP 4.3); null goes back to the file's own. */
+export async function putLayerManifest(srv: ServerInfo, id: string, manifest: LayerManifest | null): Promise<void> {
+  must(await apiFor(srv).PUT("/api/models/{id}/layers", { params: { path: { id } }, body: { manifest } }));
+}
+
 /** Reading a model records a view in the audit log (NFR-11). */
 export function recordView(srv: ServerInfo, id: string): void {
   void fetch(`${srv.base}/api/models/${encodeURIComponent(id)}`).catch(() => undefined);

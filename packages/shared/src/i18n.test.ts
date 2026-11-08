@@ -8,8 +8,19 @@ function keys(o: object, prefix = ""): string[] {
 }
 
 describe("i18n", () => {
+  // Plural forms follow each language's rules: Hebrew has a form for two that English lacks.
+  const plural = /_(zero|one|two|few|many|other)$/;
+  const base = (ks: string[]) => [...new Set(ks.map((k) => k.replace(plural, "_*")))].sort();
   it("Hebrew and English have the same keys", () => {
-    expect(keys(he).sort()).toEqual(keys(en).sort());
+    expect(base(keys(he))).toEqual(base(keys(en)));
+  });
+  it("every plural has each form the language uses, or i18next shows the key itself", () => {
+    for (const [lang, table] of [["en", en], ["he", he]] as const) {
+      const ks = new Set(keys(table));
+      const forms = new Intl.PluralRules(lang).resolvedOptions().pluralCategories;
+      for (const k of base([...ks]).filter((k) => k.endsWith("_*")))
+        for (const f of forms) expect(ks.has(k.replace("_*", `_${f}`)), `${lang}: ${k.replace("_*", `_${f}`)}`).toBe(true);
+    }
   });
   it("no empty strings", () => {
     for (const k of keys(he)) expect(k.length).toBeGreaterThan(0);

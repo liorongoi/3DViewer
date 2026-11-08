@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useClassOf, useLevels } from "../state/classification";
+import { classificationIdOf, useClassOf, useLevels } from "../state/classification";
 import { useLibrary } from "../state/library";
 import { useTranslation } from "react-i18next";
 import { UPDATE_STATUSES, type ModelSummary } from "@viewer/shared";
@@ -23,8 +23,9 @@ export function filterModels(models: ModelSummary[], f: Filters, classOf: (m: Mo
 export function useFilteredModels(): ModelSummary[] {
   const filters = useApp((s) => s.filters);
   const overrides = useApp((s) => s.classOverrides);
+  const server = useApp((s) => !!s.server);
   const all = useLibrary();
-  return useMemo(() => filterModels(all, filters, (m) => overrides[m.id] ?? m.classificationId), [all, filters, overrides]);
+  return useMemo(() => filterModels(all, filters, (m) => classificationIdOf(m, overrides, server)), [all, filters, overrides, server]);
 }
 
 export function SearchField({ className, autoFocus }: { className?: string; autoFocus?: boolean }) {

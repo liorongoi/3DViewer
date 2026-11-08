@@ -41,6 +41,46 @@ export const en = {
     changed: "Changed {{date}}",
     open: "Open",
   },
+  layerEditor: {
+    open: "Arrange layers",
+    onlyCurrent: "Layers are arranged on the current version: open it first",
+    title: "Arrange layers",
+    dragHint: "Drag a row by its handle: onto the top or bottom edge of another row to place it there, onto its middle to nest it.",
+    select: "Select {{name}}",
+    name: "Layer name",
+    parts_one: "{{count}} part",
+    parts_other: "{{count}} parts",
+    empty: "empty",
+    up: "Move up",
+    down: "Move down",
+    nest: "Nest in the layer above",
+    unnest: "Move out of its group",
+    newGroup: "New group",
+    newGroupName: "New group",
+    merge_one: "Merge",
+    merge_other: "Merge {{count}}",
+    reset: "Back to the file's own layers",
+    forEveryone: "Saved for everyone on version {{v}}; the next version starts from it.",
+    saveFailed: "The layers were not saved. {{reason}}",
+    standard: { Terrain: "Terrain", Buildings: "Buildings", Infrastructure: "Infrastructure", Vegetation: "Vegetation", Water: "Water", Other: "Other" },
+  },
+  props: {
+    edit: "Edit details",
+    save: "Save",
+    saving: "Saving…",
+    saveFailed: "The details were not saved. {{reason}}",
+    sharedNote: "These are the library's details: a change is saved for everyone and recorded in the audit log.",
+  },
+  versions: {
+    title: "Versions",
+    pick: "Version {{v}} of {{n}}: choose a version",
+    olderOf: "v{{v}} of {{n}}",
+    current: "Current",
+    noNote: "No note",
+    loading: "Reading the versions…",
+    readFailed: "The versions could not be read. {{reason}}",
+    openFailed: "Version {{v}} could not be opened. {{reason}}",
+  },
   viewer: {
     layers: "Layers",
     measurements: "Measurements",
@@ -479,6 +519,8 @@ export const en = {
     unitsUnknownHint: "Measurements of this model will be shown in model units, not metres.",
     adjustLater: "After publishing, you can raise or lower the model in Properties.",
     layersSuggested: "Suggested standard names for the model's parts.",
+    arrangeOnPublish: "Gather the parts under these standard names when the model is published",
+    arrangeLater: "The arrangement can be changed at any time with Arrange layers in the Layers panel.",
     layersTiles: "3D Tiles keep the structure of the tileset; there is nothing to sort here.",
     suggested: "Suggested",
     andMore: "and {{n}} more",
@@ -849,7 +891,9 @@ export const en = {
   },
 };
 
-type Shape<T> = { [K in keyof T]: T[K] extends string ? string : Shape<T[K]> };
+// Hebrew has a plural form for two that English lacks: each English _other may have a Hebrew _two.
+type TwoForms<T> = { [K in keyof T as K extends `${infer B}_other` ? `${B}_two` : never]?: string };
+type Shape<T> = { [K in keyof T]: T[K] extends string ? string : Shape<T[K]> } & TwoForms<T>;
 
 export const he: Shape<typeof en> = {
   app: { name: "VIEWER", tagline: "מציג מודלים תלת-ממדיים מודיעיניים" },
@@ -881,6 +925,7 @@ export const he: Shape<typeof en> = {
     title: "ספריית מודלים",
     count_one: "מודל {{count}}",
     count_other: "{{count}} מודלים",
+    count_two: "{{count}} מודלים",
     searchPlaceholder: "חיפוש לפי שם, פרויקט, מבצע, גורם אחראי…",
     grid: "רשת",
     globe: "גלובוס",
@@ -891,6 +936,48 @@ export const he: Shape<typeof en> = {
     version: "גרסה {{version}}",
     changed: "עודכן {{date}}",
     open: "פתיחה",
+  },
+  layerEditor: {
+    open: "סידור שכבות",
+    onlyCurrent: "השכבות מסודרות בגרסה הנוכחית: יש לפתוח אותה תחילה",
+    title: "סידור שכבות",
+    dragHint: "גררו שורה בידית: לקצה העליון או התחתון של שורה אחרת כדי למקם אותה שם, לאמצעה כדי לקנן אותה.",
+    select: "בחירת {{name}}",
+    name: "שם השכבה",
+    parts_one: "חלק {{count}}",
+    parts_other: "{{count}} חלקים",
+    parts_two: "{{count}} חלקים",
+    empty: "ריקה",
+    up: "העברה למעלה",
+    down: "העברה למטה",
+    nest: "קינון בשכבה שמעל",
+    unnest: "הוצאה מהקבוצה",
+    newGroup: "קבוצה חדשה",
+    newGroupName: "קבוצה חדשה",
+    merge_one: "מיזוג",
+    merge_other: "מיזוג {{count}}",
+    merge_two: "מיזוג {{count}}",
+    reset: "חזרה לשכבות של הקובץ",
+    forEveryone: "נשמר לכולם בגרסה {{v}}; הגרסה הבאה תתחיל ממנו.",
+    saveFailed: "השכבות לא נשמרו. {{reason}}",
+    standard: { Terrain: "קרקע", Buildings: "מבנים", Infrastructure: "תשתיות", Vegetation: "צמחייה", Water: "מים", Other: "אחר" },
+  },
+  props: {
+    edit: "עריכת פרטים",
+    save: "שמירה",
+    saving: "שומר…",
+    saveFailed: "הפרטים לא נשמרו. {{reason}}",
+    sharedNote: "אלה פרטי הספרייה: שינוי נשמר לכולם ונרשם ביומן הביקורת.",
+  },
+  versions: {
+    title: "גרסאות",
+    pick: "גרסה {{v}} מתוך {{n}}: בחירת גרסה",
+    olderOf: "v{{v}} מתוך {{n}}",
+    current: "נוכחית",
+    noNote: "ללא הערה",
+    loading: "קורא את הגרסאות…",
+    readFailed: "לא ניתן לקרוא את הגרסאות. {{reason}}",
+    openFailed: "לא ניתן לפתוח את גרסה {{v}}. {{reason}}",
   },
   viewer: {
     layers: "שכבות",
@@ -943,6 +1030,7 @@ export const he: Shape<typeof en> = {
     tileProblems: {
       title_one: "אריח אחד לא נטען",
       title_other: "{{count}} אריחים לא נטענו",
+      title_two: "{{count}} אריחים לא נטענו",
       body: "שאר המודל מוצג; במקום האריחים האלה יש חורים.",
       dismiss: "סגירה",
     },
@@ -957,6 +1045,7 @@ export const he: Shape<typeof en> = {
     total: "אורך כולל",
     segments_one: "מקטע אחד",
     segments_other: "{{count}} מקטעים",
+    segments_two: "{{count}} מקטעים",
     units: "יחידות",
     metres: "מטרים",
     feet: "רגל",
@@ -1294,9 +1383,11 @@ export const he: Shape<typeof en> = {
     northing: "צפון (m)",
     reading_one: "קורא קובץ {{count}}…",
     reading_other: "קורא {{count}} קבצים…",
+    reading_two: "קורא {{count}} קבצים…",
     noModelFile: "אין קובץ מודל",
     files_one: "קובץ {{count}}",
     files_other: "{{count}} קבצים",
+    files_two: "{{count}} קבצים",
     triangles: "{{n}} משולשים",
     textures: "{{n}} טקסטורות",
     tiles: "{{n}} אריחים",
@@ -1330,6 +1421,8 @@ export const he: Shape<typeof en> = {
     unitsUnknownHint: "מדידות במודל הזה יוצגו ביחידות מודל, לא במטרים.",
     adjustLater: "אחרי הפרסום אפשר להגביה או להנמיך את המודל במאפיינים.",
     layersSuggested: "שמות תקניים מוצעים לחלקי המודל.",
+    arrangeOnPublish: "קיבוץ החלקים תחת השמות התקניים האלה עם פרסום המודל",
+    arrangeLater: "ניתן לשנות את הסידור בכל עת דרך סידור שכבות בחלונית השכבות.",
     layersTiles: "3D Tiles שומרים על מבנה ה-tileset; אין כאן מה למיין.",
     suggested: "מוצע",
     andMore: "ועוד {{n}}",
@@ -1382,6 +1475,7 @@ export const he: Shape<typeof en> = {
     saved: "נשמר.",
     savedThumbs_one: "נשמר. תמונה ממוזערת אחת מצוירת מחדש עם הפס החדש.",
     savedThumbs_other: "נשמר. {{count}} תמונות ממוזערות מצוירות מחדש עם הפס החדש.",
+    savedThumbs_two: "נשמר. {{count}} תמונות ממוזערות מצוירות מחדש עם הפס החדש.",
     removed: "{{name}} הוסרה.",
     levelExists: "כבר קיימת רמה בשם \"{{name}}\".",
     added: "{{name}} נוספה.",
@@ -1444,8 +1538,10 @@ export const he: Shape<typeof en> = {
     publishedValue: "{{bytes}} ב{{versions}} של {{models}}",
     versions_one: "גרסה אחת",
     versions_other: "{{count}} גרסאות",
+    versions_two: "{{count}} גרסאות",
     models_one: "מודל אחד",
     models_other: "{{count}} מודלים",
+    models_two: "{{count}} מודלים",
     uploading: "בהעלאה",
     disk: "דיסק",
     diskValue: "{{free}} פנויים מתוך {{total}}",
@@ -1532,6 +1628,7 @@ export const he: Shape<typeof en> = {
     filesSize: {
       title_one: "קובץ אחד, {{size}}",
       title_other: "{{count}} קבצים, {{size}}",
+      title_two: "{{count}} קבצים, {{size}}",
     },
     georeferenced: {
       title: "בעל מיקום גאוגרפי",
@@ -1563,6 +1660,7 @@ export const he: Shape<typeof en> = {
     missingRefs: {
       title_one: "קובץ מקושר אחד חסר",
       title_other: "{{count}} קבצים מקושרים חסרים",
+      title_two: "{{count}} קבצים מקושרים חסרים",
     },
     shortBinary: {
       title: "קובץ בינארי קצר ממה שהוצהר",
@@ -1571,6 +1669,7 @@ export const he: Shape<typeof en> = {
       title: "נתוני הגאומטריה פגומים",
       detail_one: "buffer view אחד מצביע אל מעבר לסוף הנתונים.",
       detail_other: "{{count}} buffer views מצביעים אל מעבר לסוף הנתונים.",
+      detail_two: "{{count}} buffer views מצביעים אל מעבר לסוף הנתונים.",
     },
     unreadable: {
       title: "לא ניתן לקרוא את {{file}}",
@@ -1626,6 +1725,7 @@ export const he: Shape<typeof en> = {
     tilesMissing: {
       title_one: "קובץ אריח אחד חסר",
       title_other: "{{count}} קובצי אריחים חסרים",
+      title_two: "{{count}} קובצי אריחים חסרים",
     },
     tilesPresent: {
       title: "כל {{count}} קובצי האריחים נמצאים",
@@ -1637,6 +1737,7 @@ export const he: Shape<typeof en> = {
     tilesDamaged: {
       title_one: "קובץ אריח אחד פגום",
       title_other: "{{count}} קובצי אריחים פגומים",
+      title_two: "{{count}} קובצי אריחים פגומים",
     },
     tileKinds: {
       title: "{{kinds}}",
@@ -1685,14 +1786,17 @@ export const he: Shape<typeof en> = {
     validatorErrors: {
       title_one: "כלי האימות הרשמי של {{format}} מצא שגיאה אחת",
       title_other: "כלי האימות הרשמי של {{format}} מצא {{count}} שגיאות",
+      title_two: "כלי האימות הרשמי של {{format}} מצא {{count}} שגיאות",
     },
     validatorErrorsLoads: {
       title_one: "כלי האימות הרשמי של {{format}} מצא שגיאה אחת; המודל עדיין נטען",
       title_other: "כלי האימות הרשמי של {{format}} מצא {{count}} שגיאות; המודל עדיין נטען",
+      title_two: "כלי האימות הרשמי של {{format}} מצא {{count}} שגיאות; המודל עדיין נטען",
     },
     validatorWarnings: {
       title_one: "עבר את כלי האימות הרשמי של {{format}} עם אזהרה אחת",
       title_other: "עבר את כלי האימות הרשמי של {{format}} עם {{count}} אזהרות",
+      title_two: "עבר את כלי האימות הרשמי של {{format}} עם {{count}} אזהרות",
     },
     validatorPassed: {
       title: "עבר את כלי האימות הרשמי של {{format}}",

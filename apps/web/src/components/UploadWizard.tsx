@@ -11,6 +11,7 @@ import { fromDrop, fromInput, suggestLayer } from "../upload/read-drop";
 import { Check, ChevronLeft, ChevronRight, Upload, Wand2, X, AlertTriangle, FolderOpen, XCircle } from "./icons";
 import { IconButton, cx } from "./primitives";
 import { useLevels } from "../state/classification";
+import { arrangeWhenOpen } from "../layers-standard";
 
 const STEPS = ["drop", "check", "place", "layers", "details"] as const;
 
@@ -71,6 +72,8 @@ export function UploadWizard() {
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
+  // Gather the parts under the suggested standard names when the model is published (UPL-09).
+  const [arrange, setArrange] = useState(true);
   const server = useApp((s) => s.server);
   const folderInput = useRef<HTMLInputElement>(null);
   const chosen = levels.find((c) => c.id === cls);
@@ -167,7 +170,10 @@ export function UploadWizard() {
     }
     await refreshLibrary();
     close();
-    setTimeout(() => openModel(status.modelId!), 0);
+    setTimeout(() => {
+      openModel(status.modelId!);
+      if (arrange && layers.length && engine) void arrangeWhenOpen(engine, srv, status.modelId!, t).catch((e: Error) => console.warn(`The layers were not arranged: ${e.message}`));
+    }, 0);
   };
 
   const publish = async () => {
@@ -432,6 +438,15 @@ export function UploadWizard() {
                   ))}
                   {(report?.nodes.length ?? 0) > layers.length && <p className="px-2 py-1 text-[12px] text-fg3">{t("wizard.andMore", { n: report!.nodes.length - layers.length })}</p>}
                 </div>
+              )}
+              {layers.length > 0 && server && (
+                <label className="flex items-start gap-2 text-[12px]">
+                  <input type="checkbox" className="mt-0.5 accent-[var(--accent)]" checked={arrange} onChange={(e) => setArrange(e.target.checked)} />
+                  <span>
+                    <span className="text-fg">{t("wizard.arrangeOnPublish")}</span>
+                    <span className="block text-fg3">{t("wizard.arrangeLater")}</span>
+                  </span>
+                </label>
               )}
             </div>
           )}

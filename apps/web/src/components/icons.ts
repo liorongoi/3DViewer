@@ -49,6 +49,7 @@ export {
   Upload,
   X,
   Check,
+  Loader2,
   AlertTriangle,
   Bookmark,
   Camera,
@@ -69,6 +70,12 @@ export {
   Lock,
   ArrowUp,
   ArrowDown,
+  GripVertical,
+  IndentIncrease,
+  IndentDecrease,
+  Merge,
+  FolderPlus,
+  ListTree,
   HardDrive,
 } from "lucide-react";
 export { CircleDashed as CircleDraft } from "lucide-react";

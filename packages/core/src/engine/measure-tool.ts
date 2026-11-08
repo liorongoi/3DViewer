@@ -21,6 +21,18 @@ import type { Snap, SnapKind } from "./snapper";
 
 export type MeasureKind = "distance" | "path";
 
+/** A measurement in a share link: kind (d distance, p path), name, points x,y,z flat, h when hidden. */
+export interface SharedMeasurement {
+  k: "d" | "p";
+  n: string;
+  p: number[];
+  h?: 1;
+}
+
+/** At most this many measurements, of at most this many points each, come in from a link. */
+const MAX_SHARED = 200;
+const MAX_SHARED_POINTS = 1000;
+
 export interface Measurement {
   id: string;
   kind: MeasureKind;
@@ -194,6 +206,47 @@ export class MeasureTool {
 
   clear(): void {
     for (const m of this.measurements.get()) this.remove(m.id);
+  }
+
+  /** The measurements as plain data for a share link (WP 4.6): earth-centred points to the millimetre. */
+  exportShared(): SharedMeasurement[] {
+    const mm = (v: number) => Math.round(v * 1000) / 1000;
+    return this.measurements.get().map((m) => ({
+      k: m.kind === "distance" ? "d" : "p",
+      n: m.label,
+      p: m.points.flatMap((p) => [mm(p.x), mm(p.y), mm(p.z)]),
+      ...(m.visible ? {} : { h: 1 as const }),
+    }));
+  }
+
+  /**
+   * Adds the measurements of a share link after those already here. Anything malformed is left
+   * out, not guessed at: a link is text anyone can edit. Returns how many were added.
+   */
+  importShared(list: unknown): number {
+    if (!Array.isArray(list)) return 0;
+    let added = 0;
+    for (const s of list.slice(0, MAX_SHARED)) {
+      const x = s as Partial<SharedMeasurement> | null;
+      const kind: MeasureKind | null = x?.k === "d" ? "distance" : x?.k === "p" ? "path" : null;
+      const flat = Array.isArray(x?.p) ? x.p : [];
+      // Points on or near the earth: no NaN, nothing at the centre or out in space.
+      const pts: Cartesian3[] = [];
+      for (let i = 0; i + 2 < flat.length && pts.length < MAX_SHARED_POINTS; i += 3) {
+        const p = new Cartesian3(Number(flat[i]), Number(flat[i + 1]), Number(flat[i + 2]));
+        const r = Cartesian3.magnitude(p);
+        if (Number.isFinite(r) && r > 6.2e6 && r < 6.6e6) pts.push(p);
+      }
+      if (!kind || flat.length % 3 !== 0 || pts.length * 3 !== flat.length || pts.length < 2 || (kind === "distance" && pts.length !== 2)) continue;
+      this.counters[kind] += 1;
+      const label = typeof x?.n === "string" && x.n.trim() ? x.n.slice(0, 200) : this.labelFor(kind, this.counters[kind]);
+      const m: Measurement = { id: `m${++seq}`, kind, label, points: pts, visible: x?.h !== 1, result: measurePath(pts) };
+      this.measurements.set([...this.measurements.get(), m]);
+      this.drawMeasurement(m);
+      added++;
+    }
+    if (added) this.requestRender();
+    return added;
   }
 
   private update(id: string, fn: (m: Measurement) => Measurement): void {
