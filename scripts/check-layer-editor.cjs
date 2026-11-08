@@ -17,6 +17,7 @@
 const { chromium } = require("playwright");
 const path = require("node:path");
 const { startServer } = require("./lib/test-server.cjs");
+const { describeFailure, watchConsole } = require("./lib/page-diagnostics.cjs");
 
 const ROOT = path.resolve(__dirname, "..");
 
@@ -38,6 +39,7 @@ const STANDARD = ["Terrain", "Buildings", "Infrastructure", "Vegetation", "Water
   const page = await ctx.newPage();
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
+  watchConsole(page, "layer-editor");
 
   const openChess = async () => {
     await page.goto("http://localhost:4173/", { waitUntil: "load" });
@@ -206,6 +208,7 @@ const STANDARD = ["Terrain", "Buildings", "Infrastructure", "Vegetation", "Water
   } catch (e) {
     console.error(e);
     failed++;
+    await describeFailure(page, "layer-editor");
   }
   check(errors.length === 0, "no page errors", errors.slice(0, 3).join(" | "));
   await browser.close();

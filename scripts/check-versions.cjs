@@ -14,6 +14,7 @@
 // node scripts/check-versions.cjs (CHROMIUM may point at a Chromium binary).
 const { chromium } = require("playwright");
 const { startServer } = require("./lib/test-server.cjs");
+const { describeFailure, watchConsole } = require("./lib/page-diagnostics.cjs");
 
 (async () => {
   let failed = 0;
@@ -42,6 +43,7 @@ const { startServer } = require("./lib/test-server.cjs");
   const page = await ctx.newPage();
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
+  watchConsole(page, "versions");
   try {
     await page.goto("http://localhost:4173/", { waitUntil: "load" });
     await page.waitForFunction(() => !!window.viewerEngine, null, { timeout: 120000 });
@@ -143,6 +145,7 @@ const { startServer } = require("./lib/test-server.cjs");
     const link = await page.evaluate(() => location.href);
     const other2 = await ctx.newPage();
     other2.on("pageerror", (e) => errors.push(e.message));
+    watchConsole(other2, "versions, second page");
     await other2.goto(link, { waitUntil: "load" });
     await other2.waitForFunction(() => window.viewerEngine?.model?.ready && window.viewerEngine.current.get()?.id === "m-lantern", null, { timeout: 120000 });
     const shared = await other2.evaluate(() => window.viewerEngine.current.get());
@@ -163,6 +166,7 @@ const { startServer } = require("./lib/test-server.cjs");
   } catch (e) {
     console.error(e);
     failed++;
+    await describeFailure(page, "versions");
   }
   check(errors.length === 0, "no page errors", errors.slice(0, 3).join(" | "));
   await browser.close();
