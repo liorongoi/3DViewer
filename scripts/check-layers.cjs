@@ -62,11 +62,25 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
     await page.getByRole("button", { name: /A Beautiful Game/ }).first().click();
     await page.waitForFunction(() => window.viewerEngine.model?.ready, null, { timeout: 120000 });
     if (kind === "3D Tiles") {
+      // The first tiles arrive slowly, after the viewer has stopped waiting for them to draw
+      // the ground cut: its captures once cancelled every tile download, so the model never
+      // loaded (seen in CI, where the tiles were slow).
+      const slow = /_check-layers-tiled\/tiles\/.*\.glb$/;
+      const delay = async (route) => {
+        await new Promise((r) => setTimeout(r, 9000));
+        await route.continue().catch(() => undefined);
+      };
+      await page.route(slow, delay);
       await page.evaluate(async () => {
         const e = window.viewerEngine;
         const s = e.current.get();
         await e.open({ ...s, id: "check-layers-tiled", source: { kind: "3dtiles", url: "samples/_check-layers-tiled/tileset.json", localFrame: true } });
       });
+      const arrived = await page
+        .waitForFunction(() => { const t = window.viewerEngine.tileset; return t?.tilesLoaded && t._selectedTiles.length > 0; }, null, { timeout: 120000, polling: 500 })
+        .then(() => true, () => false);
+      await page.unroute(slow, delay);
+      check(arrived, T("tiles that arrive slowly still load and are drawn"));
       await page.waitForFunction(() => window.viewerEngine.tileset?.tilesLoaded, null, { timeout: 180000 });
     }
     await page.evaluate(() => {

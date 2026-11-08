@@ -757,6 +757,10 @@ export class ViewerEngine {
       // destroyed buffers (seen when one upload replaced another).
       for (let w = 0; w < 50 && (this.widget.scene as unknown as { tweens: { length: number } }).tweens.length > 0 && current(); w++) await this.afterFrames(1);
       if (!current()) break;
+      // A capture draws with the tile choice frozen, and Cesium cancels every tile request a
+      // frame does not touch. Capturing while tiles load would cancel them, and the next try
+      // again, so a model whose tiles take longer than the wait above would never load.
+      if (target instanceof Cesium3DTileset && (!target.tilesLoaded || !(target as unknown as { _selectedTiles: unknown[] })._selectedTiles.length)) continue;
       const u = captureUnderside(this.widget.scene, target, () => this.widget.render());
       if (coverage(u) > coverage(best)) best = u;
       if (coverage(best) >= MIN_COVERAGE) break;
