@@ -72,7 +72,7 @@ jobs:
   # Production gap 7: the browser acceptance checks run on every pull request, in software
   # rendering (SwiftShader), on the light sample set (Khronos models and CesiumGS tilesets).
   # Software rendering is slow and runners vary (one check took 12 to 25 minutes), so the checks
-  # run as three jobs side by side, each well inside its limit.
+  # run as four jobs side by side, each well inside its limit.
   browser:
     name: browser (${{ matrix.suite }})
     runs-on: ubuntu-latest
@@ -80,7 +80,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [shell, layers, tools]
+        suite: [shell, layers, tools, accuracy]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -118,9 +118,15 @@ jobs:
       - name: Snapping to corners and edges within 10 px (MSR-03)
         if: matrix.suite == 'tools'
         run: node scripts/check-snap.cjs
-      - name: Measuring on the model's own surface, in its own units, and the measurement panel (WP 2.4, 2.5)
+      - name: Measuring on the model's own surface, in its own units, the measurement panel and coordinates (WP 2.4, 2.5, 2.6)
         if: matrix.suite == 'tools'
         run: node scripts/check-measure.cjs
+      - name: Electron for the desktop app
+        if: matrix.suite == 'accuracy'
+        run: node "$(dirname "$(node -p "require.resolve('electron/package.json', { paths: ['apps/desktop'] })")")/install.js"
+      - name: Measurements against survey data, in the web app and the desktop app (WP 2.7, NFR-07, NFR-18)
+        if: matrix.suite == 'accuracy'
+        run: xvfb-run -a node scripts/check-accuracy.cjs
       - name: Screenshots
         if: failure()
         uses: actions/upload-artifact@v4

@@ -1468,8 +1468,14 @@ export interface SharedView {
  * has east +X and north −Z, and a Z-up file east +X and north +Y, as the tools that wrote them
  * meant; the tiler bakes the same orientation into tiles (apps/server/src/tiler.ts).
  */
+/**
+ * The placement as a model matrix: the local east-north-up frame, with the heights stretched by
+ * verticalFactor (the model's uniform scale and up axis come after it, inside the model).
+ */
 function placeMatrix(p: NonNullable<ModelSummary["placement"]>, height: number): Matrix4 {
-  return Matrix4.fromArray(placementFrame(p, height));
+  const m = Matrix4.fromArray(placementFrame(p, height));
+  const k = p.verticalFactor;
+  return k && k !== 1 && Number.isFinite(k) ? Matrix4.multiplyByScale(m, new Cartesian3(1, 1, k), m) : m;
 }
 
 function friendlyReason(err: Error): string {

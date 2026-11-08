@@ -68,6 +68,12 @@ export interface ModelSummary {
      */
     grid?: { epsg: number; x: number; y: number; northDeg: number; groundPerGrid: number };
     /**
+     * Heights in the file are drawn this many times scale, 1 when absent. A projected grid's scale
+     * holds for distances along the ground only, so a model placed from a grid has its heights
+     * left at the file's own unit: 1 / the grid scale here.
+     */
+    verticalFactor?: number;
+    /**
      * Set when the file has no reliable scale (MSR-06): one of the file's units is drawn this many
      * metres long, and measurements are shown in model units, not metres.
      */

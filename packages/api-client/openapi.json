@@ -136,6 +136,9 @@
           "modelUnit": {
             "type": "number"
           },
+          "verticalFactor": {
+            "type": "number"
+          },
           "upAxis": {
             "enum": [
               "y",
@@ -1124,6 +1127,10 @@
                         "type": "number",
                         "exclusiveMinimum": 0
                       },
+                      "verticalFactor": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
                       "upAxis": {
                         "enum": [
                           "y",
@@ -1444,6 +1451,10 @@
                         "exclusiveMinimum": 0
                       },
                       "modelUnit": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      "verticalFactor": {
                         "type": "number",
                         "exclusiveMinimum": 0
                       },
@@ -2901,6 +2912,10 @@
                         "exclusiveMinimum": 0
                       },
                       "modelUnit": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      "verticalFactor": {
                         "type": "number",
                         "exclusiveMinimum": 0
                       },
