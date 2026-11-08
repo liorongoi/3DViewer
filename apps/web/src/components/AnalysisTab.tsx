@@ -1,11 +1,11 @@
 import { useTranslation } from "react-i18next";
 import { useEngine, useSignal } from "../engine";
 import { useApp } from "../state/store";
-import { Download, Eye, EyeOff, Radar, ScanEye, Trash2, X } from "./icons";
+import { Download, Eye, EyeOff, Radar, Ruler, ScanEye, Trash2, X } from "./icons";
 import { IconButton, cx } from "./primitives";
 import { ProfileChart, fmtDist } from "./ProfileChart";
 import { pairsToCsv, profileToCsv, type SightPair } from "@viewer/core";
-import { saveText, slug } from "../download";
+import { saveBytes, saveText, slug } from "../download";
 import { pushUndo } from "../state/undo";
 
 /** Right panel tab: line of sight pairs with profiles (WP 2.8) and the 360° viewshed (WP 2.9). */
@@ -169,6 +169,7 @@ function ViewshedSection() {
   const engine = useEngine();
   const s = useSignal(engine?.viewshed.state, null);
   const placing = useSignal(engine?.viewshed.placing, false);
+  const area = useSignal(engine?.viewshed.area, null);
   const set = useApp((x) => x.set);
   return (
     <section className="rounded-[10px] border border-line bg-s2 p-3">
@@ -204,6 +205,38 @@ function ViewshedSection() {
             <span className="inline-flex items-center gap-1 text-fg2">
               <i className="inline-block h-2 w-3 rounded-[2px]" style={{ background: "var(--bad)" }} /> {t("analysis.hidden")}
             </span>
+          </div>
+          <div data-testid="viewshed-area" className="flex flex-col gap-1 rounded-[8px] border border-line bg-s1solid p-2 text-[12px]">
+            {!area ? (
+              <button type="button" className="btn-ghost h-7 self-start px-2 text-[12px]" onClick={() => void engine?.viewshed.computeArea()}>
+                <Ruler size={13} /> {t("analysis.vsArea")}
+              </button>
+            ) : area.computing ? (
+              <span className="text-fg3">{t("analysis.vsAreaComputing")}</span>
+            ) : area.result ? (
+              <>
+                <span className="text-fg2" data-seen={area.result.visibleArea} data-total={area.result.area}>
+                  {t("analysis.vsAreaResult", {
+                    seen: fmtArea(area.result.visibleArea),
+                    total: fmtArea(area.result.area),
+                    pct: ((area.result.visibleArea / (area.result.area || 1)) * 100).toFixed(1),
+                  })}
+                </span>
+                <span className="text-[11px] text-fg3">{t("analysis.vsAreaNote", { cell: area.result.cell })}</span>
+                <button
+                  type="button"
+                  className="btn-ghost h-7 self-start px-2 text-[12px]"
+                  onClick={async () => {
+                    const tif = await engine?.viewshed.areaGeoTiff();
+                    if (tif) saveBytes(`viewshed-${area.for.lat.toFixed(5)}-${area.for.lon.toFixed(5)}.tif`, tif, "image/tiff");
+                  }}
+                >
+                  <Download size={13} /> {t("analysis.vsGeoTiff")}
+                </button>
+              </>
+            ) : (
+              <span style={{ color: "var(--bad)" }}>{t("analysis.vsAreaFailed", { error: area.error ?? "" })}</span>
+            )}
           </div>
         </div>
       )}
@@ -283,4 +316,9 @@ function Slider({
       <input type="range" min={0} max={1000} value={Math.round(to(value))} onChange={(e) => onChange(from(Number(e.target.value)))} className="w-full accent-[var(--accent)]" />
     </label>
   );
+}
+
+/** Square metres, as m² below a hectare-ish size and km² above. */
+function fmtArea(m2: number): string {
+  return m2 < 100000 ? `${Math.round(m2).toLocaleString()} m²` : `${(m2 / 1e6).toFixed(m2 < 1e7 ? 2 : 1)} km²`;
 }

@@ -424,7 +424,7 @@ function LodSection() {
   );
   const mb = (b: number) => `${(b / 1048576).toFixed(b > 104857600 ? 0 : 1)} MB`;
   return (
-    <section className="rounded-[8px] border border-line bg-s2 p-2">
+    <section data-testid="lod-inspector" className="rounded-[8px] border border-line bg-s2 p-2">
       <div className="mb-1 text-[12px] font-medium">{t("side.lod")}</div>
       <label className="flex flex-col gap-0.5">
         <span className="flex justify-between text-[11px] text-fg3">
@@ -466,9 +466,11 @@ function LodSection() {
       </div>
       <dl className="num mt-2 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[12px]">
         <dt className="text-fg3">{t("side.tilesDrawn")}</dt>
-        <dd className="text-fg2">{stats.drawn}</dd>
+        <dd className="text-fg2" data-stat="drawn">{stats.drawn}</dd>
+        <dt className="text-fg3">{t("side.tilesLoaded")}</dt>
+        <dd className="text-fg2" data-stat="loaded">{stats.loaded}</dd>
         <dt className="text-fg3">{t("side.deepest")}</dt>
-        <dd className="text-fg2">{stats.maxDepth}</dd>
+        <dd className="text-fg2" data-stat="deepest">{stats.maxDepth}</dd>
         {stats.points > 0 && (
           <>
             <dt className="text-fg3">{t("side.points")}</dt>
@@ -478,11 +480,11 @@ function LodSection() {
         {stats.triangles > 0 && (
           <>
             <dt className="text-fg3">{t("side.triangles")}</dt>
-            <dd className="text-fg2">{stats.triangles.toLocaleString()}</dd>
+            <dd className="text-fg2" data-stat="triangles" data-value={stats.triangles}>{stats.triangles.toLocaleString()}</dd>
           </>
         )}
         <dt className="text-fg3">{t("side.gpu")}</dt>
-        <dd className="text-fg2">{mb(stats.memory)}</dd>
+        <dd className="text-fg2" data-stat="memory" data-value={stats.memory}>{mb(stats.memory)}</dd>
         <dt className="text-fg3">{t("side.loading")}</dt>
         <dd className="text-fg2">{stats.loading ? t("side.loadingTiles", { n: stats.loading }) : t("side.done")}</dd>
       </dl>

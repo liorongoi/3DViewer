@@ -136,6 +136,8 @@ export class ViewerEngine {
 
   readonly cursor = signal<CursorInfo | null>(null);
   readonly cameraInfo = signal<CameraInfo>({ heading: 0, pitch: -0.5, metresPerPixel: 1, height: 0 });
+  private lastPose: number[] | null = null;
+  private lastScaleAt = 0;
   readonly fps = signal(0);
   /** Numbers for the performance overlay (Shift+P), refreshed twice a second (WP 1.5). */
   readonly perf = signal<PerfStats | null>(null);
@@ -288,7 +290,7 @@ export class ViewerEngine {
     this.fly = new FlyMode(scene, this.widget.canvas);
     this.tour = new FlyByTour(scene);
     this.sight = new SightlineTool(scene, this.widget.entities, (pts) => this.sampleGround(pts));
-    this.viewshed = new Viewshed(scene, this.widget.entities);
+    this.viewshed = new Viewshed(scene, this.widget.entities, (pts) => this.sampleGround(pts));
     this.lod = new LodInspector(scene);
     this.userLayers = new UserLayers(
       this.widget,
@@ -826,22 +828,31 @@ export class ViewerEngine {
    * availability (quantized-mesh), otherwise a fixed deep level (heightmap sources).
    */
   async sampleGround(points: Cartographic[], level = 14): Promise<Cartographic[]> {
-    // The ground itself, not the cut the globe draws under the open model.
-    const tp = this.groundTerrain;
-    const out = tp instanceof EllipsoidTerrainProvider ? points.map((p) => ((p.height = 0), p)) : await (tp.availability ? sampleTerrainMostDetailed(tp, points) : sampleTerrain(tp, level, points));
     // Inside the user's DEMs, their own full resolution rather than the terrain tiles' spacing.
     // Later DEMs win, as they do in the terrain.
+    const fromDem = new Float64Array(points.length).fill(NaN);
     for (const dem of this.userDems) {
       if (!dem.sampleHeights || (dem.mode ?? "replace") !== "replace") continue;
-      const inside = out.filter((p) => Rectangle.contains(dem.rectangle, p));
-      if (!inside.length) continue;
-      const h = await dem.sampleHeights(inside).catch(() => null);
-      inside.forEach((p, i) => {
-        const v = h?.[i];
-        if (v !== undefined && Number.isFinite(v)) p.height = v;
+      const idx: number[] = [];
+      points.forEach((p, i) => Rectangle.contains(dem.rectangle, p) && idx.push(i));
+      if (!idx.length) continue;
+      const h = await dem.sampleHeights(idx.map((i) => points[i]!)).catch(() => null);
+      idx.forEach((i, k) => {
+        const v = h?.[k];
+        if (v !== undefined && Number.isFinite(v)) fromDem[i] = v;
       });
     }
-    return out;
+    // The ground itself, not the cut the globe draws under the open model; only where no DEM answered.
+    const rest = points.filter((_, i) => !Number.isFinite(fromDem[i]));
+    const tp = this.groundTerrain;
+    if (rest.length) {
+      if (tp instanceof EllipsoidTerrainProvider) for (const p of rest) p.height = 0;
+      else await (tp.availability ? sampleTerrainMostDetailed(tp, rest) : sampleTerrain(tp, level, rest));
+    }
+    points.forEach((p, i) => {
+      if (Number.isFinite(fromDem[i])) p.height = fromDem[i]!;
+    });
+    return points;
   }
 
   /** The point on the globe at the centre of the view, used as the default place for uploads. */
@@ -1372,12 +1383,21 @@ export class ViewerEngine {
       this.updatePerf();
     }
     const cam = this.widget.camera;
+    // Only when the camera has moved, or the ground was not there yet: the scale needs a pick on the globe.
+    const pose = [cam.positionWC.x, cam.positionWC.y, cam.positionWC.z, cam.directionWC.x, cam.directionWC.y, cam.directionWC.z];
+    const still = this.lastPose && pose.every((v, i) => Math.abs(v - this.lastPose![i]!) < 1e-3);
+    // While the camera is still, the ground under it can still sharpen as tiles arrive: look
+    // again twice a second, not every frame.
+    if (still && now - this.lastScaleAt < 500) return;
+    const scale = this.camera.metresPerPixelAtCentre();
+    this.lastPose = pose;
+    this.lastScaleAt = now;
     const carto = Cartographic.fromCartesian(cam.positionWC);
     const prev = this.cameraInfo.get();
     const next = {
       heading: cam.heading,
       pitch: cam.pitch,
-      metresPerPixel: this.camera.metresPerPixelAtPivot(),
+      metresPerPixel: scale.metresPerPixel,
       height: carto?.height ?? 0,
     };
     if (

@@ -121,6 +121,9 @@ jobs:
       - name: Measuring on the model's own surface, in its own units, the measurement panel and coordinates (WP 2.4, 2.5, 2.6)
         if: matrix.suite == 'tools'
         run: node scripts/check-measure.cjs
+      - name: LOD inspector against Cesium's statistics, live detail, colour by depth, freeze (WP 2.10, LOD-01)
+        if: matrix.suite == 'tools'
+        run: node scripts/check-lod.cjs
       - name: Electron for the desktop app
         if: matrix.suite == 'accuracy'
         run: node "$(dirname "$(node -p "require.resolve('electron/package.json', { paths: ['apps/desktop'] })")")/install.js"
@@ -130,6 +133,9 @@ jobs:
       - name: Line of sight against a GDAL reference on a DEM, and the analysis panel (WP 2.8, ANL-01, ANL-02)
         if: matrix.suite == 'accuracy'
         run: node scripts/check-sight.cjs
+      - name: 360° visibility against gdal_viewshed on a DEM, the visible area and its GeoTIFF (WP 2.9, ANL-03)
+        if: matrix.suite == 'accuracy'
+        run: node scripts/check-viewshed.cjs
       - name: Screenshots
         if: failure()
         uses: actions/upload-artifact@v4

@@ -15,6 +15,17 @@ import {
   type Scene,
 } from "cesium";
 import { signal } from "../signal";
+import { computeViewshedGrid, viewshedCellFor, viewshedGridFrame, viewshedToGeoTiff, type ViewshedGridResult } from "./viewshed-grid";
+
+/** The visible area on the ground, worked out on a grid (WP 2.9). */
+export interface ViewshedArea {
+  /** The state it was computed for; any change to the observer makes it stale and it is cleared. */
+  for: ViewshedState;
+  computing: boolean;
+  result: ViewshedGridResult | null;
+  frame: { epsg: number; easting: number; northing: number } | null;
+  error?: string;
+}
 
 /**
  * 360° visibility (viewshed) from an observer point (VWR-ANL-03, plan WP 2.9).
@@ -89,6 +100,8 @@ export class Viewshed {
   /** Waiting for the click that places the observer. */
   readonly placing = signal(false);
   readonly dragging = signal(false);
+  /** The visible area within the radius, on the ground, once asked for. */
+  readonly area = signal<ViewshedArea | null>(null);
   /** Development aid: 1 shows the cube depth, 2 the fragment distance. */
   debugMode = 0;
   /** Cube face size in pixels; set from the quality preset. */
@@ -105,6 +118,7 @@ export class Viewshed {
   constructor(
     private readonly scene: Scene,
     private readonly entities: EntityCollection,
+    private readonly sampleGround?: (pts: Cartographic[]) => Promise<Cartographic[]>,
   ) {
     this.lightCamera = new Camera(scene);
   }
@@ -129,6 +143,7 @@ export class Viewshed {
 
   set(s: ViewshedState): void {
     this.state.set(s);
+    if (this.area.get()) this.area.set(null);
     this.ensure();
     this.update();
   }
@@ -150,7 +165,41 @@ export class Viewshed {
     return id === this.eye || id === this.pole;
   }
 
+  /**
+   * Works out the visible area on the ground within the radius, on a UTM grid of about 400 cells
+   * across, as gdal_viewshed would on the same ground (terrain or the user's DEM). Buildings and
+   * models are left out, as they have no heights on a grid; the overlay shows them.
+   */
+  async computeArea(): Promise<ViewshedArea | null> {
+    const s = this.state.get();
+    if (!s || !this.sampleGround) return null;
+    this.area.set({ for: s, computing: true, result: null, frame: null });
+    try {
+      const cell = viewshedCellFor(s.radius);
+      const f = viewshedGridFrame(s.lon, s.lat, s.radius, cell);
+      const pts = f.centres().map((p) => Cartographic.fromDegrees(p.lon, p.lat));
+      const ground = await this.sampleGround(pts);
+      const heights = Float64Array.from(ground, (c) => c.height);
+      const result = computeViewshedGrid({ size: f.size, cell, heights }, s.ground + s.height, s.radius);
+      const done: ViewshedArea = { for: s, computing: false, result, frame: { epsg: f.epsg, easting: f.easting, northing: f.northing } };
+      // Only if the observer has not moved meanwhile.
+      if (this.state.get() === s) this.area.set(done);
+      return done;
+    } catch (e) {
+      const failed: ViewshedArea = { for: s, computing: false, result: null, frame: null, error: e instanceof Error ? e.message : String(e) };
+      if (this.state.get() === s) this.area.set(failed);
+      return failed;
+    }
+  }
+
+  /** The computed area as a GeoTIFF (1 seen, 0 hidden, 255 outside the radius). */
+  async areaGeoTiff(): Promise<ArrayBuffer | null> {
+    const a = this.area.get();
+    return a?.result && a.frame ? viewshedToGeoTiff(a.result, a.frame) : null;
+  }
+
   clear(): void {
+    this.area.set(null);
     this.placing.set(false);
     this.dragging.set(false);
     this.state.set(null);

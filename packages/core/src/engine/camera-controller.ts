@@ -141,7 +141,34 @@ export class CameraController {
   }
 
   metresPerPixelAtPivot(): number {
-    const d = Cartesian3.distance(this.camera.positionWC, this.pivot) || 1;
+    return this.metresPerPixelAt(Cartesian3.distance(this.camera.positionWC, this.pivot) || 1);
+  }
+
+  /**
+   * Metres per pixel at what the view is looking at, for the scale bar: the ground at the
+   * centre of the view, or the pivot when it is on screen and nearer (a model in front of the
+   * ground). The pivot alone goes stale when the camera is moved by a fly-to or a viewpoint.
+   */
+  metresPerPixelAtCentre(): { metresPerPixel: number } {
+    const cam = this.camera;
+    const canvas = this.canvas;
+    const ray = cam.getPickRay(new Cartesian2(canvas.clientWidth / 2, canvas.clientHeight / 2));
+    let hit: Cartesian3 | undefined;
+    try {
+      // Runs after every frame that moved the camera: it must never throw, or Cesium stops drawing.
+      hit = ray && this.scene.globe ? this.scene.globe.pick(ray, this.scene) : undefined;
+    } catch {
+      hit = undefined;
+    }
+    const toPivot = Cartesian3.subtract(this.pivot, cam.positionWC, new Cartesian3());
+    const pivotD = Cartesian3.magnitude(toPivot);
+    const onScreen = pivotD > 0 && Cartesian3.dot(toPivot, cam.directionWC) / pivotD > Math.cos(0.5);
+    if (!hit) return { metresPerPixel: this.metresPerPixelAt(pivotD || 1) };
+    const groundD = Cartesian3.distance(cam.positionWC, hit);
+    return { metresPerPixel: this.metresPerPixelAt(onScreen && pivotD < groundD ? pivotD : groundD) };
+  }
+
+  private metresPerPixelAt(d: number): number {
     const fr = this.camera.frustum;
     const fovy = fr instanceof PerspectiveFrustum ? (fr.fovy ?? CMath.toRadians(60)) : CMath.toRadians(60);
     return (2 * d * Math.tan(fovy / 2)) / Math.max(1, this.canvas.clientHeight);
