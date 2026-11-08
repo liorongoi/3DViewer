@@ -126,7 +126,8 @@ jobs:
         run: node scripts/check-lod.cjs
       - name: Electron for the desktop app
         if: matrix.suite == 'accuracy'
-        run: node "$(dirname "$(node -p "require.resolve('electron/package.json', { paths: ['apps/desktop'] })")")/install.js"
+        run: |
+          node "$(dirname "$(node -p "require.resolve('electron/package.json', { paths: ['apps/desktop'] })")")/install.js"
       - name: Measurements against survey data, in the web app and the desktop app (WP 2.7, NFR-07, NFR-18)
         if: matrix.suite == 'accuracy'
         run: xvfb-run -a node scripts/check-accuracy.cjs
