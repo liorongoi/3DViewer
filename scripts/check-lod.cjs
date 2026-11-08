@@ -94,10 +94,13 @@ const RAMP = ["#FFE8A3", "#FFC66B", "#FF9F4A"];
 
   // ---- The detail slider, live ----
   const slider = panel.getByRole("slider", { name: "Detail" });
+  // The panel's numbers refresh several times a second, and on a slow runner Playwright never
+  // finds the row still enough to click: the checkbox is clicked in place instead.
+  const toggle = (label) => panel.getByRole("checkbox", { name: label }).dispatchEvent("click");
   await slider.fill("1000"); // the coarse end: 64 px
   await settle();
   const coarse = await read();
-  await page.getByText("Full detail: every triangle", { exact: true }).click();
+  await toggle("Full detail: every triangle");
   await settle();
   const full = await read();
   check(coarse.ui.maxDepth === 0 && coarse.ui.drawn === 1, "at low detail only the root is drawn", `deepest ${coarse.ui.maxDepth}, ${coarse.ui.drawn} tile`);
@@ -108,7 +111,7 @@ const RAMP = ["#FFE8A3", "#FFC66B", "#FF9F4A"];
   check(sse === 0, "full detail sets the screen-space error to 0", `${sse}`);
 
   // ---- Colour by depth ----
-  await page.getByText("Colour tiles by depth", { exact: true }).click();
+  await toggle("Colour tiles by depth");
   await settle();
   const colours = await page.evaluate(() => {
     const t = window.viewerEngine.tileset;
@@ -123,7 +126,7 @@ const RAMP = ["#FFE8A3", "#FFC66B", "#FF9F4A"];
     return out;
   });
   check(colours.length > 0 && colours.every((c) => c.css === RAMP[c.d]), "each drawn tile has its depth's colour", JSON.stringify(colours));
-  await page.getByText("Colour tiles by depth", { exact: true }).click();
+  await toggle("Colour tiles by depth");
   await settle();
   const back = await page.evaluate(() => {
     const c = window.viewerEngine.tileset._selectedTiles[0].content;
@@ -133,26 +136,26 @@ const RAMP = ["#FFE8A3", "#FFC66B", "#FF9F4A"];
   check(back === "#FFFFFF" || back === "none", "turning it off gives the tiles their own colours back", back);
 
   // ---- Bounding volumes ----
-  await page.getByText("Show tile bounding boxes", { exact: true }).click();
+  await toggle("Show tile bounding boxes");
   const bounds = await page.evaluate(() => window.viewerEngine.tileset.debugShowBoundingVolume);
-  await page.getByText("Show tile bounding boxes", { exact: true }).click();
+  await toggle("Show tile bounding boxes");
   const boundsOff = await page.evaluate(() => window.viewerEngine.tileset.debugShowBoundingVolume);
   check(bounds === true && boundsOff === false, "bounding volumes show and hide");
 
   // ---- Freeze ----
-  await page.getByText("Freeze the selection (fly around it)", { exact: true }).click();
-  await page.getByText("Full detail: every triangle", { exact: true }).click(); // back to the slider's 8 px
+  await toggle("Freeze the selection (fly around it)");
+  await toggle("Full detail: every triangle"); // back to the slider's 8 px
   await slider.fill("1000");
   await settle();
   const frozen = await read();
   check(frozen.ui.maxDepth === 2 && frozen.ui.drawn === full.ui.drawn, "frozen, the selection stays while the detail changes", `deepest ${frozen.ui.maxDepth}, ${frozen.ui.drawn} tiles`);
-  await page.getByText("Freeze the selection (fly around it)", { exact: true }).click();
+  await toggle("Freeze the selection (fly around it)");
   await settle();
   const thawed = await read();
   check(thawed.ui.maxDepth === 0, "unfrozen, it follows the detail again", `deepest ${thawed.ui.maxDepth}`);
 
   // ---- A frozen selection does not carry over ----
-  await page.getByText("Freeze the selection (fly around it)", { exact: true }).click();
+  await toggle("Freeze the selection (fly around it)");
   await open();
   await page.waitForFunction(() => !!window.viewerEngine.tileset, null, { timeout: 60000 });
   await settle();
