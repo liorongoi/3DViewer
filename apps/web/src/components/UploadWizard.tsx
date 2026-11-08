@@ -172,7 +172,7 @@ export function UploadWizard() {
     close();
     setTimeout(() => {
       openModel(status.modelId!);
-      if (arrange && layers.length && engine) void arrangeWhenOpen(engine, srv, status.modelId!, t).catch((e: Error) => console.warn(`The layers were not arranged: ${e.message}`));
+      if (arrange && layers.length && engine) void arrangeWhenOpen(engine, srv, status.modelId!, t).catch((e: unknown) => console.warn(e));
     }, 0);
   };
 
