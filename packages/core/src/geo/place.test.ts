@@ -88,7 +88,7 @@ describe("placementFrame", () => {
 
 describe("a model placed from a projected grid keeps true heights (WP 2.7)", () => {
   it("puts every surveyed corner of the accuracy block where PROJ puts it, to 1 mm", async () => {
-    const survey = (await import("../../../../scripts/fixtures/survey-reference.json")).default as {
+    const survey = (await import("../../../../scripts/fixtures/survey-reference.json")).default as unknown as {
       epsg: number;
       origin: [number, number, number];
       points: { name: string; grid: [number, number, number]; ecef: [number, number, number] }[];
