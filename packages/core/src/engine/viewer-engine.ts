@@ -239,7 +239,7 @@ export class ViewerEngine {
       const summary = this.current.get();
       if (!summary || this.error.get()) return;
       const err = e instanceof Error ? e : new Error(String(e));
-      console.error("VIEWER: drawing failed; the model was closed.", err);
+      console.error(`VIEWER: drawing failed; the model was closed. ${err.stack ?? `${err.name}: ${err.message}`}`);
       // Not inside Cesium's frame: close the model once the frame is over.
       setTimeout(() => {
         if (this.current.get() !== summary) return;

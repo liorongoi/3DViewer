@@ -53,6 +53,9 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
     const page = await ctx.newPage();
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
+    // When drawing fails the viewer closes the model and logs why: show it, or a check that then
+    // finds no model gives no clue.
+    page.on("console", (m) => m.type() === "error" && /drawing failed/.test(m.text()) && console.log(`INFO the viewer closed the model: ${m.text()}`));
     await page.goto("http://localhost:4173/", { waitUntil: "load" });
     await page.waitForFunction(() => !!window.viewerEngine, null, { timeout: 60000 });
     // A render error stops Cesium drawing without a page error: keep it for the report.

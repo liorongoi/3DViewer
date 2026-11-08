@@ -115,6 +115,9 @@ const truth = (a, b) => {
 async function measureAll(page, label, check) {
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
+  // When drawing fails the viewer closes the model and logs why: show it, or a check that then
+  // finds no model gives no clue.
+  page.on("console", (m) => m.type() === "error" && /drawing failed/.test(m.text()) && console.log(`INFO the viewer closed the model: ${m.text()}`));
   await page.waitForFunction(() => !!window.viewerEngine, null, { timeout: 120000 });
   await page.getByRole("button", { name: /A Beautiful Game/ }).first().click();
   await page.waitForFunction(() => window.viewerEngine.model?.ready, null, { timeout: 120000 });
