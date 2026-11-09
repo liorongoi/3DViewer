@@ -3,6 +3,7 @@ import { Command } from "cmdk";
 import { useTranslation } from "react-i18next";
 import { parseCoordinateQuery, walk } from "@viewer/core";
 import { useState } from "react";
+import { useDialog } from "./useDialog";
 import { useEngine, useSignal } from "../engine";
 import { useApp } from "../state/store";
 import { Box, Crosshair, Eye, House, Layers, Moon, Orbit, Plane, Route, Ruler, Search, Upload, ScanEye, Radar, Map } from "./icons";
@@ -16,6 +17,12 @@ export function CommandPalette({ onOpenModel }: { onOpenModel: (id: string) => v
   const set = useApp((s) => s.set);
   const layers = useSignal(engine?.layers, []);
   const [q, setQ] = useState("");
+  const ref = useDialog<HTMLDivElement>(open, {
+    onClose: () => {
+      set({ paletteOpen: false });
+      setQ("");
+    },
+  });
   if (!open) return null;
   const close = () => {
     set({ paletteOpen: false });
@@ -33,7 +40,7 @@ export function CommandPalette({ onOpenModel }: { onOpenModel: (id: string) => v
 
   return (
     <div className="fixed inset-0 z-50 grid items-start justify-center bg-black/30 pt-[14vh]" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <Command label={t("shell.palette")} className="glass w-[640px] max-w-[92vw] overflow-hidden rounded-[14px]" shouldFilter loop onKeyDown={(e) => e.key === "Escape" && close()}>
+      <Command ref={ref} role="dialog" aria-modal="true" aria-label={t("shell.palette")} label={t("shell.palette")} className="glass w-[640px] max-w-[92vw] overflow-hidden rounded-[14px]" shouldFilter loop>
         <div className="flex items-center gap-2 border-b border-line px-3">
           <Search size={16} className="text-fg3" />
           <Command.Input autoFocus value={q} onValueChange={setQ} placeholder={t("palette.placeholder")} className="h-12 flex-1 bg-transparent text-[14px] outline-none placeholder:text-fg3" />

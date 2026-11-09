@@ -73,12 +73,13 @@ export function VersionPicker({ model }: { model: ModelSummary }) {
         style={tone}
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={t("versions.pick", { v: model.version, n: model.versions })}
         data-testid="version-picker"
         onClick={() => setOpen(!open)}
       >
         {label}
-        <ChevronDown size={12} />
+        {/* The visible label starts the name (WCAG 2.5.3); the rest is for screen readers. */}
+        <span className="sr-only">: {t("versions.pick", { v: model.version, n: model.versions })}</span>
+        <ChevronDown size={12} aria-hidden />
       </button>
       {open && (
         <div role="menu" aria-label={t("versions.title")} className="glass absolute top-[calc(100%+6px)] start-0 z-30 w-80 rounded-[12px] p-1">

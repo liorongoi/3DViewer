@@ -6,6 +6,7 @@ import { useEngine, useSignal } from "../engine";
 import { ChevronRight, Eye, EyeOff, Focus, Layers, ListTree, Scan, Search, X } from "./icons";
 import { LayerEditor } from "./LayerEditor";
 import { IconButton, Panel, cx } from "./primitives";
+import { useTabs } from "./useTabs";
 import { MapTab } from "./MapTab";
 import { useApp } from "../state/store";
 import { pushUndo } from "../state/undo";
@@ -23,6 +24,7 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
   const paint = useRef<boolean | null>(null);
   const leftTab = useApp((s) => s.leftTab);
   const setApp = useApp((s) => s.set);
+  const tabs = useTabs("left", ["model", "map"] as const, leftTab, (id) => setApp({ leftTab: id }));
 
   const model = useSignal(engine?.current, null);
   const server = useApp((s) => s.server);
@@ -142,7 +144,7 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
     <Panel className={cx("w-[300px] max-h-full", className)}>
       <header className="flex h-11 shrink-0 items-center gap-2 ps-3 pe-1.5 border-b border-line">
         <Layers size={16} className="text-fg2" />
-        <div role="tablist" className="flex flex-1 gap-0.5">
+        <div {...tabs.list} className="flex flex-1 gap-0.5">
           {(
             [
               ["model", t("viewer.layers")],
@@ -151,10 +153,8 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
           ).map(([id, label]) => (
             <button
               key={id}
-              role="tab"
+              {...tabs.tab(id)}
               type="button"
-              aria-selected={leftTab === id}
-              onClick={() => setApp({ leftTab: id })}
               className={cx("h-8 rounded-[6px] px-2.5 text-[13px] font-medium", leftTab === id ? "bg-s3 text-fg" : "text-fg3 hover:text-fg")}
             >
               {label}
@@ -168,11 +168,11 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
         )}
       </header>
       {leftTab === "map" ? (
-        <div className="min-h-0 flex-1 overflow-auto scrollbar-thin">
+        <div {...tabs.panel("map")} className="min-h-0 flex-1 overflow-auto scrollbar-thin">
           <MapTab />
         </div>
       ) : (
-      <>
+      <div {...tabs.panel("model")} className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-col gap-2 p-2 border-b border-line">
         <label className="flex h-8 items-center gap-2 rounded-[6px] bg-s2 px-2 border border-line focus-within:border-accent">
           <Search size={14} className="text-fg3" />
@@ -217,7 +217,7 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
           <p className="p-3 text-fg3">{t("viewer.noLayers")}</p>
         )}
       </div>
-      </>
+      </div>
       )}
       {editing && createPortal(<LayerEditor onClose={() => setEditing(false)} />, document.body)}
     </Panel>

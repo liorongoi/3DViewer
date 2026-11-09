@@ -2,12 +2,14 @@ import { useTranslation } from "react-i18next";
 import { useApp } from "../state/store";
 import { X } from "./icons";
 import { IconButton, Kbd } from "./primitives";
+import { useDialog } from "./useDialog";
 
 /** "?" overlay (NAV-07). Shortcuts follow physical keys so they match in Hebrew. */
 export function HelpOverlay() {
   const { t } = useTranslation();
   const open = useApp((s) => s.helpOpen);
   const set = useApp((s) => s.set);
+  const ref = useDialog<HTMLDivElement>(open, { onClose: () => set({ helpOpen: false }) });
   if (!open) return null;
   const mouse: [string, string][] = [
     [t("help.input.leftDrag"), t("help.rows.orbit")],
@@ -36,7 +38,7 @@ export function HelpOverlay() {
   ];
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40" onPointerDown={(e) => e.target === e.currentTarget && set({ helpOpen: false })}>
-      <div role="dialog" aria-label={t("help.title")} className="glass w-[680px] max-w-[94vw] rounded-[14px] p-5">
+      <div ref={ref} role="dialog" aria-modal="true" aria-label={t("help.title")} className="glass w-[680px] max-w-[94vw] rounded-[14px] p-5">
         <div className="mb-4 flex items-center">
           <h2 className="flex-1 text-[15px] font-semibold">{t("help.title")}</h2>
           <IconButton label={t("common.close")} onClick={() => set({ helpOpen: false })}>

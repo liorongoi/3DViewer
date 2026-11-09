@@ -16,6 +16,9 @@ const { chromium } = require("playwright");
 const { startServer } = require("./lib/test-server.cjs");
 const { describeFailure, watchConsole } = require("./lib/page-diagnostics.cjs");
 
+// The badge's visible text; the rest of its name is for screen readers only.
+const badgeText = async (picker) => (await picker.innerText()).split("\n")[0].trim();
+
 (async () => {
   let failed = 0;
   const check = (ok, what, detail) => {
@@ -60,7 +63,7 @@ const { describeFailure, watchConsole } = require("./lib/page-diagnostics.cjs");
 
     // ---- The version list ----
     const picker = page.getByTestId("version-picker");
-    check((await picker.innerText()).trim() === "v4", "the top bar shows the version", await picker.innerText());
+    check(await badgeText(picker) === "v4", "the top bar shows the version", await badgeText(picker));
     await picker.click();
     const items = page.getByRole("menuitemradio");
     await items.first().waitFor({ timeout: 20000 });
@@ -82,7 +85,7 @@ const { describeFailure, watchConsole } = require("./lib/page-diagnostics.cjs");
     const after = await page.evaluate(() => window.viewerEngine.getView());
     const moved = Math.max(Math.abs(after.lon - view.lon) * 111000, Math.abs(after.lat - view.lat) * 111000, Math.abs(after.h - view.h), Math.abs(after.heading - view.heading) * 1000);
     check(moved < 0.01, "from the same viewpoint", `${moved.toFixed(4)} m`);
-    check((await picker.innerText()).trim() === "v3 of 4", "the badge says an earlier version is shown", await picker.innerText());
+    check(await badgeText(picker) === "v3 of 4", "the badge says an earlier version is shown", await badgeText(picker));
     check(!(await page.getByRole("menu").isVisible().catch(() => false)), "the list closes");
     const opened = (await audit("model.view")).slice(0, (await audit("model.view")).length - views);
     check(opened.some((e) => e.detail?.version === 3), "the audit log records version 3 opened", JSON.stringify(opened.map((e) => e.detail)));
@@ -170,7 +173,7 @@ const { describeFailure, watchConsole } = require("./lib/page-diagnostics.cjs");
     await other2.waitForFunction(() => window.viewerEngine?.model?.ready && window.viewerEngine.current.get()?.id === "m-lantern", null, { timeout: 120000 });
     const shared = await other2.evaluate(() => window.viewerEngine.current.get());
     check(shared.version === 3 && /Lantern/.test(shared.source.url), "a share link made on version 3 opens version 3", `v${shared.version}`);
-    check((await other2.getByTestId("version-picker").innerText()).trim() === "v3 of 4", "and says so");
+    check(await badgeText(other2.getByTestId("version-picker")) === "v3 of 4", "and says so");
     const got = await other2.evaluate(() => window.viewerEngine.measure.measurements.get().map((m) => ({ kind: m.kind, label: m.label, visible: m.visible, total: m.result.total3d })));
     const same = made.every((m) => m.total > 0.01) && got.length === made.length && got.every((g, i) => g.kind === made[i].kind && g.label === made[i].label && g.visible === made[i].visible && Math.abs(g.total - made[i].total) < 0.002);
     check(made.length === 2 && same, "and brings its measurements: kind, name, hidden or shown, and length to the millimetre", JSON.stringify(got));
@@ -182,7 +185,7 @@ const { describeFailure, watchConsole } = require("./lib/page-diagnostics.cjs");
     await picker.click();
     await page.locator('[role=menuitemradio][data-version="4"]').click();
     await page.waitForFunction(() => window.viewerEngine.current.get()?.version === 4 && window.viewerEngine.model?.ready, null, { timeout: 120000 });
-    check((await picker.innerText()).trim() === "v4", "choosing the current version again shows it plainly");
+    check(await badgeText(picker) === "v4", "choosing the current version again shows it plainly");
   } catch (e) {
     console.error(e);
     failed++;

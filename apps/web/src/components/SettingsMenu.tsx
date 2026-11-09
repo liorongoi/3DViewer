@@ -4,14 +4,16 @@ import { useEngine } from "../engine";
 import { applyLanguage } from "../i18n";
 import { useApp } from "../state/store";
 import { Segmented } from "./primitives";
+import { useDialog } from "./useDialog";
 
 export function SettingsMenu({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
   const engine = useEngine();
   const s = useApp();
+  const ref = useDialog<HTMLDivElement>(true, { modal: false, onClose });
   const row = "flex items-center justify-between gap-3 py-1.5";
   return (
-    <div className="glass absolute bottom-[calc(100%+8px)] end-0 w-80 rounded-[12px] p-3" role="dialog" aria-label={t("viewer.settings")}>
+    <div ref={ref} className="glass absolute bottom-[calc(100%+8px)] end-0 w-80 rounded-[12px] p-3" role="dialog" aria-label={t("viewer.settings")}>
       <div className={row}>
         <span className="text-fg2">{t("settings.language")}</span>
         <Segmented

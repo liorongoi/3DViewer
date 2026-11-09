@@ -150,6 +150,7 @@ export function ModelCard({ m, onOpen, dense }: { m: ModelSummary; onOpen: () =>
   return (
     <button
       type="button"
+      data-model-card
       onClick={onOpen}
       className={cx(
         "group relative flex w-full flex-col overflow-hidden rounded-[10px] border border-line bg-s2 text-start transition-[transform,border-color] duration-150 hover:-translate-y-0.5 hover:border-line-strong",

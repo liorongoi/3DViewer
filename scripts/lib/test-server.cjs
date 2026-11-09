@@ -14,6 +14,8 @@ const API = "http://127.0.0.1:8787";
  * also runs upload jobs (no thumbnails: they would start a second browser).
  */
 async function startServer({ password = "check-server-only-0123", workers = false } = {}) {
+  // A server left over from an earlier run would answer in place of this one.
+  if (await fetch(`${API}/api/health/live`).then(() => true, () => false)) throw new Error(`Something already answers on ${API}: stop it first.`);
   const data = fs.mkdtempSync(path.join(os.tmpdir(), "viewer-check-"));
   const log = [];
   const srv = spawn(process.execPath, ["dist/main.js"], {
