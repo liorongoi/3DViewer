@@ -67,10 +67,10 @@ flat = os.path.join(S, "3dtiles/lyon1/tileset-flat.json")
 if os.path.exists(flat): os.remove(flat)
 
 # Cesium files for features the app never turns on: Google Earth Enterprise, the lens flare,
-# and the Bing, Google and ion credits (no ion token is set). The IAU 2006 tables stay: they are read.
+# and the Bing and Google credits. The IAU 2006 tables stay: they are read.
 C = os.path.join(OUT, "cesium")
 for f in ("ThirdParty/google-earth-dbroot-parser.js", "Workers/decodeGoogleEarthEnterprisePacket.js",
-          "Workers/createVerticesFromGoogleEarthEnterpriseBuffer.js", "Assets/Images/ion-credit.png",
+          "Workers/createVerticesFromGoogleEarthEnterpriseBuffer.js",
           "Assets/Images/bing_maps_credit.png", "Assets/Images/google_earth_credit.png"):
     if os.path.exists(os.path.join(C, f)): os.remove(os.path.join(C, f))
 shutil.rmtree(os.path.join(C, "Assets/Textures/LensFlare"), ignore_errors=True)
