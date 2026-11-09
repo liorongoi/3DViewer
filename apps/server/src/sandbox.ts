@@ -131,8 +131,8 @@ export class PodmanSandbox implements Sandbox {
 
   async run<T>(step: Step, work: string, opts: RunOptions): Promise<T> {
     for (const d of ["storage", "run", "tmp"]) await mkdir(path.join(this.opts.stateDir, d), { recursive: true });
-    // podman's defaults set a network sysctl in each container; under systemd's
-    // ProtectKernelTunables /proc/sys is read-only, and a step with no network needs none.
+    // podman's defaults set a network sysctl in each container; a step with no network needs
+    // none, and where /proc/sys is read-only setting it would fail.
     const conf = path.join(this.opts.stateDir, "containers.conf");
     await writeFile(conf, "[containers]\ndefault_sysctls = []\n");
     const name = `viewer-step-${randomUUID().slice(0, 12)}`;

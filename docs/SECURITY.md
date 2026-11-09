@@ -91,7 +91,7 @@ Each step that reads an uploaded file beyond its header runs in a container of i
 
 The server checks this when it starts: a probe step must find no route to 192.0.2.1, no name lookup and a read-only root. If any of these fails, the server does not start (exit 78) and says why. Without podman the steps run in child processes, and the server log says so.
 
-To let rootless podman make namespaces, `install.sh` adds a drop-in that lifts `RestrictNamespaces` for the server's service, only when the sandbox is on.
+To let rootless podman make each container, `install.sh` adds a drop-in to the server's service, only when the sandbox is on. It lifts `RestrictNamespaces` (podman makes namespaces) and `ProtectKernelTunables` (a user namespace may mount its own /proc only where the host's is not partly covered), and allows netlink sockets (the runtime brings up the container's loopback). The server still runs as an unprivileged user, so the kernel's settings stay read-only to it and to every step.
 
 **Evidence:**
 - the hostile-file tests in `apps/server/src/ingest.test.ts` and `validate.test.ts` (zip bomb, path traversal, damaged files; CI job `check`);
