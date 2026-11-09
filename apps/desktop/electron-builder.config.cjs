@@ -26,6 +26,8 @@ module.exports = {
     { from: "../web/dist", to: "web", filter: ["**/*", "!samples/fbx/**"] },
     { from: path.join(fbx, "bin/Windows_NT/FBX2glTF.exe"), to: "bin/FBX2glTF.exe" },
     { from: "../../THIRD_PARTY_LICENSES.md", to: "THIRD_PARTY_LICENSES.md" },
+    // The software bill of materials, written by `pnpm dist` (scripts/sbom.cjs).
+    { from: "build/sbom.cdx.json", to: "sbom.cdx.json" },
   ],
   // Hardening of the Electron binary itself: no running as plain Node, no Node options or
   // inspector from the command line or environment, the app only from its checked archive.

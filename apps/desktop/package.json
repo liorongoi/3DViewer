@@ -10,8 +10,8 @@
     "typecheck": "tsc -p . --noEmit",
     "test": "vitest run --passWithNoTests",
     "start": "pnpm build && electron .",
-    "dist": "electron-builder --config electron-builder.config.cjs --win nsis --publish never",
-    "dist:dir": "electron-builder --config electron-builder.config.cjs --win --dir --publish never"
+    "dist": "node ../../scripts/sbom.cjs build/sbom.cdx.json --target desktop && electron-builder --config electron-builder.config.cjs --win nsis --publish never",
+    "dist:dir": "node ../../scripts/sbom.cjs build/sbom.cdx.json --target desktop && electron-builder --config electron-builder.config.cjs --win --dir --publish never"
   },
   "devDependencies": {
     "@electron/fuses": "1.8.0",

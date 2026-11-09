@@ -73,7 +73,7 @@ mkdir -p "$STAGE/web"
 (cd "$ROOT/apps/web/dist" && tar --exclude=./samples -cf - .) | tar -xf - -C "$STAGE/web"
 cp -r "$ROOT/deploy" "$STAGE/deploy"
 mkdir -p "$STAGE/docs"
-cp "$ROOT/docs/INSTALL.md" "$ROOT/docs/OPERATIONS.md" "$STAGE/docs/"
+cp "$ROOT/docs/INSTALL.md" "$ROOT/docs/OPERATIONS.md" "$ROOT/docs/SECURITY.md" "$STAGE/docs/"
 cp "$ROOT/THIRD_PARTY_LICENSES.md" "$STAGE/"
 install -m 0755 "$ROOT/deploy/install.sh" "$STAGE/install.sh"
 cat > "$STAGE/VERSION" <<EOF
@@ -82,6 +82,8 @@ node $NODE_VERSION
 caddy $CADDY_VERSION
 built $(date -u +%Y-%m-%dT%H:%M:%SZ) from $(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)
 EOF
+echo "· software bill of materials"
+VIEWER_VERSION="$VERSION" NODE_VERSION="$NODE_VERSION" CADDY_VERSION="$CADDY_VERSION" node "$ROOT/scripts/sbom.cjs" "$STAGE/sbom.cdx.json" --target server >/dev/null
 (cd "$STAGE" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
 
 echo "· archive"
