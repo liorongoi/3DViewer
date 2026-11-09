@@ -94,6 +94,9 @@ export async function prepareFiles(files: LocalFile[], report: CheckReport): Pro
   const set = new FileSet(files);
   const main = report.mainFile ? set.get(report.mainFile) : undefined;
   if (!p?.prepare || !main) throw new LoadError("This file cannot be opened in the browser.");
+  const kind = p.format === "3dtiles" ? "3dtiles" : "glb";
+  // Read in place: tiles, buffers and textures resolve beside it, as on a server.
+  if (main.url && (p === tiles3dLoader || p === gltfLoader)) return { kind, url: main.url, release: () => undefined };
   const made: string[] = [];
   const url: UrlMaker = (data, type) => {
     const u = URL.createObjectURL(new Blob([data] as ConstructorParameters<typeof Blob>[0], type ? { type } : undefined));
@@ -101,7 +104,7 @@ export async function prepareFiles(files: LocalFile[], report: CheckReport): Pro
     return u;
   };
   const u = await p.prepare(main, set, url);
-  return { kind: p.format === "3dtiles" ? "3dtiles" : "glb", url: u, release: () => made.forEach((x) => URL.revokeObjectURL(x)) };
+  return { kind, url: u, release: () => made.forEach((x) => URL.revokeObjectURL(x)) };
 }
 
 export function fmtBytes(n: number): string {

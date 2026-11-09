@@ -7,6 +7,12 @@ export interface LocalFile {
   bytes(): Promise<Uint8Array>;
   /** Reads part of the file without loading all of it (uploads in chunks). */
   slice?(start: number, end: number): Promise<Uint8Array>;
+  /**
+   * Where the file can be read in place, with the rest of its set beside it under the same
+   * relative paths (the desktop app's viewer-file:// folders). The model then loads from there
+   * instead of being copied into memory, which a 50 GB tileset could not be.
+   */
+  url?: string;
 }
 
 export function fromBytes(path: string, data: Uint8Array): LocalFile {

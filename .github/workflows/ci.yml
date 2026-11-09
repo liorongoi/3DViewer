@@ -130,13 +130,24 @@ jobs:
       - name: LOD inspector against Cesium's statistics, live detail, colour by depth, freeze (WP 2.10, LOD-01)
         if: matrix.suite == 'tools'
         run: node scripts/check-lod.cjs
+      # The Electron download from GitHub releases sometimes answers 504: keep it in the cache and retry.
+      - uses: actions/cache@v4
+        if: matrix.suite == 'accuracy'
+        with:
+          path: ~/.cache/electron
+          key: electron-${{ hashFiles('apps/desktop/package.json') }}
       - name: Electron for the desktop app
         if: matrix.suite == 'accuracy'
         run: |
-          node "$(dirname "$(node -p "require.resolve('electron/package.json', { paths: ['apps/desktop'] })")")/install.js"
+          install="$(dirname "$(node -p "require.resolve('electron/package.json', { paths: ['apps/desktop'] })")")/install.js"
+          for i in 1 2 3 4; do node "$install" && exit 0; sleep $((i * 15)); done
+          exit 1
       - name: Measurements against survey data, in the web app and the desktop app (WP 2.7, NFR-07, NFR-18)
         if: matrix.suite == 'accuracy'
         run: xvfb-run -a node scripts/check-accuracy.cjs
+      - name: Desktop app with the library server, online and offline, and local files read in place (WP 5.1, 5.3, 5.4)
+        if: matrix.suite == 'accuracy'
+        run: xvfb-run -a node scripts/check-desktop.cjs
       - name: Line of sight against a GDAL reference on a DEM, and the analysis panel (WP 2.8, ANL-01, ANL-02)
         if: matrix.suite == 'accuracy'
         run: node scripts/check-sight.cjs

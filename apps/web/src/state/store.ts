@@ -59,6 +59,13 @@ interface AppState {
   uploads: ModelSummary[];
   /** The VIEWER server, when one answers (Phase 3). Without it the app uses the sample library. */
   server: import("../server/api").ServerInfo | null;
+  /**
+   * Server reachability (WP 5.4): "none" when no server is configured, so there is nothing to
+   * show; "offline" when the configured one does not answer (local mode, checked again often).
+   */
+  serverState: "none" | "online" | "offline";
+  /** Files opened from outside the wizard (desktop open, Explorer, a drop), for the wizard to take. */
+  pendingFiles: { files: import("@viewer/core").LocalFile[]; keepLocal: boolean } | null;
   /** The server's library, when there is a server. */
   serverModels: ModelSummary[];
   /** The open server model's versions, newest first (WP 4.4); read when the model is opened. */
@@ -115,6 +122,8 @@ export const useApp = create<AppState>((set) => ({
   })(),
   uploads: [],
   server: null,
+  serverState: "none",
+  pendingFiles: null,
   serverModels: [],
   versionHistory: null,
   libraryReady: false,

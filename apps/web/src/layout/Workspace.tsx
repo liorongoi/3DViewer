@@ -16,6 +16,7 @@ import { IconButton, cx } from "../components/primitives";
 import { fadeClasses, useChromeFade } from "./useChromeFade";
 import { Guard } from "../components/Guard";
 import { UndoBar } from "../components/UndoBar";
+import { ServerPill } from "../components/ServerPill";
 
 /**
  * The workspace (chosen direction: A + C). A Google Earth-style globe is home; every model
@@ -54,7 +55,10 @@ export function Workspace() {
                 </span>
                 <div className="flex-1">
                   <div className="text-[13px] font-semibold tracking-wide">VIEWER</div>
-                  <div className="text-[11px] text-fg3">{t("library.count", { count: models.length })}</div>
+                  <div className="flex items-center gap-1.5 text-[11px] text-fg3">
+                    <span>{t("library.count", { count: models.length })}</span>
+                    <ServerPill />
+                  </div>
                 </div>
                 <IconButton size="sm" label={t("library.upload")} onClick={() => set({ uploadOpen: true })}>
                   <Upload size={16} />
@@ -78,6 +82,7 @@ export function Workspace() {
               <Globe size={16} className="text-accent" />
               <span className="font-semibold">VIEWER</span>
               <span className="text-fg3">· {t("common.search")}</span>
+              <span className="text-[11px] text-fg3"><ServerPill /></span>
             </button>
           )
         ) : (
