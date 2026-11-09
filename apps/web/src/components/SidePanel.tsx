@@ -13,6 +13,7 @@ import { useCoordinates } from "../useCoordinates";
 import { AlertTriangle, Bookmark, Copy, Crosshair, Eye, EyeOff, Info, Orbit, Pencil, Play, Route, Ruler, StopCircle, Trash2, Video, X } from "./icons";
 import { IconButton, Panel, Segmented, StatusBadge, cx } from "./primitives";
 import { AnalysisTab } from "./AnalysisTab";
+import { errorText } from "../server/error-text";
 
 /** Right panel: Measurements (MSR-04/05), Properties (UPL-04) and Fly-by tours. */
 export function SidePanel({ onClose, className }: { onClose?: () => void; className?: string }) {
@@ -273,7 +274,7 @@ function PropertiesTab() {
       await refreshLibrary().catch(() => undefined);
       return true;
     } catch (e) {
-      setProblem(t("props.saveFailed", { reason: (e as Error).message }));
+      setProblem(t("props.saveFailed", { reason: errorText(e, t) }));
       return false;
     } finally {
       setSaving(false);

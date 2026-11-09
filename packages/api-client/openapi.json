@@ -8,10 +8,27 @@
   "components": {
     "schemas": {
       "Error": {
+        "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
         "type": "object",
         "properties": {
           "error": {
             "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "params": {
+            "type": "object",
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            }
           },
           "code": {
             "type": "string"
@@ -22,6 +39,34 @@
               "type": "string"
             }
           },
+          "details": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "params": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "key"
+              ],
+              "additionalProperties": false
+            }
+          },
           "files": {
             "type": "array",
             "items": {
@@ -30,7 +75,8 @@
           }
         },
         "required": [
-          "error"
+          "error",
+          "key"
         ],
         "additionalProperties": false
       },
@@ -764,7 +810,7 @@
             }
           },
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -774,7 +820,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -812,7 +858,7 @@
             }
           },
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -822,7 +868,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -854,7 +900,7 @@
             }
           },
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -864,7 +910,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -956,7 +1002,7 @@
             }
           },
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -966,7 +1012,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1191,7 +1237,7 @@
             }
           },
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1201,7 +1247,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1251,7 +1297,7 @@
             }
           },
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1261,7 +1307,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1346,7 +1392,7 @@
             }
           },
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1356,7 +1402,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1533,7 +1579,7 @@
             }
           },
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1543,7 +1589,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1617,7 +1663,7 @@
             }
           },
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1627,7 +1673,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1719,7 +1765,7 @@
             }
           },
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1729,7 +1775,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1771,7 +1817,7 @@
             }
           },
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1781,7 +1827,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1844,7 +1890,7 @@
             }
           },
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1854,7 +1900,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1883,7 +1929,7 @@
             }
           },
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1893,7 +1939,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1948,7 +1994,7 @@
             }
           },
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1958,7 +2004,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2025,7 +2071,7 @@
         ],
         "responses": {
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2035,7 +2081,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2112,7 +2158,7 @@
             }
           },
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2122,7 +2168,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2207,7 +2253,7 @@
             }
           },
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2217,7 +2263,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2294,7 +2340,7 @@
             }
           },
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2304,7 +2350,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2362,7 +2408,7 @@
             }
           },
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2372,7 +2418,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2401,7 +2447,7 @@
             }
           },
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2411,7 +2457,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2538,7 +2584,7 @@
             }
           },
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2548,7 +2594,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2629,7 +2675,7 @@
             }
           },
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2639,7 +2685,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2717,7 +2763,7 @@
             }
           },
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2727,7 +2773,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2775,7 +2821,7 @@
             }
           },
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2785,7 +2831,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3044,7 +3090,7 @@
             }
           },
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3054,7 +3100,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3087,7 +3133,7 @@
             "description": "Stored; Upload-Offset is the new offset."
           },
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3097,7 +3143,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3136,7 +3182,7 @@
             }
           },
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3146,7 +3192,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3185,7 +3231,7 @@
             }
           },
           "4XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3195,7 +3241,7 @@
             }
           },
           "5XX": {
-            "description": "Default Response",
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
             "content": {
               "application/json": {
                 "schema": {

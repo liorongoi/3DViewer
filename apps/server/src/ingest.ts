@@ -17,6 +17,7 @@ import { closed, int, ref, text } from "./schemas.ts";
 import { Storage, validRelPath } from "./storage.ts";
 import { TILE_IF, optimiseGlbInWorker, tileModelInWorker } from "./tiler.ts";
 import { validateOfficial } from "./validate.ts";
+import { problem } from "./errors.ts";
 
 /**
  * Uploads and ingest (WP 3.2–3.4, 3.7).
@@ -150,21 +151,21 @@ export function registerIngest(
     },
     async (req, reply) => {
       const b = req.body;
-      if (!b.modelId && !b.model) return reply.status(400).send({ error: "Name the model: give `model` for a new one or `modelId` for a new version." });
-      if (b.modelId && !(await db.query("SELECT 1 FROM models WHERE id = $1 AND deleted_at IS NULL", [b.modelId])).length) return reply.status(404).send({ error: "No model with this id." });
-      if (b.model && !(await db.query("SELECT 1 FROM classifications WHERE id = $1", [b.model.classificationId])).length) return reply.status(400).send({ error: "Unknown classification. Choose one of the levels the admin defined." });
+      if (!b.modelId && !b.model) return reply.status(400).send(problem("nameTheModel"));
+      if (b.modelId && !(await db.query("SELECT 1 FROM models WHERE id = $1 AND deleted_at IS NULL", [b.modelId])).length) return reply.status(404).send(problem("noModel"));
+      if (b.model && !(await db.query("SELECT 1 FROM classifications WHERE id = $1", [b.model.classificationId])).length) return reply.status(400).send(problem("unknownClassification"));
       const seen = new Set<string>();
       let total = 0;
       for (const f of b.files) {
-        if (!validRelPath(f.path)) return reply.status(400).send({ error: `This file name is not allowed: ${f.path}` });
-        if (seen.has(f.path.toLowerCase())) return reply.status(400).send({ error: `The same file is listed twice: ${f.path}` });
+        if (!validRelPath(f.path)) return reply.status(400).send(problem("badFileName", { file: f.path }));
+        if (seen.has(f.path.toLowerCase())) return reply.status(400).send(problem("duplicateFile", { file: f.path }));
         seen.add(f.path.toLowerCase());
-        if (f.size > LIMITS.file) return reply.status(413).send({ error: `${f.path} is over 2 GB.` });
+        if (f.size > LIMITS.file) return reply.status(413).send(problem("fileTooBig", { file: f.path }));
         total += f.size;
       }
-      if (total > LIMITS.tileset) return reply.status(413).send({ error: "The upload is over 50 GB." });
+      if (total > LIMITS.tileset) return reply.status(413).send(problem("uploadTooBig"));
       const full = await quotaError(db, total);
-      if (full) return reply.status(507).send({ error: full });
+      if (full) return reply.status(507).send(full);
 
       const w = await who(req);
       const id = `i-${crypto.randomUUID()}`;
@@ -198,14 +199,14 @@ export function registerIngest(
     { bodyLimit: LIMITS.file, schema: { tags: ["upload"], params: tusParams, response: { 204: { description: "Stored; Upload-Offset is the new offset.", type: "null" } } } },
     async (req, reply) => {
       reply.header("tus-resumable", TUS);
-      if (req.headers["content-type"] !== "application/offset+octet-stream") return reply.status(415).send({ error: "Send the bytes as application/offset+octet-stream." });
+      if (req.headers["content-type"] !== "application/offset+octet-stream") return reply.status(415).send(problem("wrongContentType"));
       const u = await uploadById(req.params.id);
-      if (!u) return reply.status(404).send({ error: "No upload with this id." });
-      if (u.state !== "uploading") return reply.status(409).send({ error: "This upload is already submitted." });
+      if (!u) return reply.status(404).send(problem("noUpload"));
+      if (u.state !== "uploading") return reply.status(409).send(problem("alreadySubmitted"));
       const part = storage.uploadPart(u.id);
       const at = await fileSize(part);
       const claimed = Number(req.headers["upload-offset"]);
-      if (!Number.isInteger(claimed) || claimed !== at) return reply.status(409).header("upload-offset", at).send({ error: `The upload is at byte ${at}.` });
+      if (!Number.isInteger(claimed) || claimed !== at) return reply.status(409).header("upload-offset", at).send(problem("wrongOffset", { offset: at }));
       const length = Number(u.length);
       // Bytes past the declared length are read and dropped, so the client still gets an answer.
       let room = length - at;
@@ -223,7 +224,7 @@ export function registerIngest(
       if (overflow) {
         const now = await fileSize(part);
         await db.query('UPDATE uploads SET "offset" = $2, updated_at = now() WHERE id = $1', [u.id, now]);
-        return reply.status(413).header("upload-offset", now).send({ error: "More bytes than the declared file size." });
+        return reply.status(413).header("upload-offset", now).send(problem("tooManyBytes"));
       }
       const offset = await fileSize(part);
       await db.query('UPDATE uploads SET "offset" = $2, updated_at = now() WHERE id = $1', [u.id, offset]);
@@ -233,12 +234,12 @@ export function registerIngest(
 
   app.post<{ Params: { id: string } }>("/api/ingests/:id/submit", { schema: { tags: ["upload"], params: { type: "object", required: ["id"], properties: { id: { type: "string" } } }, response: { 202: ref("IngestStatus") } } }, async (req, reply) => {
     const [ing] = await db.query<IngestRow>("SELECT * FROM ingests WHERE id = $1", [req.params.id]);
-    if (!ing) return reply.status(404).send({ error: "No upload with this id." });
-    if (ing.state !== "uploading") return reply.status(409).send({ error: "This upload is already submitted." });
+    if (!ing) return reply.status(404).send(problem("noUpload"));
+    if (ing.state !== "uploading") return reply.status(409).send(problem("alreadySubmitted"));
     const ups = await db.query<UploadRow>("SELECT * FROM uploads WHERE ingest_id = $1", [ing.id]);
     const missing: string[] = [];
     for (const u of ups) if ((await fileSize(storage.uploadPart(u.id))) !== Number(u.length)) missing.push(u.path);
-    if (missing.length) return reply.status(409).send({ error: "Some files have not finished uploading.", files: missing.slice(0, 50) });
+    if (missing.length) return reply.status(409).send(problem("filesMissing", undefined, { files: missing.slice(0, 50) }));
     const w = await who(req);
     await db.tx(async (q) => {
       await q.query("UPDATE ingests SET state = 'queued', updated_at = now() WHERE id = $1", [ing.id]);
@@ -250,7 +251,7 @@ export function registerIngest(
 
   app.get<{ Params: { id: string } }>("/api/ingests/:id", { schema: { tags: ["upload"], params: { type: "object", required: ["id"], properties: { id: { type: "string" } } }, response: { 200: ref("IngestStatus") } } }, async (req, reply) => {
     const s = await ingestStatus(db, storage, req.params.id);
-    return s ?? reply.status(404).send({ error: "No upload with this id." });
+    return s ?? reply.status(404).send(problem("noUpload"));
   });
 }
 

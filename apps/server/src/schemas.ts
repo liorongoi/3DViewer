@@ -11,6 +11,7 @@ import { UPDATE_STATUSES } from "@viewer/shared/model";
 const num = { type: "number" } as const;
 const int = { type: "integer" } as const;
 const text = { type: "string" } as const;
+const errorParams = { type: "object", additionalProperties: { type: ["string", "number"] } } as const;
 const bool = { type: "boolean" } as const;
 const iso = { type: "string", format: "date-time" } as const;
 /** A free-form JSON object (audit details, check reports, job progress). */
@@ -42,7 +43,22 @@ const MODEL = {
 const MODEL_REQUIRED = ["id", "name", "project", "operation", "responsibleEntity", "description", "status", "statusChangedAt", "classificationId", "version", "versions", "sourceFormat", "source", "centre", "sizeBytes"] as const;
 
 export const SCHEMAS = [
-  { $id: "Error", ...closed({ error: text, code: text, problems: { type: "array", items: text }, files: { type: "array", items: text } }, ["error"]) },
+  {
+    $id: "Error",
+    description: "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
+    ...closed(
+      {
+        error: text,
+        key: text,
+        params: errorParams,
+        code: text,
+        problems: { type: "array", items: text },
+        details: { type: "array", items: closed({ key: text, params: errorParams }, ["key"]) },
+        files: { type: "array", items: text },
+      },
+      ["error", "key"],
+    ),
+  },
   { $id: "Ok", ...closed({ ok: bool }, ["ok"]) },
   { $id: "Classification", ...closed({ id: text, label: text, color: text, textColor: text, order: int }, ["id", "label", "color", "textColor", "order"]) },
   {

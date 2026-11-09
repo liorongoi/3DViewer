@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { BASE_MAPS, TERRAINS, fmtBytes } from "@viewer/core";
-import type { BaseMapConfig, BaseMapSource, ClassificationLevel } from "@viewer/shared";
+import { ServerError, type BaseMapConfig, type BaseMapSource, type ClassificationLevel } from "@viewer/shared";
 import { useEngine } from "../engine";
 import { saveText } from "../download";
 import { getBaseMaps, listLevels } from "../server/api";
@@ -10,6 +10,7 @@ import { refreshLibrary } from "../state/library";
 import { useApp } from "../state/store";
 import { AlertTriangle, ArrowDown, ArrowUp, Check, Download, HardDrive, Layers, Lock, Map, Plus, ShieldCheck, Trash2, X } from "./icons";
 import { IconButton, cx } from "./primitives";
+import { errorText } from "../server/error-text";
 
 /**
  * Admin page (WP 3.9, UI design 3.5): password sign-in, then classification levels, base map
@@ -130,9 +131,8 @@ function Guarded({ children, onSignedOut }: { children: (fail: Fail) => React.Re
   const { t } = useTranslation();
   const [error, setError] = useState<string | null>(null);
   const fail: Fail = (e) => {
-    const msg = e instanceof Error ? e.message : String(e);
-    if (/sign in as administrator/i.test(msg)) return onSignedOut();
-    setError(msg);
+    if (e instanceof ServerError && e.key === "signIn") return onSignedOut();
+    setError(errorText(e, t));
   };
   return (
     <>
@@ -163,7 +163,7 @@ function SignIn({ api, onDone }: { api: AdminApi; onDone: () => void }) {
       await api.login(password);
       onDone();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorText(err, t));
     } finally {
       setBusy(false);
     }
