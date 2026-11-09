@@ -1,4 +1,3 @@
-import { execFile } from "node:child_process";
 import { createReadStream, createWriteStream, openSync, writeSync, closeSync, mkdirSync } from "node:fs";
 import { copyFile, link, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -15,7 +14,10 @@ import { enqueue, PermanentError, type Handler } from "./jobs.ts";
 import { addVersion, createModel, type NewModel } from "./library.ts";
 import { closed, int, ref, text } from "./schemas.ts";
 import { Storage, validRelPath } from "./storage.ts";
-import { TILE_IF, optimiseGlbInWorker, tileModelInWorker } from "./tiler.ts";
+import type { OptimiseResult } from "./optimise.ts";
+import type { Sandbox } from "./sandbox.ts";
+import { convertFbx, needFbx, run } from "./convert.ts";
+import { TILE_IF, optimiseGlbInWorker, tileModelInWorker, type TileResult } from "./tiler.ts";
 import { validateOfficial } from "./validate.ts";
 import { problem } from "./errors.ts";
 
@@ -58,6 +60,8 @@ export interface IngestOptions {
   leafTriangles?: number;
   /** Compress a GLB's geometry before publishing (default on). */
   optimise?: boolean;
+  /** Run conversion, validation, tiling and optimising in the conversion sandbox (sandbox.ts). */
+  sandbox?: Sandbox;
 }
 
 const MAX_FILES = 100_000;
@@ -343,15 +347,6 @@ export async function unzipGuarded(zipPath: string, dest: string, budget: { file
   if (failure) throw failure;
 }
 
-function run(cmd: string, args: string[], timeoutMs: number): Promise<{ code: number; out: string }> {
-  return new Promise((resolve) => {
-    execFile(cmd, args, { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
-      const code = err ? (typeof (err as { code?: unknown }).code === "number" ? ((err as { code: number }).code) : -1) : 0;
-      resolve({ code, out: `${stdout}${stderr}`.trim() });
-    });
-  });
-}
-
 /** ClamAV hook. clamdscan exits 0 for clean, 1 for a virus, 2 for an error. */
 async function scan(bin: string | undefined, dir: string): Promise<CheckItem> {
   if (!bin) return checkItem("scan", "warning", "notScanned");
@@ -359,17 +354,6 @@ async function scan(bin: string | undefined, dir: string): Promise<CheckItem> {
   if (r.code === 0) return checkItem("scan", "ok", "clean");
   if (r.code === 1) return checkItem("scan", "error", "virus", {}, r.out.split("\n").slice(0, 5).map((l) => l.replace(dir + path.sep, "")).join("\n"));
   throw new Error(`The virus scanner failed: ${r.out.slice(0, 300)}`);
-}
-
-/** FBX → GLB with FBX2glTF (decision in docs/spikes/FBX_BAKEOFF.md). */
-async function convertFbx(bin: string | undefined, input: string, outDir: string): Promise<string> {
-  if (!bin) throw new PermanentError("FBX conversion is not set up on this server. The administrator sets FBX2GLTF to the FBX2glTF program.");
-  await mkdir(outDir, { recursive: true });
-  const base = path.join(outDir, path.basename(input).replace(/\.fbx$/i, ""));
-  const r = await run(bin, ["--binary", "--input", input, "--output", base], 30 * 60_000);
-  const out = `${base}.glb`;
-  if (r.code !== 0 || !(await fileSize(out))) throw new PermanentError(`FBX2glTF could not convert the file: ${r.out.split("\n").slice(-3).join(" ").slice(0, 400) || `exit code ${r.code}`}`);
-  return out;
 }
 
 async function place(src: string, dest: string): Promise<void> {
@@ -384,6 +368,7 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
     if (!ing) throw new PermanentError(`Ingest ${ingestId} does not exist.`);
     const ups = await db.query<UploadRow>("SELECT * FROM uploads WHERE ingest_id = $1", [ingestId]);
     const work = path.join(storage.ingests, ingestId);
+    const sb = opts.sandbox;
     const cleanup = async () => {
       await rm(work, { recursive: true, force: true });
       await Promise.all(ups.map((u) => rm(storage.uploadPart(u.id), { force: true })));
@@ -433,7 +418,9 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
         await setState("converting");
         await ctx.progress({ step: "convert" });
         const fbx = (files as DiskFile[]).find((f) => f.path === report.mainFile)!;
-        const glb = await convertFbx(opts.fbx2gltf, fbx.src, path.join(work, "out"));
+        const glb = sb
+          ? (await sb.run<{ out: string }>({ task: "fbx", bin: needFbx(opts.fbx2gltf), input: fbx.src, outDir: path.join(work, "out") }, work, { timeoutMs: 30 * 60_000 })).out
+          : await convertFbx(opts.fbx2gltf, fbx.src, path.join(work, "out"));
         const converted = await checkFiles([diskFile(path.basename(glb), glb, await fileSize(glb))]);
         if (!converted.report.ok) return reject(converted.report, "The converted model did not pass the check.");
         const keep = report.items.filter((i) => i.id === "format" || i.id === "scan");
@@ -450,7 +437,7 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
       await ctx.progress({ step: "validate" });
       const main = report.format === "fbx" ? publish[0] : publish.find((f) => f.path === report.mainFile);
       if (main) {
-        const official = await validateOfficial(report.format === "3dtiles" ? "3dtiles" : "gltf", main.src, { strict: opts.strictValidation, timeoutMs: opts.validatorTimeoutMs });
+        const official = await validateOfficial(report.format === "3dtiles" ? "3dtiles" : "gltf", main.src, { strict: opts.strictValidation, timeoutMs: opts.validatorTimeoutMs, sandbox: sb, sandboxWork: work });
         report.items.push(official);
         if (official.severity === "error") return reject({ ...report, ok: false }, official.title);
       }
@@ -471,7 +458,11 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
         await ctx.progress({ step: "tile" });
         const dir = path.join(work, "tiled");
         try {
-          const t = await tileModelInWorker(main.src, dir, { upAxis: (req.placement ?? fromSide)?.upAxis, scale: (req.placement ?? fromSide)?.scale, leafTriangles: opts.leafTriangles }, (done, total) => void ctx.progress({ step: "tile", done, total }));
+          const tileOpts = { upAxis: (req.placement ?? fromSide)?.upAxis, scale: (req.placement ?? fromSide)?.scale, leafTriangles: opts.leafTriangles };
+          const onTile = (done: number, total: number) => void ctx.progress({ step: "tile", done, total });
+          const t = sb
+            ? await sb.run<TileResult>({ task: "tile", file: main.src, outDir: dir, opts: tileOpts }, work, { timeoutMs: 2 * 3600_000, onProgress: (p) => onTile(p.done, p.total) })
+            : await tileModelInWorker(main.src, dir, tileOpts, onTile);
           const kept = publish.map((f) => (f.path.startsWith("original/") ? f : { ...f, path: `original/${f.path}` }));
           publish = [...(await Promise.all(t.files.map(async (f) => diskFile(f, path.join(dir, f), await fileSize(path.join(dir, f)))))), ...kept];
           tiled = true;
@@ -492,7 +483,7 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
         await ctx.progress({ step: "optimise" });
         const dest = path.join(work, "optimised.glb");
         try {
-          const o = await optimiseGlbInWorker(main!.src, dest);
+          const o = sb ? await sb.run<OptimiseResult>({ task: "optimise", file: main!.src, outFile: dest }, work, { timeoutMs: 30 * 60_000 }) : await optimiseGlbInWorker(main!.src, dest);
           if (o.written) {
             publish = publish.map((f, i) => (i === glbIndex ? diskFile(f.path, dest, o.after) : f));
             // The file as uploaded stays downloadable; a GLB made from an FBX has the FBX for that.

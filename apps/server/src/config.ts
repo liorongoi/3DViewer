@@ -25,6 +25,13 @@ export interface Config {
   workers: boolean;
   clamdscan: string | undefined;
   fbx2gltf: string | undefined;
+  /** Where uploaded files are converted, validated and tiled: "podman" (a container per step, no network) or "none". */
+  convertSandbox: "none" | "podman";
+  podman: string | undefined;
+  /** The sandbox's root (the C libraries only); default: sandbox/rootfs in the installed release. */
+  convertRootfs: string | undefined;
+  /** Memory limit for one step, in MB (needs cgroup delegation); 0 for none. */
+  convertMemoryMb: number;
   strictValidation: boolean;
   jobLeaseSeconds: number;
   auditSyslog: string | null;
@@ -126,12 +133,28 @@ export function loadConfig(env: Env = process.env): Config {
     workers: bool("WORKERS", true),
     clamdscan: program("CLAMDSCAN"),
     fbx2gltf: program("FBX2GLTF"),
+    convertSandbox: "none",
+    podman: undefined,
+    convertRootfs: get("CONVERT_ROOTFS"),
+    convertMemoryMb: int("CONVERT_MEMORY_MB", 0, 0, 1_000_000),
     strictValidation: bool("STRICT_VALIDATION", false),
     jobLeaseSeconds: int("JOB_LEASE_SECONDS", 300, 10, 86_400),
     auditSyslog,
     writeRateLimit: int("WRITE_RATE_LIMIT", 600, 0, 1_000_000),
     dbStatementTimeoutMs: int("DB_STATEMENT_TIMEOUT_MS", 60_000, 1000, 3_600_000),
   };
+  const sandbox = get("CONVERT_SANDBOX")?.toLowerCase() ?? "none";
+  if (sandbox === "podman") {
+    config.convertSandbox = "podman";
+    config.podman = program("PODMAN") ?? "/usr/bin/podman";
+    if (!get("PODMAN")) {
+      try {
+        accessSync(config.podman, constants.X_OK);
+      } catch {
+        problems.push("CONVERT_SANDBOX=podman needs podman: install it, or set PODMAN to its path.");
+      }
+    }
+  } else if (sandbox !== "none") problems.push(`CONVERT_SANDBOX must be podman or none (it is "${env.CONVERT_SANDBOX}").`);
   if (nodeEnv !== undefined && !["production", "development", "test"].includes(nodeEnv)) problems.push(`NODE_ENV must be production, development or test (it is "${nodeEnv}").`);
   if (problems.length) throw new ConfigError(problems);
   return config;
