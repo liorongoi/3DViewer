@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { Roots, parseRange, serveLocal } from "./local-files";
+import { Roots, listFiles, listFolder, parseRange, serveLocal } from "./local-files";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vf-"));
 fs.mkdirSync(path.join(dir, "set", "tiles"), { recursive: true });
@@ -58,3 +58,47 @@ describe("viewer-file", () => {
     expect(r.status).toBe(404);
   });
 });
+
+describe("opening", () => {
+  it("lists a folder with paths that start with its name", async () => {
+    const r = new Roots();
+    const { files, truncated } = await listFolder(r, path.join(dir, "set"));
+    expect(truncated).toBe(false);
+    expect(files.map((f) => f.path)).toEqual(["set/tiles/0 1.b3dm", "set/tileset.json"]);
+    const res = await fetchListed(r, files[0]!.url);
+    expect(await res.text()).toBe("0123456789");
+  });
+  it("opens single files without opening the rest of their folder", async () => {
+    const r = new Roots();
+    const files = await listFiles(r, [path.join(dir, "set", "tiles", "0 1.b3dm")]);
+    expect(files).toHaveLength(1);
+    expect(files[0]!.path).toBe("0 1.b3dm");
+    expect((await fetchListed(r, files[0]!.url)).status).toBe(200);
+    const id = new URL(files[0]!.url).hostname;
+    expect(r.resolve(id, "../tileset.json")).toBeNull();
+    expect(r.resolve(id, "other.b3dm")).toBeNull();
+  });
+  it("opens the whole folder of a tileset.json", async () => {
+    const files = await listFiles(new Roots(), [path.join(dir, "set", "tileset.json")]);
+    expect(files.map((f) => f.path).sort()).toEqual(["tiles/0 1.b3dm", "tileset.json"]);
+  });
+  it("opens the whole folder of a .gltf, which needs the files next to it", async () => {
+    const g = fs.mkdtempSync(path.join(os.tmpdir(), "vg-"));
+    fs.writeFileSync(path.join(g, "a.gltf"), "{}");
+    fs.writeFileSync(path.join(g, "a.bin"), "bin");
+    const r = new Roots();
+    const files = await listFiles(r, [path.join(g, "a.gltf")]);
+    expect(files.map((f) => f.path).sort()).toEqual(["a.bin", "a.gltf"]);
+    fs.rmSync(g, { recursive: true, force: true });
+  });
+  it("keeps one id per folder and selection", () => {
+    const r = new Roots();
+    const a = r.add(path.join(dir, "set"));
+    expect(r.add(path.join(dir, "set"))).toBe(a);
+    expect(r.add(path.join(dir, "set"), undefined, ["tileset.json"])).not.toBe(a);
+  });
+});
+
+function fetchListed(r: Roots, url: string) {
+  return serveLocal(r, new Request(url));
+}

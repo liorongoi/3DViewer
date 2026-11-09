@@ -1,9 +1,11 @@
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { findModel, refreshLibrary } from "./state/library";
-import { findServer, getBaseMaps, getLayerManifest, getModelDetail, listLevels, type ModelDetail } from "./server/api";
+import { findServer, serverExpected, getBaseMaps, getLayerManifest, getModelDetail, listLevels, type ModelDetail, type ServerInfo } from "./server/api";
 import { readShare } from "./share";
-import { setVisible } from "@viewer/core";
+import { setVisible, type LocalFile } from "@viewer/core";
+import { desktop, fromDesktopList } from "./desktop";
+import { fromDrop } from "./upload/read-drop";
 import type { ModelSummary } from "@viewer/shared";
 import { useEngine } from "./engine";
 import { useApp } from "./state/store";
@@ -53,6 +55,22 @@ export function useOpenModel() {
   };
 }
 
+/** How often the server is checked while it answers, and while it does not. */
+const ONLINE_CHECK_MS = 30_000;
+const OFFLINE_CHECK_MS = 10_000;
+
+/** Library mode with the server's models and levels, or local mode when it does not answer. */
+async function goOnline(server: ServerInfo | null, expected: boolean): Promise<void> {
+  if (!server) {
+    useApp.setState({ server: null, serverState: expected ? "offline" : "none" });
+    return;
+  }
+  useApp.setState({ server, serverState: "online" });
+  const levels = await listLevels(server).catch(() => null);
+  if (levels?.length) useApp.setState({ levels });
+  await refreshLibrary().catch(() => useApp.setState({ server: null, serverState: "offline" }));
+}
+
 function noteHistory(d: ModelDetail): void {
   useApp.setState({ versionHistory: { id: d.id, list: d.history } });
 }
@@ -99,24 +117,53 @@ export function useAppEffects(): void {
     engine.setMemoryBudget(memoryGb * 1024 ** 3);
   }, [engine, quality, unit, adaptive, environment, memoryGb]);
 
-  // Look for the VIEWER server once; without one the app keeps the bundled sample library.
+  // Look for the VIEWER server, then keep checking (WP 5.4): the app switches between library
+  // mode and local mode as the network comes and goes, without a restart.
   useEffect(() => {
     let live = true;
-    void (async () => {
-      const server = await findServer();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const check = async (first: boolean) => {
+      const found = await findServer();
       if (!live) return;
-      useApp.setState({ server });
-      if (server) {
-        const levels = await listLevels(server).catch(() => null);
-        if (levels?.length) useApp.setState({ levels });
-        await refreshLibrary().catch(() => useApp.setState({ server: null }));
-      }
-      if (live) useApp.setState({ libraryReady: true });
-    })();
+      const was = useApp.getState().server;
+      if (first || !!found !== !!was) await goOnline(found, first ? await serverExpected() : true);
+      if (!live) return;
+      if (first) useApp.setState({ libraryReady: true });
+      // Poll only when a server is expected; a static build with none has nothing to wait for.
+      if (useApp.getState().serverState !== "none") timer = setTimeout(() => void check(false), found ? ONLINE_CHECK_MS : OFFLINE_CHECK_MS);
+    };
+    void check(true);
     return () => {
       live = false;
+      clearTimeout(timer);
     };
   }, []);
+  // Files the desktop app was started with or sent later (Explorer's "Open with"), and files
+  // dropped anywhere on the window, go to the upload wizard; desktop files are read in place.
+  useEffect(() => {
+    const offer = (files: LocalFile[] | null) => {
+      if (files?.length) useApp.setState({ pendingFiles: { files, keepLocal: !!desktop }, uploadOpen: true });
+    };
+    const take = () => void desktop?.takeOpened().then(fromDesktopList).then(offer);
+    take();
+    desktop?.onOpened(take);
+    const over = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
+    };
+    const drop = (e: DragEvent) => {
+      const dt = e.dataTransfer;
+      if (e.defaultPrevented || !dt?.files.length) return;
+      e.preventDefault();
+      void (desktop ? desktop.openDropped([...dt.files]).then(fromDesktopList) : fromDrop(dt)).then(offer);
+    };
+    window.addEventListener("dragover", over);
+    window.addEventListener("drop", drop);
+    return () => {
+      window.removeEventListener("dragover", over);
+      window.removeEventListener("drop", drop);
+    };
+  }, []);
+
   const libraryReady = useApp((s) => s.libraryReady);
 
   // The admin's base map sources and defaults (WP 3.9, RND-11), once the engine and server are both up.

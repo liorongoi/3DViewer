@@ -219,3 +219,13 @@ describe("position carried by the file (WP 1.3)", () => {
     expect(parseMetadataXml('<SRS>PROJCS["x"]</SRS>').position).toBeNull();
   });
 });
+
+describe("files read in place (WP 5.3)", () => {
+  it("loads a glTF or tileset from its own URL instead of copying it", async () => {
+    const { prepareFiles } = await import("./index");
+    const f = { ...fromBytes("m.glb", glb(triangle)), url: "viewer-file://abc/m.glb" };
+    const { report, files } = await checkFiles([f]);
+    const p = await prepareFiles(files, report);
+    expect(p).toMatchObject({ kind: "glb", url: "viewer-file://abc/m.glb" });
+  });
+});

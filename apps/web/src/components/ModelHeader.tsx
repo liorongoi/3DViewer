@@ -6,6 +6,7 @@ import { useEngine, useSignal } from "../engine";
 import { useApp } from "../state/store";
 import { Camera, ChevronLeft, Command, Share2 } from "./icons";
 import { VersionPicker } from "./VersionPicker";
+import { ServerPill } from "./ServerPill";
 import { hiddenLayers, shareUrl } from "../share";
 import { screenshotWithBanner } from "../screenshot";
 import { saveDataUrl, slug } from "../download";
@@ -38,6 +39,9 @@ export function ModelHeader({ onBack, backLabel, className, compact }: { onBack:
           {cls.label.split(" ")[0]}
         </span>
       )}
+      <span className="text-[11px] text-fg3">
+        <ServerPill compact />
+      </span>
       <span className="h-6 w-px bg-line" />
       <IconButton label={t("shell.palette")} shortcut="Ctrl+K" onClick={() => set({ paletteOpen: true })} className="tip-below">
         <Command size={16} />

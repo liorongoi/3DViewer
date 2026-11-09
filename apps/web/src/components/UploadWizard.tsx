@@ -13,6 +13,7 @@ import { IconButton, cx } from "./primitives";
 import { useLevels } from "../state/classification";
 import { arrangeWhenOpen } from "../layers-standard";
 import { errorText } from "../server/error-text";
+import { desktop, fromDesktopList } from "../desktop";
 
 const STEPS = ["drop", "check", "place", "layers", "details"] as const;
 
@@ -75,7 +76,10 @@ export function UploadWizard() {
   const [progress, setProgress] = useState<UploadProgress | null>(null);
   // Gather the parts under the suggested standard names when the model is published (UPL-09).
   const [arrange, setArrange] = useState(true);
+  // Open the model on this computer only, without sending it to the server (desktop, WP 5.3).
+  const [keepLocal, setKeepLocal] = useState(false);
   const server = useApp((s) => s.server);
+  const pending = useApp((s) => s.pendingFiles);
   const folderInput = useRef<HTMLInputElement>(null);
   const chosen = levels.find((c) => c.id === cls);
   const report = checked?.report ?? null;
@@ -89,6 +93,8 @@ export function UploadWizard() {
       if (!live) return;
       setChecked(r);
       setChecking(false);
+      // FBX is converted on the server (on the desktop too, until it converts locally).
+      if (r.report.format === "fbx") setKeepLocal(false);
       setStep((s) => (s === 0 ? 1 : s));
       const main = r.report.mainFile ?? files[0]!.path;
       const stem = main.split("/").pop()!.replace(/\.[^.]+$/, "");
@@ -104,6 +110,20 @@ export function UploadWizard() {
     };
   }, [files, engine]);
 
+  // Files opened from outside the wizard: Explorer, the desktop open dialog, a drop on the window.
+  useEffect(() => {
+    if (!pending) return;
+    set({ pendingFiles: null });
+    setStep(0);
+    setKeepLocal(pending.keepLocal);
+    setFiles(pending.files);
+  }, [pending, set]);
+
+  /** Desktop: the system dialogs, which give files read in place instead of copied. */
+  const pick = (which: "files" | "folder") => {
+    void (which === "files" ? desktop!.openFiles() : desktop!.openFolder()).then(fromDesktopList).then((f) => f && setFiles(f));
+  };
+
   const layers = useMemo(() => (report?.nodes ?? []).slice(0, 60).map((n) => ({ name: n, to: suggestLayer(n) })), [report]);
 
   if (!open) return null;
@@ -117,13 +137,15 @@ export function UploadWizard() {
     // The next upload starts from the defaults, not the last model's axis, units or heading.
     setPlace(NEW_PLACE);
     setPublishError(null);
+    setKeepLocal(false);
   };
 
   const browserCanOpen = report?.ok && report.format !== "fbx";
   const placeOk = place.fromFile && report?.georef ? true : Number.isFinite(parseFloat(place.x)) && Number.isFinite(parseFloat(place.y));
   const canNext = step === 0 ? !!report : step === 1 ? !!report?.ok : step === 2 ? placeOk : true;
   // The server converts FBX; without it only what the browser opens can be published.
-  const canPublish = !!cls && (server ? !!report?.ok : !!browserCanOpen) && meta.name.trim() !== "" && !publishing;
+  const toServer = !!server && !keepLocal;
+  const canPublish = !!cls && (toServer ? !!report?.ok : !!browserCanOpen) && meta.name.trim() !== "" && !publishing;
 
   /** The file's own position, or the Place step's, with grid north and grid scale applied. */
   const position = (r: CheckReport) => {
@@ -183,7 +205,7 @@ export function UploadWizard() {
     setPublishError(null);
     setProgress(null);
     try {
-      if (server) return await publishToServer(server, report);
+      if (server && toServer) return await publishToServer(server, report);
       const prepared = await prepareFiles(checked.files, report);
       const { useFile, lat, lon, placement } = position(report);
       const id = `upload-${Date.now().toString(36)}`;
@@ -207,7 +229,7 @@ export function UploadWizard() {
           groundFit: isTiles && useFile ? (place.fitGround ? "street" : "none") : undefined,
           localFrame: isTiles && !useFile ? true : undefined,
           georeferenced: !isTiles && useFile ? true : undefined,
-          attribution: "Uploaded in this session",
+          attribution: prepared.url.startsWith("viewer-file:") ? "Opened from this computer" : "Uploaded in this session",
         },
         centre: { lat, lon },
         placement,
@@ -269,13 +291,24 @@ export function UploadWizard() {
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
                 e.preventDefault();
-                void fromDrop(e.dataTransfer).then(setFiles);
+                const dt = e.dataTransfer;
+                void (desktop ? desktop.openDropped([...dt.files]).then(fromDesktopList).then((f) => f && setFiles(f)) : fromDrop(dt).then(setFiles));
               }}
               data-testid="upload-drop"
             >
               <Upload size={32} className="text-accent" />
               <div className="text-[16px] font-semibold">{t("upload.dropTitle")}</div>
               <div className="max-w-md text-fg3">{t("upload.dropHint")}</div>
+              {desktop ? (
+              <div className="mt-2 flex gap-2">
+                <button type="button" className="btn-secondary" onClick={() => pick("files")} data-testid="desktop-open-files">
+                  {t("upload.choose")}
+                </button>
+                <button type="button" className="btn-secondary" onClick={() => pick("folder")} data-testid="desktop-open-folder">
+                  <FolderOpen size={14} /> {t("shell.chooseFolder")}
+                </button>
+              </div>
+              ) : (
               <div className="mt-2 flex gap-2">
                 <label className="btn-secondary cursor-pointer">
                   {t("upload.choose")}
@@ -294,6 +327,7 @@ export function UploadWizard() {
                   onChange={(e) => setFiles(fromInput(e.target.files))}
                 />
               </div>
+              )}
               {checking && <p className="text-fg3">{t("wizard.reading", { count: files.length })}</p>}
             </div>
           )}
@@ -482,9 +516,18 @@ export function UploadWizard() {
                 </select>
               </Field>
               <div className="col-span-2"><Field label={t("upload.fields.description")}><textarea className="input h-24 py-2" value={meta.description} onChange={(e) => setMeta({ ...meta, description: e.target.value })} /></Field></div>
+              {server && (
+                <label className="col-span-2 flex items-start gap-2 text-[12px]">
+                  <input type="checkbox" className="mt-0.5 accent-[var(--accent)]" checked={keepLocal} disabled={report?.format === "fbx"} onChange={(e) => setKeepLocal(e.target.checked)} data-testid="keep-local" />
+                  <span>
+                    <span className="text-fg">{t("wizard.keepLocal")}</span>
+                    <span className="block text-fg3">{t("wizard.keepLocalHint")}</span>
+                  </span>
+                </label>
+              )}
               <p className="col-span-2 text-[12px] text-fg3">
                 {report && fmtBytes(report.stats.bytes)} ·{" "}
-                {server ? t("wizard.publishServer") : t("wizard.publishLocal")}
+                {toServer ? t("wizard.publishServer") : desktop ? t("wizard.publishDesktop") : t("wizard.publishLocal")}
               </p>
               {progress && publishing && (
                 <div className="col-span-2 flex flex-col gap-1.5" data-testid="upload-progress">
@@ -510,7 +553,7 @@ export function UploadWizard() {
             </button>
           ) : (
             <span className="flex items-center gap-3">
-              {report?.format === "fbx" && !server ? (
+              {report?.format === "fbx" && !toServer ? (
                 <span className="text-[12px] text-fg3">{t("wizard.fbxNeedsServer")}</span>
               ) : !cls ? (
                 <span className="text-[12px] text-fg3">{t("wizard.needClass")}</span>

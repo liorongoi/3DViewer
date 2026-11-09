@@ -1,10 +1,12 @@
 import { createApiClient, errorFrom, must, type ApiClient, type paths, type Schemas } from "@viewer/api-client";
 import type { CheckReport, LocalFile } from "@viewer/core";
+import { desktopInfo } from "../desktop";
 import { ServerError, type BaseMapConfig, type ClassificationLevel, type LayerManifest, type ModelSummary } from "@viewer/shared";
 
 /**
- * The VIEWER server (Phase 3). The web app finds it at VITE_API_URL, or on its own origin.
- * With no server it runs on the bundled sample library, as before.
+ * The VIEWER server (Phase 3). The web app finds it at VITE_API_URL, or on its own origin; the
+ * desktop app at the address IT configured (WP 5.4), through its viewer-server:// bridge.
+ * With no server it runs on the bundled sample library and local files.
  */
 const configured = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "");
 
@@ -14,9 +16,23 @@ export interface ServerInfo {
   db: string;
 }
 
-export async function findServer(timeoutMs = 2500): Promise<ServerInfo | null> {
+/** Where the server should be; null when nothing points at one (a desktop app with no address set). */
+export async function serverBase(): Promise<string | null> {
   if (import.meta.env.VITE_NO_SERVER === "1") return null;
-  const base = configured ?? new URL(".", location.href).href.replace(/\/$/, "");
+  const d = await desktopInfo();
+  if (d) return d.server;
+  return configured ?? new URL(".", location.href).href.replace(/\/$/, "");
+}
+
+/** True when the server is expected (configured), so its absence is "offline", not "no server". */
+export async function serverExpected(): Promise<boolean> {
+  const d = await desktopInfo();
+  return d ? !!d.server : !!configured;
+}
+
+export async function findServer(timeoutMs = 2500): Promise<ServerInfo | null> {
+  const base = await serverBase();
+  if (!base) return null;
   try {
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), timeoutMs);
