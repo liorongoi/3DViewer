@@ -53,8 +53,8 @@ let current = null;
       localStorage.setItem("viewer.fadeTools", "false");
     });
     const page = await ctx.newPage();
-    // Software rendering (CI) compiles a new shader in tens of seconds, and the page answers
-    // nothing meanwhile: restyling the tiled copy's parts does that.
+    // Software rendering (CI) can block the page's WebGL calls for tens of seconds, seen after
+    // the tiled copy's parts are restyled; the page answers nothing meanwhile.
     page.setDefaultTimeout(120000);
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
