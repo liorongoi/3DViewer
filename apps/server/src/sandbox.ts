@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { chmod, cp, lstat, mkdir, readdir, realpath, rm } from "node:fs/promises";
+import { chmod, cp, lstat, mkdir, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PermanentError } from "./permanent.ts";
@@ -131,10 +131,14 @@ export class PodmanSandbox implements Sandbox {
 
   async run<T>(step: Step, work: string, opts: RunOptions): Promise<T> {
     for (const d of ["storage", "run", "tmp"]) await mkdir(path.join(this.opts.stateDir, d), { recursive: true });
+    // podman's defaults set a network sysctl in each container; under systemd's
+    // ProtectKernelTunables /proc/sys is read-only, and a step with no network needs none.
+    const conf = path.join(this.opts.stateDir, "containers.conf");
+    await writeFile(conf, "[containers]\ndefault_sysctls = []\n");
     const name = `viewer-step-${randomUUID().slice(0, 12)}`;
     const args = await this.args(step, work, name, opts.timeoutMs);
     return new Promise<T>((resolve, reject) => {
-      const child = spawn(this.opts.podman, args, { stdio: ["ignore", "pipe", "pipe"], env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: this.opts.stateDir, XDG_RUNTIME_DIR: path.join(this.opts.stateDir, "run") } });
+      const child = spawn(this.opts.podman, args, { stdio: ["ignore", "pipe", "pipe"], env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: this.opts.stateDir, XDG_RUNTIME_DIR: path.join(this.opts.stateDir, "run"), CONTAINERS_CONF_OVERRIDE: conf } });
       let buf = "";
       let err = "";
       let result: { type: "done"; result: T } | { type: "error"; message: string; permanent?: boolean } | null = null;
