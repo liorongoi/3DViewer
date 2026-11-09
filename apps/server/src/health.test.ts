@@ -34,5 +34,6 @@ describe("health check", () => {
       await app.close();
       await rm(dir, { recursive: true, force: true });
     }
-  });
+    // Starting an in-memory database and migrating it takes seconds on a busy CI machine.
+  }, 30000);
 });

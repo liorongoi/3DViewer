@@ -6,11 +6,21 @@ export function useLevels(): ClassificationLevel[] {
   return useApp((s) => s.levels);
 }
 
-/** A model's classification: the user's choice if any, otherwise the library value (UPL-10). */
+/** A model's classification (UPL-10): see classificationIdOf. */
 export function useClassOf(): (m: { id: string; classificationId: string }) => ClassificationLevel {
   const overrides = useApp((s) => s.classOverrides);
+  const server = useApp((s) => !!s.server);
   const levels = useLevels();
-  return (m) => pick(levels, overrides[m.id] ?? m.classificationId);
+  return (m) => pick(levels, classificationIdOf(m, overrides, server));
+}
+
+/**
+ * The library's classification for a server model, which only the library changes, so a choice
+ * kept on one workstation never marks it differently there. Samples and this session's uploads
+ * have no library: the choice made on this workstation, if any.
+ */
+export function classificationIdOf(m: { id: string; classificationId: string }, overrides: Record<string, string>, server: boolean): string {
+  return (server && !m.id.startsWith("upload-") ? undefined : overrides[m.id]) ?? m.classificationId;
 }
 
 /**

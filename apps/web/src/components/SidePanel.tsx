@@ -4,10 +4,13 @@ import { useTranslation } from "react-i18next";
 import { ecefToGeodetic, formatLength, formatModelLength, type Measurement } from "@viewer/core";
 import { useEngine, useSignal } from "../engine";
 import { useApp } from "../state/store";
+import { refreshLibrary } from "../state/library";
+import { updateModelDetails, type ModelPatch } from "../server/api";
+import { UPDATE_STATUSES, type ModelSummary, type UpdateStatus } from "@viewer/shared";
 import { pushUndo } from "../state/undo";
 import { copyText } from "../clipboard";
 import { useCoordinates } from "../useCoordinates";
-import { AlertTriangle, Bookmark, Copy, Crosshair, Eye, EyeOff, Info, Orbit, Play, Route, Ruler, StopCircle, Trash2, Video, X } from "./icons";
+import { AlertTriangle, Bookmark, Copy, Crosshair, Eye, EyeOff, Info, Orbit, Pencil, Play, Route, Ruler, StopCircle, Trash2, Video, X } from "./icons";
 import { IconButton, Panel, Segmented, StatusBadge, cx } from "./primitives";
 import { AnalysisTab } from "./AnalysisTab";
 
@@ -246,8 +249,39 @@ function PropertiesTab() {
   const model = useSignal(engine?.current, null);
   const classOf = useClassOf();
   const setClassification = useApp((s) => s.setClassification);
+  const server = useApp((s) => s.server);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
   if (!model) return <p className="p-4 text-fg3">—</p>;
   const cls = classOf(model);
+  // A server model's details are the library's, for everyone; a sample's or an upload's stay on this workstation.
+  const live = !!server && !model.id.startsWith("upload-");
+
+  /** Saves changed details to the library, and shows them on the open model (any version). */
+  const save = async (patch: ModelPatch) => {
+    if (!server || !engine || !Object.keys(patch).length) return true;
+    setSaving(true);
+    setProblem(null);
+    try {
+      const s = await updateModelDetails(server, model.id, patch);
+      const now = engine.current.get();
+      if (now?.id === s.id) {
+        const { name, project, operation, responsibleEntity, description, status, statusChangedAt, classificationId } = s;
+        engine.current.set({ ...now, name, project, operation, responsibleEntity, description, status, statusChangedAt, classificationId });
+      }
+      await refreshLibrary().catch(() => undefined);
+      return true;
+    } catch (e) {
+      setProblem(t("props.saveFailed", { reason: (e as Error).message }));
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (editing && live) return <DetailsForm model={model} saving={saving} problem={problem} onCancel={() => (setEditing(false), setProblem(null))} onSave={async (p) => (await save(p)) && setEditing(false)} />;
+
   const rows: [string, string][] = [
     [t("upload.fields.project"), model.project],
     [t("upload.fields.operation"), model.operation],
@@ -257,7 +291,7 @@ function PropertiesTab() {
     [t("library.changed", { date: "" }).trim(), model.statusChangedAt],
   ];
   return (
-    <div className="flex flex-col gap-3 p-3">
+    <div className="flex flex-col gap-3 p-3" data-testid="properties">
       <div className="flex items-center gap-2">
         <StatusBadge status={model.status} compact />
         {cls && (
@@ -265,12 +299,18 @@ function PropertiesTab() {
             {cls.label}
           </span>
         )}
+        {live && (
+          <button type="button" onClick={() => setEditing(true)} className="ms-auto inline-flex h-7 items-center gap-1 rounded-[6px] border border-line-strong px-2 text-[12px] text-fg2 hover:text-fg">
+            <Pencil size={13} /> {t("props.edit")}
+          </button>
+        )}
       </div>
       <label className="flex items-center justify-between gap-2">
         <span className="text-fg3">{t("side.classification")}</span>
         <select
           value={cls.id}
-          onChange={(e) => setClassification(model.id, e.target.value)}
+          disabled={saving}
+          onChange={(e) => (live ? void save({ classificationId: e.target.value }) : setClassification(model.id, e.target.value))}
           className="h-8 rounded-[6px] border border-line bg-s1solid px-2 text-[12px] font-semibold"
           aria-label={t("side.classificationOf")}
         >
@@ -281,12 +321,13 @@ function PropertiesTab() {
           ))}
         </select>
       </label>
-      <p className="text-fg2">{model.description}</p>
+      {problem && <p role="alert" className="text-[12px] text-danger">{problem}</p>}
+      <p className="text-fg2 whitespace-pre-line" dir="auto">{model.description}</p>
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
         {rows.map(([k, v]) => (
           <div key={k} className="contents">
             <dt className="text-fg3">{k}</dt>
-            <dd className="text-fg">{v}</dd>
+            <dd className="text-fg" dir="auto">{v}</dd>
           </div>
         ))}
       </dl>
@@ -294,9 +335,66 @@ function PropertiesTab() {
       <LodSection />
       <div className="flex items-start gap-2 rounded-[8px] bg-s2 p-2 text-[12px] text-fg3">
         <Info size={14} className="mt-0.5 shrink-0" />
-        {t("side.readOnly")}
+        {live ? t("props.sharedNote") : t("side.readOnly")}
       </div>
     </div>
+  );
+}
+
+/** The library details of a server model, edited in place (WP 4.4, UPL-04); only changed fields are sent. */
+function DetailsForm({ model, saving, problem, onCancel, onSave }: { model: ModelSummary; saving: boolean; problem: string | null; onCancel: () => void; onSave: (p: ModelPatch) => void }) {
+  const { t } = useTranslation();
+  const levels = useLevels();
+  const classOf = useClassOf();
+  const start = { name: model.name, project: model.project, operation: model.operation, responsibleEntity: model.responsibleEntity, description: model.description, status: model.status, classificationId: classOf(model).id };
+  const [f, setF] = useState(start);
+  const patch: ModelPatch = {};
+  for (const k of Object.keys(start) as (keyof typeof start)[]) if (f[k] !== start[k]) (patch as Record<string, string>)[k] = k === "description" ? f[k] : f[k].trim();
+  const nameOk = f.name.trim().length > 0;
+  const field = (k: "name" | "project" | "operation" | "responsibleEntity", label: string) => (
+    <label className="grid gap-1">
+      <span className="text-[12px] text-fg3">{label}</span>
+      <input className="input" dir="auto" value={f[k]} maxLength={k === "name" ? 300 : 2000} onChange={(e) => setF({ ...f, [k]: e.target.value })} aria-invalid={k === "name" && !nameOk} />
+    </label>
+  );
+  return (
+    <form
+      className="flex flex-col gap-3 p-3"
+      data-testid="details-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (nameOk && !saving) onSave(patch);
+      }}
+      onKeyDown={(e) => e.key === "Escape" && (e.stopPropagation(), onCancel())}
+    >
+      {field("name", `${t("upload.fields.name")} *`)}
+      {field("project", t("upload.fields.project"))}
+      {field("operation", t("upload.fields.operation"))}
+      {field("responsibleEntity", t("upload.fields.entity"))}
+      <label className="grid gap-1">
+        <span className="text-[12px] text-fg3">{t("upload.fields.status")}</span>
+        <select className="input" value={f.status} onChange={(e) => setF({ ...f, status: e.target.value as UpdateStatus })}>
+          {UPDATE_STATUSES.map((s) => <option key={s} value={s}>{t(`status.${s}`)}</option>)}
+        </select>
+      </label>
+      <label className="grid gap-1">
+        <span className="text-[12px] text-fg3">{t("upload.fields.classification")}</span>
+        <select className="input font-semibold" value={f.classificationId} onChange={(e) => setF({ ...f, classificationId: e.target.value })}>
+          {levels.map((c) => <option key={c.id} value={c.id}>{c.label.replace(/ · .*$/, "")}</option>)}
+        </select>
+      </label>
+      <label className="grid gap-1">
+        <span className="text-[12px] text-fg3">{t("upload.fields.description")}</span>
+        <textarea className="input min-h-24 py-1.5" dir="auto" value={f.description} maxLength={20000} onChange={(e) => setF({ ...f, description: e.target.value })} />
+      </label>
+      {problem && <p role="alert" className="text-[12px] text-danger">{problem}</p>}
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onCancel} className="h-8 rounded-[8px] px-3 text-fg2 hover:bg-s3 hover:text-fg">{t("common.cancel")}</button>
+        <button type="submit" disabled={!nameOk || saving || !Object.keys(patch).length} className="h-8 rounded-[8px] bg-accent px-3 font-medium text-accent-on disabled:opacity-50">
+          {saving ? t("props.saving") : t("props.save")}
+        </button>
+      </div>
+    </form>
   );
 }
 

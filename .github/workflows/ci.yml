@@ -109,9 +109,15 @@ jobs:
         run: node scripts/check-shell.cjs check-out/shell
         env:
           SHELL_MODEL: SciFi Helmet
+      - name: Versions, details edited in the viewer, and share links with their version and measurements (WP 4.4, 4.6)
+        if: matrix.suite == 'shell'
+        run: node scripts/check-versions.cjs
       - name: Layers (AC-05)
         if: matrix.suite == 'layers'
         run: node scripts/check-layers.cjs
+      - name: Layer editor, saved for everyone and carried to the next version, and the upload wizard's standard names (WP 4.3)
+        if: matrix.suite == 'layers'
+        run: node scripts/check-layer-editor.cjs
       - name: A fault in one part keeps the rest working
         if: matrix.suite == 'tools'
         run: node scripts/check-faults.cjs

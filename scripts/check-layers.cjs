@@ -23,6 +23,7 @@ const { execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const { chromium } = require("playwright");
+const { describeFailure, watchConsole } = require("./lib/page-diagnostics.cjs");
 
 const ROOT = path.join(__dirname, "..");
 const TILED = path.join(ROOT, "apps/web/dist/samples/_check-layers-tiled");
@@ -34,6 +35,7 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
   execFileSync(process.execPath, ["--input-type=module", "-e", `import { tileModel } from ${JSON.stringify(tiler)}; await tileModel(${JSON.stringify(src)}, ${JSON.stringify(TILED)}, { leafTriangles: 50000 });`], { stdio: "inherit", cwd: path.join(ROOT, "apps/server") });
 }
 
+let current = null;
 (async () => {
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || undefined, args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
   let failed = 0;
@@ -51,11 +53,15 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
       localStorage.setItem("viewer.fadeTools", "false");
     });
     const page = await ctx.newPage();
+    // Software rendering (CI) can block the page's WebGL calls for tens of seconds, seen after
+    // the tiled copy's parts are restyled; the page answers nothing meanwhile.
+    page.setDefaultTimeout(120000);
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
-    // When drawing fails the viewer closes the model and logs why: show it, or a check that then
-    // finds no model gives no clue.
-    page.on("console", (m) => m.type() === "error" && /drawing failed/.test(m.text()) && console.log(`INFO the viewer closed the model: ${m.text()}`));
+    // The page's console errors (the viewer logs why it closed a model) and, if a step throws,
+    // the viewer's state and a screenshot: a failure on CI then names its cause.
+    watchConsole(page, kind);
+    current = { page, kind };
     await page.goto("http://localhost:4173/", { waitUntil: "load" });
     await page.waitForFunction(() => !!window.viewerEngine, null, { timeout: 60000 });
     // A render error stops Cesium drawing without a page error: keep it for the report.
@@ -90,9 +96,11 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
       const e = window.viewerEngine;
       e.widget.scene.shadowMap.enabled = false;
       e.shadowsWanted = false;
-      // Drawn on a timer: software rendering flat out starves the input events.
-      e.widget.useDefaultRenderLoop = false;
-      window.__renderTimer = setInterval(() => e.widget.render(), 100);
+      // The app's low quality: this check is about which parts are drawn, and software
+      // rendering (CI) takes seconds a frame at full quality.
+      e.setQuality("low");
+      // The viewer's own loop, which draws on demand. A timer that drew every 100 ms queued
+      // frames faster than software rendering draws them, and the page stopped answering.
     });
     if (!(await page.getByRole("tree", { name: "Layers" }).isVisible())) await page.keyboard.press("l");
     const tree = page.getByRole("tree", { name: "Layers" });
@@ -410,4 +418,8 @@ if (!fs.existsSync(path.join(TILED, "tileset.json"))) {
   await browser.close();
   console.log(failed ? `\n${failed} check(s) failed.` : "\nAll checks passed.");
   process.exit(failed ? 1 : 0);
-})();
+})().catch(async (e) => {
+  console.error(e);
+  if (current) await describeFailure(current.page, `layers-${current.kind.replace(/\s/g, "")}`);
+  process.exit(1);
+});

@@ -51,6 +51,7 @@ import { Snapper, type Snap } from "./snapper";
 import { FlyByTour, FlyMode, captureViewpoint, type Viewpoint } from "./fly";
 import { signal } from "../signal";
 import { applyManifest, effectiveVisibility, findLayer, layerForNode, layerNodes, layersFromGltf, layersFromTileset, walk, type Layer, type LayerManifest } from "../layers/layers";
+import { editableTree, type EditLayer } from "../layers/manifest-edit";
 import { applySiteConfig, catalogue, makeBaseLayers } from "./basemaps";
 import { ENVIRONMENTS, environmentSh, environmentSpecular, type EnvironmentId } from "./environments";
 import { cubeToKtx2 } from "./ktx2";
@@ -162,6 +163,7 @@ export class ViewerEngine {
   readonly error = signal<OpenError | null>(null);
   readonly tileProblems = signal<TileProblems | null>(null);
   readonly current = signal<ModelSummary | null>(null);
+  private openSeq = 0;
   readonly viewMode = signal<ViewMode>("shaded");
   readonly viewpoints = signal<Viewpoint[]>([]);
   readonly baseMapId = signal("bundled");
@@ -199,6 +201,16 @@ export class ViewerEngine {
   private modelBaseHeight = 0;
   private frames = 0;
   private lastFpsTime = performance.now();
+  /** Render on demand: frames keep coming until then, and while something is still loading. */
+  private drawUntil = 0;
+  /** Inside Cesium's frame: what runs there does not ask for another frame. */
+  private inFrame = false;
+  /** Callers waiting for frames to be drawn (afterFrames, firstDrawn). */
+  private frameWaiters = 0;
+  /** The previous frame asked for the next one, so the time between them is a frame time. */
+  private drawing = false;
+  private requestFrame: () => void = () => undefined;
+  private offInput: () => void = () => undefined;
   private quality: Quality = "high";
   private shadowsWanted = true;
 
@@ -223,7 +235,10 @@ export class ViewerEngine {
       shadows: true,
       msaaSamples: 4,
       scene3DOnly: true,
-      requestRenderMode: false,
+      // Drawn on demand (see keepDrawing): a still view costs no GPU time, and a slow GPU never
+      // falls behind with frames nobody needs.
+      requestRenderMode: true,
+      maximumRenderTimeChange: Number.POSITIVE_INFINITY,
       useBrowserRecommendedResolution: false,
       // Our own message replaces Cesium's error panel (below).
       showRenderLoopErrors: false,
@@ -302,11 +317,13 @@ export class ViewerEngine {
     );
 
     this.bindPointer();
+    this.drawOnDemand();
     scene.postRender.addEventListener(() => this.afterFrame());
     this.flyHome(0);
   }
 
   destroy(): void {
+    this.offInput();
     this.snapper.destroy();
     this.fly.disable();
     this.tour.stop();
@@ -318,6 +335,8 @@ export class ViewerEngine {
 
   async open(summary: ModelSummary, opts: { fly?: boolean } = {}): Promise<void> {
     this.close();
+    // Another open or a close while this one loads makes it stale (two versions of one model share an id).
+    const seq = this.openSeq;
     this.current.set(summary);
     // A model without a reliable scale is measured in its own units (MSR-06).
     this.measure.setModelUnit(summary.placement?.modelUnit);
@@ -332,7 +351,7 @@ export class ViewerEngine {
           imageBasedLighting: this.makeIbl(),
           shadows: ShadowMode.ENABLED,
         });
-        if (this.current.get()?.id !== summary.id) return tileset.destroy();
+        if (seq !== this.openSeq) return tileset.destroy();
         // A missing or damaged tile leaves a hole; say which, and keep showing the rest.
         this.offTileFailed = tileset.tileFailed.addEventListener((f: { url: string; message: string }) => {
           const prev = this.tileProblems.get();
@@ -387,7 +406,7 @@ export class ViewerEngine {
             gltfJson = g;
           },
         });
-        if (this.current.get()?.id !== summary.id) return model.destroy();
+        if (seq !== this.openSeq) return model.destroy();
         scene.primitives.add(model);
         this.model = model;
         await new Promise<void>((resolve, reject) => {
@@ -409,6 +428,7 @@ export class ViewerEngine {
       if (opts.fly !== false) await this.home(1.6);
       else await this.home(0);
     } catch (e) {
+      if (seq !== this.openSeq) return;
       const err = e instanceof Error ? e : new Error(String(e));
       this.error.set({
         file: summary.source.url.split("/").pop() ?? summary.source.url,
@@ -422,6 +442,7 @@ export class ViewerEngine {
   }
 
   close(): void {
+    this.openSeq++;
     this.tour.stop();
     this.measure.cancel();
     this.measure.clear();
@@ -775,9 +796,11 @@ export class ViewerEngine {
   private afterFrames(n: number): Promise<void> {
     return new Promise((resolve) => {
       let left = n;
-      const done = () => (off(), clearTimeout(timer), setTimeout(resolve, 0));
+      this.frameWaiters++;
+      const done = () => (off(), clearTimeout(timer), this.frameWaiters--, setTimeout(resolve, 0));
       const off = this.widget.scene.postRender.addEventListener(() => --left <= 0 && done());
       const timer = setTimeout(done, 1000);
+      this.widget.scene.requestRender();
     });
   }
 
@@ -946,12 +969,15 @@ export class ViewerEngine {
   private firstDrawn(tileset: Cesium3DTileset): Promise<void> {
     const scene = this.widget.scene;
     return new Promise((resolve) => {
+      this.frameWaiters++;
       const off = scene.postRender.addEventListener(() => {
         if (this.tileset !== tileset || tileset.isDestroyed() || (tileset as unknown as { statistics: { selected: number } }).statistics.selected > 0) {
           off();
+          this.frameWaiters--;
           resolve();
         }
       });
+      scene.requestRender();
     });
   }
 
@@ -1067,6 +1093,11 @@ export class ViewerEngine {
   setLayerManifest(manifest: LayerManifest | null): void {
     this.manifest = manifest;
     if (this.derivedLayers.length) this.setLayers(applyManifest(this.derivedLayers, manifest));
+  }
+
+  /** The open model's layers as the layer editor edits them (WP 4.3): the file's tree as the saved manifest arranges it. */
+  editableLayers(): EditLayer[] {
+    return editableTree(this.derivedLayers, this.manifest);
   }
 
   setLayers(next: Layer[]): void {
@@ -1356,6 +1387,87 @@ export class ViewerEngine {
     });
   }
 
+  /**
+   * Keeps the view drawing for a while: for a change that takes several frames to show (a new
+   * outline's geometry is built in a worker, a fade). Every engine command and every input on
+   * the page does this, so callers rarely need to.
+   */
+  keepDrawing(ms = 500): void {
+    this.drawUntil = Math.max(this.drawUntil, performance.now() + ms);
+    this.requestFrame();
+  }
+
+  /**
+   * Render on demand. Cesium draws a frame when the camera moves, data loads or a frame is
+   * asked for; on top of that the view keeps drawing for a moment after each engine command,
+   * each input on the page and each asked-for frame, and for as long as the model, its tiles,
+   * the ground or the entities are still loading. A still view draws nothing.
+   */
+  private drawOnDemand(): void {
+    const scene = this.widget.scene;
+    const request = scene.requestRender.bind(scene);
+    this.requestFrame = request;
+    scene.requestRender = () => {
+      if (!this.inFrame) this.drawUntil = Math.max(this.drawUntil, performance.now() + 300);
+      request();
+    };
+    scene.preUpdate.addEventListener(() => {
+      this.inFrame = true;
+      queueMicrotask(() => (this.inFrame = false));
+    });
+    const loading = () =>
+      this.frameWaiters > 0 ||
+      this.loading.get() ||
+      (!!this.model && !this.model.ready) ||
+      (!!this.tileset && !this.tileset.tilesLoaded) ||
+      (scene.globe.show && !scene.globe.tilesLoaded) ||
+      !(this.widget as unknown as { dataSourceDisplay: { ready: boolean } }).dataSourceDisplay.ready;
+    const more = () => performance.now() < this.drawUntil || loading();
+    // Looked at on every tick, drawn or not, so a load that starts between frames is drawn.
+    scene.postUpdate.addEventListener(() => {
+      if (more()) request();
+    });
+    scene.postRender.addEventListener(() => {
+      const next = more();
+      if (!next && this.drawing) {
+        // Still: no frame rate to show until it draws again.
+        this.frames = 0;
+        this.lastFpsTime = performance.now();
+        this.fps.set(0);
+      }
+      this.drawing = next;
+    });
+    // Every command draws: engine methods (and its tools') change the scene in many ways.
+    const commands = (o: object, skip: string[]) => {
+      const proto = Object.getPrototypeOf(o) as Record<string, unknown>;
+      for (const name of Object.getOwnPropertyNames(proto)) {
+        const d = Object.getOwnPropertyDescriptor(proto, name);
+        if (name === "constructor" || skip.includes(name) || typeof d?.value !== "function") continue;
+        const fn = d.value as (...a: unknown[]) => unknown;
+        Object.defineProperty(o, name, {
+          configurable: true,
+          writable: true,
+          value: (...args: unknown[]) => {
+            const r = fn.apply(o, args);
+            if (!this.inFrame) {
+              this.keepDrawing();
+              if (r instanceof Promise) void r.then(() => this.keepDrawing(), () => this.keepDrawing());
+            }
+            return r;
+          },
+        });
+      }
+    };
+    commands(this, ["afterFrame", "updatePerf", "keepDrawing", "drawOnDemand", "destroy"]);
+    for (const tool of [this.measure, this.sight, this.viewshed, this.userLayers, this.lod]) commands(tool, ["destroy"]);
+    // And every input on the page: the interface changes what is drawn.
+    const wake = () => this.keepDrawing();
+    const types = ["pointerdown", "pointerup", "wheel", "keydown", "keyup", "input", "change", "click"];
+    for (const type of types) window.addEventListener(type, wake, { capture: true, passive: true });
+    this.widget.canvas.addEventListener("pointermove", wake, { passive: true });
+    this.offInput = () => types.forEach((type) => window.removeEventListener(type, wake, { capture: true }));
+  }
+
   private showPivot(p: Cartesian3): void {
     if (this.pivotMarker) this.widget.entities.remove(this.pivotMarker);
     this.pivotMarker = this.widget.entities.add({
@@ -1374,7 +1486,8 @@ export class ViewerEngine {
   private afterFrame(): void {
     this.frames++;
     const now = performance.now();
-    if (this.lastFrameAt) this.frameTimes.push(now - this.lastFrameAt);
+    // Drawn on demand: only the time between two frames drawn back to back is a frame time.
+    if (this.drawing && this.lastFrameAt) this.frameTimes.push(now - this.lastFrameAt);
     this.lastFrameAt = now;
     if (now - this.lastFpsTime >= 500) {
       this.fps.set(Math.round((this.frames * 1000) / (now - this.lastFpsTime)));

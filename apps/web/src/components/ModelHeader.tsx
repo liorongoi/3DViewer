@@ -4,7 +4,8 @@ import { useClassOf } from "../state/classification";
 import { useTranslation } from "react-i18next";
 import { useEngine, useSignal } from "../engine";
 import { useApp } from "../state/store";
-import { Camera, ChevronDown, ChevronLeft, Command, Share2 } from "./icons";
+import { Camera, ChevronLeft, Command, Share2 } from "./icons";
+import { VersionPicker } from "./VersionPicker";
 import { hiddenLayers, shareUrl } from "../share";
 import { screenshotWithBanner } from "../screenshot";
 import { saveDataUrl, slug } from "../download";
@@ -31,10 +32,7 @@ export function ModelHeader({ onBack, backLabel, className, compact }: { onBack:
         <div className="truncate font-semibold text-fg max-w-[340px]" dir="auto" data-content>{model.name}</div>
       </div>
       <StatusBadge status={model.status} compact />
-      <button type="button" className="inline-flex h-7 items-center gap-1 rounded-[6px] border border-line-strong px-2 text-[12px] text-fg2 hover:text-fg num" title={t("viewer.version")}>
-        v{model.version}
-        <ChevronDown size={12} />
-      </button>
+      <VersionPicker model={model} />
       {cls && (
         <span className="rounded px-1.5 h-6 inline-flex items-center text-[10px] font-semibold tracking-wider" style={{ background: cls.color, color: cls.textColor }}>
           {cls.label.split(" ")[0]}
@@ -61,7 +59,7 @@ export function ModelHeader({ onBack, backLabel, className, compact }: { onBack:
         disabled={model.id.startsWith("upload-")}
         onClick={async () => {
           if (!engine) return;
-          const url = shareUrl({ m: model.id, v: model.version, c: engine.getView(), mode: engine.viewMode.get(), hidden: hiddenLayers(engine.layers.get()) });
+          const url = shareUrl({ m: model.id, v: model.version, c: engine.getView(), mode: engine.viewMode.get(), hidden: hiddenLayers(engine.layers.get()), ms: engine.measure.exportShared() });
           // If copying fails, the link is still in the address bar.
           if (await copyText(url)) {
             setShared(true);
