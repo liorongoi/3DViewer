@@ -38,6 +38,9 @@ const STANDARD = ["Terrain", "Buildings", "Infrastructure", "Vegetation", "Water
     // The app's low quality: software rendering on CI takes seconds a frame at full quality.
     localStorage.setItem("viewer.quality", "low");
   });
+  // Software rendering (CI) can block the page's WebGL calls for tens of seconds; the page
+  // answers nothing meanwhile.
+  ctx.setDefaultTimeout(120000);
   const page = await ctx.newPage();
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));

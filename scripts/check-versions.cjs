@@ -42,6 +42,9 @@ const { describeFailure, watchConsole } = require("./lib/page-diagnostics.cjs");
     // A classification chosen on this workstation earlier: it must not mark a server model.
     localStorage.setItem("viewer.classOverrides", JSON.stringify({ "m-lantern": "unclassified" }));
   });
+  // Software rendering (CI) can block the page's WebGL calls for tens of seconds; the page
+  // answers nothing meanwhile.
+  ctx.setDefaultTimeout(120000);
   const page = await ctx.newPage();
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
