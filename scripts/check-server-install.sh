@@ -5,7 +5,8 @@
 #   sudo bash scripts/check-server-install.sh <bundle-1.tar.gz> <bundle-2.tar.gz> <DATABASE_URL>
 #
 # Bundle 2 must be a later version than bundle 1. It uses the name viewer.test (added to
-# /etc/hosts) with a certificate from a test CA it makes, and the real ports 80 and 443.
+# /etc/hosts) with a certificate from a test CA it makes, and the real ports 80 and 443. It also runs
+# the 20-user load test (scripts/load-20-users.cjs) against the installed system.
 set -uo pipefail
 B1="$(readlink -f "$1")" B2="$(readlink -f "$2")" DB="$3"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -78,6 +79,11 @@ check "a terrain tile comes gzipped as quantized-mesh" "https -sI https://$HOST/
 check "the terrain's layer.json comes through" "https -f https://$HOST/basemaps/site/terrain/layer.json | grep -q quantized-mesh"
 check "SHA256SUMS and folder listings are not served" "[[ \$(https -s -o /dev/null -w '%{http_code}' https://$HOST/basemaps/site/SHA256SUMS) == 404 && \$(https -s -o /dev/null -w '%{http_code}' https://$HOST/basemaps/site/) == 404 ]]"
 check "a missing tile is a 404, not the web app" "[[ \$(https -s -o /dev/null -w '%{http_code}' https://$HOST/basemaps/site/imagery/9/9/9.png) == 404 ]]"
+
+echo "== 20 users at once, through Caddy and TLS (NFR-05, NFR-01)"
+node "$ROOT/scripts/load-20-users.cjs" "https://$HOST" "$WORK/ca.pem" > "$WORK/load.log" 2>&1; load=$?
+sed 's/^/  /' "$WORK/load.log" | tail -25
+check "20 users open a 200 MB model together, each within 5 s and with no errors" "[[ $load -eq 0 ]]"
 
 echo "== backup"
 systemctl start viewer-backup

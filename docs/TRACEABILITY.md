@@ -70,8 +70,8 @@ Every requirement in the SRS mapped to the work package (WP) that builds it and 
 | NFR-02 | 3D Tiles first view ≤ 3 s | 1.5, 6.3 | Perf run |
 | NFR-03 | ≥ 60 fps average, never < 30 | 1.5, 6.3 | AC-04; perf HUD export |
 | NFR-04 | VRAM budget 10 GB default, no crash | 1.5 | Budget overflow test |
-| NFR-05 | 20 concurrent users | 3.7, 6.3 | k6 load test |
-| NFR-06 | ≥ 10 TB, ≥ 5,000 versions | 3.1, 6.3 | Synthetic storage test |
+| NFR-05 | 20 concurrent users | 3.7, 6.3 | `scripts/load-20-users.cjs` against the installed server, through Caddy and TLS, in `check-server-install.sh` (CI `server-install`) |
+| NFR-06 | ≥ 10 TB, ≥ 5,000 versions | 3.1, 6.3 | Synthetic storage test: `apps/server/src/storage-scale.test.ts` on PostgreSQL (CI `server-postgres`); `scripts/check-library-scale.cjs` in the browser (CI `browser (shell)`) |
 | NFR-07 | Error ≤ 0.1% or 1 cm | 2.4, 2.7 | AC-06 |
 | NFR-08 | Matches Khronos reference viewer | 1.4 | AC-03 |
 | NFR-09 | ≥ 99.5% availability in working hours | 5.6, 6.6 | Monitoring + runbook; pilot |

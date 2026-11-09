@@ -11,16 +11,17 @@ const API = "http://127.0.0.1:8787";
 
 /**
  * Starts the server and signs in as administrator (to read the audit log). With workers, it
- * also runs upload jobs (no thumbnails: they would start a second browser).
+ * also runs upload jobs (no thumbnails: they would start a second browser). `env` adds server
+ * settings.
  */
-async function startServer({ password = "check-server-only-0123", workers = false } = {}) {
+async function startServer({ password = "check-server-only-0123", workers = false, env = {} } = {}) {
   // A server left over from an earlier run would answer in place of this one.
   if (await fetch(`${API}/api/health/live`).then(() => true, () => false)) throw new Error(`Something already answers on ${API}: stop it first.`);
   const data = fs.mkdtempSync(path.join(os.tmpdir(), "viewer-check-"));
   const log = [];
   const srv = spawn(process.execPath, ["dist/main.js"], {
     cwd: path.join(ROOT, "apps/server"),
-    env: { ...without(process.env, "CHROMIUM"), DATA_DIR: data, WORKERS: workers ? "1" : "0", ADMIN_PASSWORD: password, PORT: "8787", HOST: "127.0.0.1", NODE_ENV: "development", SEED_SAMPLES: "1" },
+    env: { ...without(process.env, "CHROMIUM"), DATA_DIR: data, WORKERS: workers ? "1" : "0", ADMIN_PASSWORD: password, PORT: "8787", HOST: "127.0.0.1", NODE_ENV: "development", SEED_SAMPLES: "1", ...env },
     stdio: ["ignore", "pipe", "pipe"],
   });
   srv.stdout.on("data", (d) => log.push(String(d)));
