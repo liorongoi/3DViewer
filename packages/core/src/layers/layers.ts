@@ -1,4 +1,4 @@
-import type { LayerManifest, ManifestLayer } from "@viewer/shared";
+import { containsPhrase, searchKey, type LayerManifest, type ManifestLayer } from "@viewer/shared";
 import { gltfNodeBoxes, type GltfBox } from "../loaders/gltf";
 
 // Layer tree derived from a model (SRS 6.3): glTF node hierarchy, or one layer per tileset.
@@ -165,12 +165,11 @@ export function effectiveVisibility(layers: Layer[]): Map<string, boolean> {
 }
 
 export function filterLayers(layers: Layer[], query: string): Layer[] {
-  const q = query.trim().toLocaleLowerCase();
-  if (!q) return layers;
+  if (!searchKey(query)) return layers;
   const rec = (ls: Layer[]): Layer[] =>
     ls.flatMap((l) => {
       const kids = rec(l.children);
-      if (l.name.toLocaleLowerCase().includes(q) || kids.length) return [{ ...l, children: kids }];
+      if (containsPhrase(l.name, query) || kids.length) return [{ ...l, children: kids }];
       return [];
     });
   return rec(layers);

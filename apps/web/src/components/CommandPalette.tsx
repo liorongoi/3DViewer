@@ -1,5 +1,6 @@
 import { useLibrary } from "../state/library";
-import { Command } from "cmdk";
+import { Command, defaultFilter } from "cmdk";
+import { matchesQuery } from "@viewer/shared";
 import { useTranslation } from "react-i18next";
 import { parseCoordinateQuery, walk } from "@viewer/core";
 import { useState } from "react";
@@ -40,7 +41,7 @@ export function CommandPalette({ onOpenModel }: { onOpenModel: (id: string) => v
 
   return (
     <div className="fixed inset-0 z-50 grid items-start justify-center bg-black/30 pt-[14vh]" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <Command ref={ref} role="dialog" aria-modal="true" aria-label={t("shell.palette")} label={t("shell.palette")} className="glass w-[640px] max-w-[92vw] overflow-hidden rounded-[14px]" shouldFilter loop>
+      <Command ref={ref} role="dialog" aria-modal="true" aria-label={t("shell.palette")} label={t("shell.palette")} className="glass w-[640px] max-w-[92vw] overflow-hidden rounded-[14px]" shouldFilter filter={paletteFilter} loop>
         <div className="flex items-center gap-2 border-b border-line px-3">
           <Search size={16} className="text-fg3" />
           <Command.Input autoFocus value={q} onValueChange={setQ} placeholder={t("palette.placeholder")} className="h-12 flex-1 bg-transparent text-[14px] outline-none placeholder:text-fg3" />
@@ -106,4 +107,9 @@ export function CommandPalette({ onOpenModel }: { onOpenModel: (id: string) => v
 
 function Shortcut({ k }: { k: string }) {
   return <span className="num ms-auto text-[11px] text-fg3">{k}</span>;
+}
+
+/** Names in Hebrew match however they are written (points, final letters, geresh); then cmdk's own fuzzy match. */
+function paletteFilter(value: string, search: string, keywords?: string[]): number {
+  return matchesQuery(search, [value, ...(keywords ?? [])]) ? 1 : (defaultFilter?.(value, search, keywords) ?? 0);
 }

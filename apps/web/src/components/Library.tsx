@@ -2,16 +2,15 @@ import { useMemo, useState } from "react";
 import { classificationIdOf, useClassOf, useLevels } from "../state/classification";
 import { useLibrary } from "../state/library";
 import { useTranslation } from "react-i18next";
-import { UPDATE_STATUSES, type ModelSummary } from "@viewer/shared";
+import { UPDATE_STATUSES, matchesQuery, type ModelSummary } from "@viewer/shared";
 import { useApp, type Filters } from "../state/store";
 import { Box, Boxes, ChevronDown, FileBox, Search, X } from "./icons";
 import { StatusBadge, cx } from "./primitives";
 
 export function filterModels(models: ModelSummary[], f: Filters, classOf: (m: ModelSummary) => string = (m) => m.classificationId): ModelSummary[] {
-  const q = f.query.trim().toLocaleLowerCase();
   return models.filter(
     (m) =>
-      (!q || [m.name, m.project, m.operation, m.responsibleEntity, m.description].some((s) => s.toLocaleLowerCase().includes(q))) &&
+      matchesQuery(f.query, [m.name, m.project, m.operation, m.responsibleEntity, m.description]) &&
       (!f.project || m.project === f.project) &&
       (!f.operation || m.operation === f.operation) &&
       (!f.status || m.status === f.status) &&

@@ -7,6 +7,7 @@ import { ChevronRight, Eye, EyeOff, Focus, Layers, ListTree, Scan, Search, X } f
 import { LayerEditor } from "./LayerEditor";
 import { IconButton, Panel, cx } from "./primitives";
 import { useTabs } from "./useTabs";
+import { findQuery } from "@viewer/shared";
 import { MapTab } from "./MapTab";
 import { useApp } from "../state/store";
 import { pushUndo } from "../state/undo";
@@ -226,14 +227,13 @@ export function LayersPanel({ onClose, className }: { onClose?: () => void; clas
 
 /** The name with the part that matches the search marked. */
 function Highlight({ text, query }: { text: string; query: string }) {
-  const q = query.trim().toLocaleLowerCase();
-  const at = q ? text.toLocaleLowerCase().indexOf(q) : -1;
-  if (at < 0) return <>{text}</>;
+  const r = findQuery(text, query, true);
+  if (!r) return <>{text}</>;
   return (
     <>
-      {text.slice(0, at)}
-      <mark className="rounded-[3px] bg-accent-soft text-fg">{text.slice(at, at + q.length)}</mark>
-      {text.slice(at + q.length)}
+      {text.slice(0, r[0])}
+      <mark className="rounded-[3px] bg-accent-soft text-fg">{text.slice(r[0], r[1])}</mark>
+      {text.slice(r[1])}
     </>
   );
 }
