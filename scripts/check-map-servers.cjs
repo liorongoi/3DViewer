@@ -23,12 +23,12 @@ const ROOT = path.resolve(__dirname, "..");
 const proj4 = require(require.resolve("proj4", { paths: [path.join(ROOT, "packages/core")] }));
 const ITM = "+proj=tmerc +lat_0=31.7343936111111 +lon_0=35.2045169444444 +k=1.0000067 +x_0=219529.584 +y_0=626907.39 +ellps=GRS80 +towgs84=23.772,17.49,17.859,-0.3132,-1.85274,1.67299,-5.4262 +units=m +no_defs";
 
-// Public services from different server software: MapProxy (EOX), ArcGIS Server (Esri),
-// GeoServer with GeoWebCache (the OpenLayers example server), and a WMS from MapServer (terrestris).
+// Public services from different server software: MapProxy (EOX), ArcGIS Server (Esri), NASA's
+// OnEarth (GIBS), and a WMS from MapServer (terrestris).
 const PUBLIC = [
   { name: "EOX Sentinel-2 cloudless (WMTS, MapProxy)", kind: "wmts", url: "https://tiles.maps.eox.at/wmts/1.0.0/WMTSCapabilities.xml", layer: /^s2cloudless/, at: [34.78, 32.08, 40000] },
   { name: "Esri World Imagery (WMTS, ArcGIS Server)", kind: "wmts", url: "https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/WMTS/1.0.0/WMTSCapabilities.xml", layer: /World_Imagery/, at: [34.78, 32.08, 40000] },
-  { name: "GeoServer GeoWebCache (WMTS)", kind: "wmts", url: "https://ahocevar.com/geoserver/gwc/service/wmts?REQUEST=GetCapabilities", layer: /states|ne_|countries/i, at: [-98, 39, 4000000] },
+  { name: "NASA GIBS Blue Marble (WMTS, OnEarth)", kind: "wmts", url: "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/1.0.0/WMTSCapabilities.xml", layer: /^BlueMarble_ShadedRelief_Bathymetry$|^BlueMarble_ShadedRelief$/, at: [34.78, 32.08, 3000000] },
   { name: "terrestris OSM (WMS, MapServer)", kind: "wms", url: "https://ows.terrestris.de/osm/service?SERVICE=WMS&REQUEST=GetCapabilities", layer: /^OSM-WMS$/, at: [34.78, 32.08, 40000] },
 ];
 
@@ -63,6 +63,9 @@ const PUBLIC = [
       if (u.host === "localhost:4173" || u.host === "127.0.0.1:4173") return;
       const type = r.headers()["content-type"] ?? "";
       const t = tiles.get(u.host) ?? { ok: 0, bad: 0, bytes: 0, last: "" };
+      // A redirect (EOX's capabilities give http:// tile addresses that go on to https://) is
+      // neither: the image it leads to is counted when it arrives.
+      if (r.status() >= 300 && r.status() < 400) return;
       if (r.status() === 200 && type.startsWith("image/")) t.ok++;
       else if (!/xml|text/.test(type) || r.status() >= 400) (t.bad++, (t.last = `${r.status()} ${type} ${r.url().slice(0, 160)}`));
       tiles.set(u.host, t);
