@@ -37,6 +37,8 @@ const { describeFailure, watchConsole } = require("./lib/page-diagnostics.cjs");
   await ctx.addInitScript(() => {
     localStorage.setItem("viewer.lang", "en");
     localStorage.setItem("viewer.fadeTools", "false");
+    // The app's low quality: software rendering on CI takes seconds a frame at full quality.
+    localStorage.setItem("viewer.quality", "low");
     // A classification chosen on this workstation earlier: it must not mark a server model.
     localStorage.setItem("viewer.classOverrides", JSON.stringify({ "m-lantern": "unclassified" }));
   });

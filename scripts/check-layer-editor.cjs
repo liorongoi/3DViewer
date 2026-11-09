@@ -35,6 +35,8 @@ const STANDARD = ["Terrain", "Buildings", "Infrastructure", "Vegetation", "Water
   await ctx.addInitScript(() => {
     localStorage.setItem("viewer.lang", "en");
     localStorage.setItem("viewer.fadeTools", "false");
+    // The app's low quality: software rendering on CI takes seconds a frame at full quality.
+    localStorage.setItem("viewer.quality", "low");
   });
   const page = await ctx.newPage();
   const errors = [];
