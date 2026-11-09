@@ -94,7 +94,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   const { db } = opts;
   const app = Fastify({ logger: opts.logger ?? false, trustProxy: true, bodyLimit: 1024 * 1024 });
   await app.register(swagger, {
-    openapi: { info: { title: "VIEWER library API", version: "0.1.0", description: "Library, versions and audit for the 3D Intelligence Model Viewer." } },
+    openapi: { info: { title: "HOLO library API", version: "0.1.0", description: "Library, versions and audit for the 3D Intelligence Model Viewer." } },
     // Shared schemas keep their names in the published document (components/schemas/ModelSummary…).
     refResolver: { buildLocalReference: (json, _base, _frag, i) => (typeof json.$id === "string" ? json.$id : `def-${i}`) },
   });

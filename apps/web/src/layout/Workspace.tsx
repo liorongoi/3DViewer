@@ -11,7 +11,8 @@ import { CoordinatesHud, HintLine, ScaleBar, ViewCube } from "../components/Hud"
 import { ModelHeader } from "../components/ModelHeader";
 import { FeaturePopup } from "../components/FeaturePopup";
 import { PerfHud } from "../components/PerfHud";
-import { Globe, Layers, PanelIcon, Ruler, Upload } from "./parts";
+import { Layers, PanelIcon, Ruler, Upload } from "./parts";
+import { HoloMark } from "../brand/HoloMark";
 import { IconButton, cx } from "../components/primitives";
 import { fadeClasses, useChromeFade } from "./useChromeFade";
 import { Guard } from "../components/Guard";
@@ -50,11 +51,9 @@ export function Workspace() {
           leftOpen ? (
             <section className={cx("glass pointer-events-auto flex w-[360px] min-h-0 flex-col rounded-[14px]", fade.panel)}>
               <div className="flex items-center gap-2 px-3 pt-3">
-                <span className="grid h-7 w-7 place-items-center rounded-[8px] bg-accent text-accent-on">
-                  <Globe size={16} />
-                </span>
+                <HoloMark size={28} className="shrink-0" />
                 <div className="flex-1">
-                  <div className="text-[13px] font-semibold tracking-wide">VIEWER</div>
+                  <div className="text-[13px] font-semibold tracking-wide">{t("app.name")}</div>
                   <div className="flex items-center gap-1.5 text-[11px] text-fg3">
                     <span>{t("library.count", { count: models.length })}</span>
                     <ServerPill />
@@ -79,8 +78,8 @@ export function Workspace() {
             </section>
           ) : (
             <button type="button" className={cx("glass pointer-events-auto flex h-11 items-center gap-2 rounded-[12px] px-3", fade.ambient)} onClick={() => set({ leftOpen: true })}>
-              <Globe size={16} className="text-accent" />
-              <span className="font-semibold">VIEWER</span>
+              <HoloMark size={22} className="shrink-0" />
+              <span className="font-semibold tracking-wide">{t("app.name")}</span>
               <span className="text-fg3">· {t("common.search")}</span>
               <span className="text-[11px] text-fg3"><ServerPill /></span>
             </button>

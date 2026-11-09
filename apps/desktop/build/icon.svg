@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 64 64">
+  <!-- HOLO app icon. icon.png is rendered from this file at 512 px; apps/web/src/brand/HoloMark.tsx draws the same mark. -->
+  <defs>
+    <radialGradient id="bg" cx=".3" cy=".2" r="1"><stop offset="0" stop-color="#1E1638"/><stop offset="1" stop-color="#07070D"/></radialGradient>
+    <linearGradient id="cone" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#22D3EE" stop-opacity=".75"/><stop offset="1" stop-color="#8B5CF6" stop-opacity="0"/></linearGradient>
+    <linearGradient id="w" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#22D3EE"/><stop offset="1" stop-color="#F05BDC"/></linearGradient>
+    <filter id="g" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="1.3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <g transform="translate(7 7) scale(.78125)">
+    <path d="M26 54 L4 4 L60 4 L38 54 Z" fill="url(#cone)" opacity=".55"/>
+    <path d="M32 10.6 L42.4 16.3 L42.4 27.7 L32 33.4 L21.6 27.7 L21.6 16.3 Z M32 10.6 L32 16 M42.4 16.3 L32 16 M42.4 27.7 L37.2 25 M32 33.4 L37.2 25 M21.6 27.7 L26.8 25 M21.6 16.3 L26.8 25 M32 16 L37.2 25 L26.8 25 Z" fill="none" stroke="url(#w)" stroke-width="1.8" stroke-linejoin="round" filter="url(#g)"/>
+    <path d="M4 46 H14 M4 42 H10 M50 46 H60 M54 42 H60" stroke="#22D3EE" stroke-width="1" opacity=".55"/>
+    <ellipse cx="32" cy="55" rx="13" ry="3.6" fill="none" stroke="#22D3EE" stroke-width="2.2" filter="url(#g)"/>
+    <ellipse cx="32" cy="55" rx="5" ry="1.4" fill="#fff"/>
+  </g>
+</svg>

@@ -27,7 +27,7 @@ const { startServer } = require("./lib/test-server.cjs");
 const AXE = fs.readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
 const PASSWORD = "check-server-only-0123";
 const LATIN_OK = new Set(
-  "VIEWER GLB glTF gltf FBX OBJ 3D Tiles tileset json zip KTX2 PNG JPG CSV GeoJSON GeoTIFF COG KML KMZ WMTS WMS XYZ TMS SHP shapefile EPSG WGS ITM UTM N S E W km m cm mm ft in MB GB KB TB fps Ctrl Shift Alt Esc Enter Tab Space PgUp PgDn Home End F Del Backspace Cesium CesiumJS OpenStreetMap OSM Esri AWS Terrarium Lyon Tarn Jerusalem Natural Earth ISO TOP API IP SIEM CEF HTTPS URL ID AA WCAG ADMIN_PASSWORD ADMIN_PASSWORD_RESET viewer env etc Sentinel cloudless Terrain quantized mesh terrarium xyz tms wmts hex".split(" "),
+  "HOLO GLB glTF gltf FBX OBJ 3D Tiles tileset json zip KTX2 PNG JPG CSV GeoJSON GeoTIFF COG KML KMZ WMTS WMS XYZ TMS SHP shapefile EPSG WGS ITM UTM N S E W km m cm mm ft in MB GB KB TB fps Ctrl Shift Alt Esc Enter Tab Space PgUp PgDn Home End F Del Backspace Cesium CesiumJS OpenStreetMap OSM Esri AWS Terrarium Lyon Tarn Jerusalem Natural Earth ISO TOP API IP SIEM CEF HTTPS URL ID AA WCAG ADMIN_PASSWORD ADMIN_PASSWORD_RESET viewer env etc Sentinel cloudless Terrain quantized mesh terrarium xyz tms wmts hex".split(" "),
 );
 
 (async () => {

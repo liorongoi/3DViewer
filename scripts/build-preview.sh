@@ -31,7 +31,7 @@ if [ "${ARTIFACT:-0}" = "1" ]; then
   # The artifact host adds its own document skeleton, so the page is the head and body content only.
   JS=$(cd "$OUT" && ls assets/index-*.js); CSS=$(cd "$OUT" && ls assets/index-*.css)
   cat > "$OUT/page.html" <<HTML
-<title>VIEWER Prototype</title>
+<title>HOLO Prototype</title>
 <style>:root{color-scheme:dark;background:#0E0F12}body{background:#0E0F12;color:#E8EAED;margin:0}</style>
 <script type="module" crossorigin src="./$JS"></script>
 <link rel="stylesheet" crossorigin href="./$CSS">

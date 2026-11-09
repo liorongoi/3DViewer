@@ -254,14 +254,14 @@ export class ViewerEngine {
       const summary = this.current.get();
       if (!summary || this.error.get()) return;
       const err = e instanceof Error ? e : new Error(String(e));
-      console.error(`VIEWER: drawing failed; the model was closed. ${err.stack ?? `${err.name}: ${err.message}`}`);
+      console.error(`HOLO: drawing failed; the model was closed. ${err.stack ?? `${err.name}: ${err.message}`}`);
       // Not inside Cesium's frame: close the model once the frame is over.
       setTimeout(() => {
         if (this.current.get() !== summary) return;
         this.close();
         this.current.set(summary);
         const why = /too many attributes \(a_target/i.test(err.message) ? " It has more morph targets than the graphics card can draw at once." : "";
-        this.error.set({ file: summary.source.url.split("/").pop() ?? summary.source.url, reason: `VIEWER could not draw this model and closed it.${why} The rest of the view keeps working.`, detail: `${err.name}: ${err.message}` });
+        this.error.set({ file: summary.source.url.split("/").pop() ?? summary.source.url, reason: `HOLO could not draw this model and closed it.${why} The rest of the view keeps working.`, detail: `${err.name}: ${err.message}` });
       }, 0);
     });
     scene.postProcessStages.fxaa.enabled = true;
@@ -1626,11 +1626,11 @@ function placeMatrix(p: NonNullable<ModelSummary["placement"]>, height: number):
 
 function friendlyReason(err: Error): string {
   const ext = /Unsupported glTF Extension: ([\w-]+)/.exec(err.message);
-  if (ext) return `This model needs the glTF extension ${ext[1]}, which VIEWER cannot read.`;
+  if (ext) return `This model needs the glTF extension ${ext[1]}, which HOLO cannot read.`;
   const m = `${err.name} ${err.message}`.toLowerCase();
   if (m.includes("404") || m.includes("not found")) return "The file, or a file it references, could not be found.";
   if (/json\.parse|unexpected token|in json|not valid json/.test(m)) return "The file is not valid glTF or 3D Tiles JSON.";
   if (m.includes("magic") || /invalid glb|glb (header|version)/.test(m)) return "The file is not a valid GLB.";
-  if (m.includes("version")) return "This file uses a version VIEWER does not support.";
-  return "The file is damaged or in a format VIEWER cannot read.";
+  if (m.includes("version")) return "This file uses a version HOLO does not support.";
+  return "The file is damaged or in a format HOLO cannot read.";
 }

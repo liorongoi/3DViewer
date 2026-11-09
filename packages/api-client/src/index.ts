@@ -3,7 +3,7 @@ import { isServerErrorKey, ServerError, type ServerErrorKey } from "@viewer/shar
 import type { components, paths } from "./schema.gen";
 
 /**
- * The typed client for the VIEWER API (WP 3.1), generated from the server's published OpenAPI.
+ * The typed client for the HOLO API (WP 3.1), generated from the server's published OpenAPI.
  * Paths, parameters, bodies and answers are all checked by the compiler, so a change to the API
  * that the web app is not ready for fails the type-check instead of failing at run time.
  */

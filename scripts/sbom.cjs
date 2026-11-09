@@ -1,4 +1,4 @@
-// Software bill of materials (CycloneDX 1.6 JSON) for one VIEWER release package (WP 6.4, C-2).
+// Software bill of materials (CycloneDX 1.6 JSON) for one HOLO release package (WP 6.4, C-2).
 //
 //   node scripts/sbom.cjs <out.json> --target server|desktop
 //
@@ -24,7 +24,7 @@ if (!out || !["server", "desktop"].includes(target)) {
 }
 
 const filters = target === "server" ? ["@viewer/server...", "@viewer/web...", "@viewer/desktop"] : ["@viewer/web...", "@viewer/desktop..."];
-const args = ["sbom", "--sbom-format", "cyclonedx", "--sbom-spec-version", "1.6", "--prod", "--sbom-type", "application", "--sbom-supplier", "VIEWER"];
+const args = ["sbom", "--sbom-format", "cyclonedx", "--sbom-spec-version", "1.6", "--prod", "--sbom-type", "application", "--sbom-supplier", "HOLO"];
 for (const f of filters) args.push("--filter", f);
 const bom = JSON.parse(execFileSync("pnpm", args, { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, shell: process.platform === "win32" }));
 
@@ -36,7 +36,7 @@ const version = process.env.VIEWER_VERSION || (() => {
   }
 })();
 const name = target === "server" ? "viewer-server" : "viewer-desktop";
-const root = { type: "application", name, version, "bom-ref": `viewer:${name}@${version}`, description: target === "server" ? "VIEWER library server, offline Linux bundle" : "VIEWER desktop app for Windows" };
+const root = { type: "application", name, version, "bom-ref": `viewer:${name}@${version}`, description: target === "server" ? "HOLO library server, offline Linux bundle" : "HOLO desktop app for Windows" };
 const oldRoot = bom.metadata.component?.["bom-ref"];
 bom.metadata.component = root;
 bom.metadata.properties = [{ name: "viewer:target", value: target }, { name: "viewer:commit", value: gitHead() }];
@@ -54,7 +54,7 @@ if (target === "server") {
   add({ type: "framework", name: "electron", version: electron, description: "Electron runtime, with the Chromium and Node.js it is built with", purl: `pkg:npm/electron@${electron}`, licenses: [{ license: { id: "MIT" } }], externalReferences: [{ type: "distribution", url: `https://github.com/electron/electron/releases/tag/v${electron}` }] });
 }
 bom.components.push(...extra);
-// The workspace's own packages are VIEWER: the root depends on everything shipped.
+// The workspace's own packages are HOLO: the root depends on everything shipped.
 for (const d of bom.dependencies) if (d.ref === oldRoot) d.ref = root["bom-ref"];
 if (!bom.dependencies.some((d) => d.ref === root["bom-ref"])) bom.dependencies.push({ ref: root["bom-ref"], dependsOn: [] });
 const top = bom.dependencies.find((d) => d.ref === root["bom-ref"]);

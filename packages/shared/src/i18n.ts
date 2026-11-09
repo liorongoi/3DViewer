@@ -1,7 +1,7 @@
 // UI strings. Keys are shared by both languages; a test checks they match.
 
 export const en = {
-  app: { name: "VIEWER", tagline: "3D Intelligence Model Viewer" },
+  app: { name: "HOLO", tagline: "3D Intelligence Model Viewer" },
   common: {
     search: "Search",
     cancel: "Cancel",
@@ -566,7 +566,7 @@ export const en = {
       password: "Password",
     },
     signOut: "Sign out",
-    needsServer: "The admin page needs the VIEWER server. This copy of the app is running on its sample library.",
+    needsServer: "The admin page needs the HOLO server. This copy of the app is running on its sample library.",
     checking: "Checking…",
     noPassword: "No admin password is set yet. The person who runs the server sets <code>ADMIN_PASSWORD</code> (12 characters or more) and restarts it.",
     sections: "Admin sections",
@@ -795,7 +795,7 @@ export const en = {
     },
     noModel: {
       title: "No model found",
-      detail: "VIEWER opens GLB, glTF, FBX and 3D Tiles (tileset.json), also inside a zip. Found: {{found}}.",
+      detail: "HOLO opens GLB, glTF, FBX and 3D Tiles (tileset.json), also inside a zip. Found: {{found}}.",
     },
     vertexPrecision: {
       title: "Vertex positions are only accurate to about {{step}}",
@@ -810,7 +810,7 @@ export const en = {
       detail: "Only glTF 2.0 can be opened. Re-export the model as glTF 2.0.",
     },
     extensions: {
-      title: "Uses extensions VIEWER cannot read",
+      title: "Uses extensions HOLO cannot read",
     },
     missingRefs: {
       title_one: "{{count}} referenced file is missing",
@@ -834,20 +834,20 @@ export const en = {
       title: "glTF 2.0 with separate files",
     },
     sidecarNoSrs: {
-      title: "{{file}} gives no position VIEWER can use",
+      title: "{{file}} gives no position HOLO can use",
       detail: "It has no SRS element.",
     },
     sidecarBadOrigin: {
-      title: "{{file}} gives no position VIEWER can use",
+      title: "{{file}} gives no position HOLO can use",
       detail: "Its SRSOrigin \"{{origin}}\" is not three numbers.",
     },
     sidecarBadSrs: {
-      title: "{{file}} gives no position VIEWER can use",
+      title: "{{file}} gives no position HOLO can use",
       detail: "Its SRS \"{{srs}}\" is not an EPSG code or ENU frame. Export with an EPSG code.",
     },
     sidecarUnknownEpsg: {
-      title: "{{file}} gives no position VIEWER can use",
-      detail: "It names EPSG:{{epsg}}, which is not in VIEWER's list of coordinate systems. Ask the admin to add it, or enter the position by hand.",
+      title: "{{file}} gives no position HOLO can use",
+      detail: "It names EPSG:{{epsg}}, which is not in HOLO's list of coordinate systems. Ask the admin to add it, or enter the position by hand.",
     },
     sidecarEnu: {
       title: "Position from the export's metadata",
@@ -957,7 +957,7 @@ type TwoForms<T> = { [K in keyof T as K extends `${infer B}_other` ? `${B}_two` 
 type Shape<T> = { [K in keyof T]: T[K] extends string ? string : Shape<T[K]> } & TwoForms<T>;
 
 export const he: Shape<typeof en> = {
-  app: { name: "VIEWER", tagline: "מציג מודלים תלת-ממדיים מודיעיניים" },
+  app: { name: "הולו", tagline: "מציג מודלים תלת-ממדיים מודיעיניים" },
   common: {
     search: "חיפוש",
     cancel: "ביטול",
@@ -1529,7 +1529,7 @@ export const he: Shape<typeof en> = {
       password: "סיסמה",
     },
     signOut: "התנתקות",
-    needsServer: "דף הניהול דורש את שרת VIEWER. העותק הזה של היישום פועל על ספריית הדוגמאות שלו.",
+    needsServer: "דף הניהול דורש את שרת הולו. העותק הזה של היישום פועל על ספריית הדוגמאות שלו.",
     checking: "בודק…",
     noPassword: "עדיין לא הוגדרה סיסמת ניהול. מי שמפעיל את השרת מגדיר <code>ADMIN_PASSWORD</code> (12 תווים לפחות) ומפעיל אותו מחדש.",
     sections: "אזורי הניהול",
@@ -1763,7 +1763,7 @@ export const he: Shape<typeof en> = {
     },
     noModel: {
       title: "לא נמצא מודל",
-      detail: "VIEWER פותח GLB, ‏glTF, ‏FBX ו-3D Tiles ‏(tileset.json), גם בתוך zip. נמצאו: {{found}}.",
+      detail: "הולו פותח GLB, ‏glTF, ‏FBX ו-3D Tiles ‏(tileset.json), גם בתוך zip. נמצאו: {{found}}.",
     },
     vertexPrecision: {
       title: "מיקומי הקודקודים מדויקים רק בכ-{{step}}",
@@ -1778,7 +1778,7 @@ export const he: Shape<typeof en> = {
       detail: "ניתן לפתוח רק glTF 2.0. ייצאו את המודל מחדש כ-glTF 2.0.",
     },
     extensions: {
-      title: "משתמש בהרחבות ש-VIEWER לא יודע לקרוא",
+      title: "משתמש בהרחבות שהולו לא יודע לקרוא",
     },
     missingRefs: {
       title_one: "קובץ מקושר אחד חסר",
@@ -1804,20 +1804,20 @@ export const he: Shape<typeof en> = {
       title: "glTF 2.0 עם קבצים נפרדים",
     },
     sidecarNoSrs: {
-      title: "{{file}} לא נותן מיקום ש-VIEWER יכול להשתמש בו",
+      title: "{{file}} לא נותן מיקום שהולו יכול להשתמש בו",
       detail: "אין בו רכיב SRS.",
     },
     sidecarBadOrigin: {
-      title: "{{file}} לא נותן מיקום ש-VIEWER יכול להשתמש בו",
+      title: "{{file}} לא נותן מיקום שהולו יכול להשתמש בו",
       detail: "ה-SRSOrigin שלו \"{{origin}}\" אינו שלושה מספרים.",
     },
     sidecarBadSrs: {
-      title: "{{file}} לא נותן מיקום ש-VIEWER יכול להשתמש בו",
+      title: "{{file}} לא נותן מיקום שהולו יכול להשתמש בו",
       detail: "ה-SRS שלו \"{{srs}}\" אינו קוד EPSG או מערכת ENU. ייצאו עם קוד EPSG.",
     },
     sidecarUnknownEpsg: {
-      title: "{{file}} לא נותן מיקום ש-VIEWER יכול להשתמש בו",
-      detail: "הוא מציין EPSG:{{epsg}}, שאינו ברשימת מערכות הקואורדינטות של VIEWER. בקשו מהמנהל להוסיף אותה, או הזינו את המיקום ידנית.",
+      title: "{{file}} לא נותן מיקום שהולו יכול להשתמש בו",
+      detail: "הוא מציין EPSG:{{epsg}}, שאינו ברשימת מערכות הקואורדינטות של הולו. בקשו מהמנהל להוסיף אותה, או הזינו את המיקום ידנית.",
     },
     sidecarEnu: {
       title: "מיקום מתוך המטא-נתונים של הייצוא",

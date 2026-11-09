@@ -6,7 +6,7 @@
 //
 // Signing: set CSC_LINK (the .pfx file, or its base64) and CSC_KEY_PASSWORD; without them the
 // installer is built unsigned and says so. VIEWER_VERSION sets the version (the release, WP 6.8).
-// The library server address can be given at install time: VIEWER-Setup.exe /S /SERVER_URL=https://...
+// The library server address can be given at install time: HOLO-Setup.exe /S /SERVER_URL=https://...
 const path = require("node:path");
 
 const fbx = path.dirname(require.resolve("fbx2gltf/package.json", { paths: [__dirname] }));
@@ -14,8 +14,8 @@ const fbx = path.dirname(require.resolve("fbx2gltf/package.json", { paths: [__di
 /** @type {import("electron-builder").Configuration} */
 module.exports = {
   appId: "org.viewer.desktop",
-  productName: "VIEWER",
-  copyright: "VIEWER",
+  productName: "HOLO",
+  copyright: "HOLO",
   extraMetadata: { name: "viewer", ...(process.env.VIEWER_VERSION ? { version: process.env.VIEWER_VERSION } : {}) },
   directories: { output: "release", buildResources: "build" },
   // The main process has no npm packages at run time: only its own build goes into the archive.
@@ -42,8 +42,8 @@ module.exports = {
   },
   win: {
     target: [{ target: "nsis", arch: ["x64"] }],
-    executableName: "VIEWER",
-    // glTF opens with VIEWER by default; FBX, zip and JSON (tileset.json) only appear under
+    executableName: "HOLO",
+    // glTF opens with HOLO by default; FBX, zip and JSON (tileset.json) only appear under
     // "Open with", so the app never takes over files other programs own (build/installer.nsh).
     fileAssociations: [
       { ext: "glb", name: "glTF binary model", role: "Viewer" },
@@ -59,8 +59,8 @@ module.exports = {
     selectPerMachineByDefault: false,
     createDesktopShortcut: true,
     createStartMenuShortcut: true,
-    shortcutName: "VIEWER",
-    artifactName: "VIEWER-Setup-${version}.exe",
+    shortcutName: "HOLO",
+    artifactName: "HOLO-Setup-${version}.exe",
     include: "build/installer.nsh",
     deleteAppDataOnUninstall: false,
   },
