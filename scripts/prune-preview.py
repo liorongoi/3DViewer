@@ -65,3 +65,14 @@ for f in os.listdir(A):
 # The flat copy of the Lyon tileset is only a reference for rebuilding the LOD pyramid.
 flat = os.path.join(S, "3dtiles/lyon1/tileset-flat.json")
 if os.path.exists(flat): os.remove(flat)
+
+# Cesium files for features the app never turns on: Google Earth Enterprise, the lens flare,
+# and the Bing, Google and ion credits (no ion token is set). The IAU 2006 tables stay: they are read.
+C = os.path.join(OUT, "cesium")
+for f in ("ThirdParty/google-earth-dbroot-parser.js", "Workers/decodeGoogleEarthEnterprisePacket.js",
+          "Workers/createVerticesFromGoogleEarthEnterpriseBuffer.js", "Assets/Images/ion-credit.png",
+          "Assets/Images/bing_maps_credit.png", "Assets/Images/google_earth_credit.png"):
+    if os.path.exists(os.path.join(C, f)): os.remove(os.path.join(C, f))
+shutil.rmtree(os.path.join(C, "Assets/Textures/LensFlare"), ignore_errors=True)
+# FBX samples are for the server's converter; the browser never reads them.
+shutil.rmtree(os.path.join(S, "fbx"), ignore_errors=True)
