@@ -94,11 +94,11 @@ const FILES = {
       const e = window.viewerEngine;
       await e.open({ id: "load-errors", name: "Load errors", classificationId: "unclassified", status: "current", version: 1, versions: 1, sourceFormat: "3dtiles", centre: { lat: 31.771, lon: 35.212 }, source: { kind: "3dtiles", url: "load-errors/tileset.json" } });
     });
-    const notice = page.locator('[role="status"]');
+    const notice = page.locator('[role="status"]:not(.sr-only)');
     await notice.waitFor({ timeout: 120000 });
     await page.waitForFunction(() => window.viewerEngine.tileProblems.get()?.count === 3, null, { timeout: 60000 }).catch(() => {});
     await notice.locator("summary").click();
-    const text = await notice.innerText();
+    const text = (await notice.innerText()).replace(/[\u2066-\u2069]/g, "");
     const state = await page.evaluate(() => ({ open: !!window.viewerEngine.tileset, error: window.viewerEngine.error.get(), problems: window.viewerEngine.tileProblems.get() }));
     check(state.open && !state.error, "the tileset stays open when tiles fail");
     check(state.problems?.count === 3, `3 tiles are counted as failed (got ${state.problems?.count})`);

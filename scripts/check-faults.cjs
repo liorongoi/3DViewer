@@ -43,7 +43,7 @@ const TEXT = {
       await page.waitForTimeout(1000);
       const run = `${lang} ${part}`;
 
-      const alerts = await page.locator("[data-testid=fault]").allInnerTexts();
+      const alerts = (await page.locator("[data-testid=fault]").allInnerTexts()).map((s) => s.replace(/[\u2066-\u2069]/g, ""));
       check(alerts.length === 1 && alerts[0].includes(T[part]), `${run}: one alert names the part that failed`, JSON.stringify(alerts));
       check(alerts.length === 1 && alerts[0].includes(T.retry), `${run}: the alert offers Try again`);
       // The 3D view still draws.
