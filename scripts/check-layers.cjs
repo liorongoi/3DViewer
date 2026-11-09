@@ -93,6 +93,9 @@ let current = null;
       const e = window.viewerEngine;
       e.widget.scene.shadowMap.enabled = false;
       e.shadowsWanted = false;
+      // The app's low quality: this check is about which parts are drawn, and software
+      // rendering (CI) takes seconds a frame at full quality.
+      e.setQuality("low");
       // The viewer's own loop, which draws on demand. A timer that drew every 100 ms queued
       // frames faster than software rendering draws them, and the page stopped answering.
     });
