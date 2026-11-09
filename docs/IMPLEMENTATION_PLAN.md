@@ -620,6 +620,10 @@ Phase 5 builds and tests the installer **pipeline**. The release installers them
 | 6.7 Acceptance | Run AC-01 to AC-10 in web and EXE on the reference workstation inside the internal network; this is also the first run on the Windows workstation (shell, `viewer-file://` with a 50 GB tileset, frame rate) | All | Signed acceptance report |
 | 6.8 Release installers | Final signed EXE installer and offline server bundle built from the frozen release, **after the manual is done**, with the manual included in both | NFR-20, C-1 | Installers install cleanly offline; the manual opens from the Help menu |
 
+**Feature freeze, 9 Nov 2026.** Every feature in the requirement tables is built. The last two features are the conversion sandbox (NFR-14: each step that reads an uploaded file runs in a rootless podman container with no network) and the checks against real map servers (WP 1.9, 3.9). From here on, a change to `main` is a fix, a test, documentation or release work. A new feature or a change to how a screen works waits for the next release, so the manual's text and screenshots stay true. What remains is outside this repository or needs people: the Hebrew review (6.1), the usability sessions (6.5), the pen test and accreditation (6.4), the acceptance run on the reference workstation inside the network (6.7, which also measures the frame rate on the A4000), and the reviews of the manual (6.6).
+
+**WP 6.6, 9 Nov 2026.** The user manual is in `docs/manual/en.md` and `docs/manual/he.md`, with screenshots of the build in each language (`docs/manual/img`, taken by `scripts/manual-screenshots.cjs` against the real server). `scripts/build-manual.cjs` turns each into a page at `manual/<lang>/` during the web build, taking the app's name from the interface strings, so the web app, the desktop app and the server bundle all carry it. It opens from the keyboard and mouse help (**User manual**) and from the command palette, in the interface's language and theme. The admin install guide is `docs/INSTALL.md`, and the runbook is `docs/OPERATIONS.md`.
+
 ---
 
 ## 6. Quality strategy

@@ -44,6 +44,8 @@ interface AppState {
   libraryView: "grid" | "globe";
   paletteOpen: boolean;
   helpOpen: boolean;
+  /** The user manual (WP 6.6). */
+  manualOpen: boolean;
   uploadOpen: boolean;
   /** The admin page (WP 3.9). */
   adminOpen: boolean;
@@ -106,6 +108,7 @@ export const useApp = create<AppState>((set) => ({
   libraryView: "grid",
   paletteOpen: false,
   helpOpen: false,
+  manualOpen: false,
   uploadOpen: false,
   adminOpen: false,
   perfOpen: false,
