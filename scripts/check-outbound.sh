@@ -53,7 +53,8 @@ if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
   chown "$SUDO_USER" "$OUT"
 fi
 
-(cd apps/web && exec "${AS[@]}" npx vite preview --port 4173 --strictPort >"$OUT/preview.log" 2>&1) &
+# The local vite, not npx: npx asks the npm registry first, which is the check's own traffic.
+(cd apps/web && exec "${AS[@]}" ./node_modules/.bin/vite preview --port 4173 --strictPort >"$OUT/preview.log" 2>&1) &
 PREVIEW=$!
 cleanup() { kill "$PREVIEW" 2>/dev/null || true; pkill -P "$PREVIEW" 2>/dev/null || true; }
 trap cleanup EXIT
