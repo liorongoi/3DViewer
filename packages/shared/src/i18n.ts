@@ -236,6 +236,7 @@ export const en = {
     fly: "Fly mode (W A S D, Q / E)",
     mouse: "Mouse",
     keyboard: "Keyboard",
+    manual: "User manual",
     rows: {
       orbit: "Orbit around the pivot",
       pan: "Pan",
@@ -1197,6 +1198,7 @@ export const he: Shape<typeof en> = {
     fly: "מצב טיסה (W A S D, Q / E)",
     mouse: "עכבר",
     keyboard: "מקלדת",
+    manual: "מדריך למשתמש",
     rows: {
       orbit: "סיבוב סביב הציר",
       pan: "הזזה",

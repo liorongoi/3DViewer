@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { useApp } from "../state/store";
-import { X } from "./icons";
+import { BookOpen, X } from "./icons";
 import { IconButton, Kbd } from "./primitives";
 import { useDialog } from "./useDialog";
 
@@ -41,6 +41,9 @@ export function HelpOverlay() {
       <div ref={ref} role="dialog" aria-modal="true" aria-label={t("help.title")} className="glass w-[680px] max-w-[94vw] rounded-[14px] p-5">
         <div className="mb-4 flex items-center">
           <h2 className="flex-1 text-[15px] font-semibold">{t("help.title")}</h2>
+          <button type="button" className="btn-secondary me-2" onClick={() => set({ helpOpen: false, manualOpen: true })}>
+            <BookOpen size={14} /> {t("help.manual")}
+          </button>
           <IconButton label={t("common.close")} onClick={() => set({ helpOpen: false })}>
             <X size={16} />
           </IconButton>

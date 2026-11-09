@@ -18,6 +18,7 @@ From the operating system's own packages (the site's mirror), these are optional
 |---|---|
 | PostgreSQL client (`pg_dump`, same major version as the database or newer) | The nightly backup fails. Install it. |
 | ClamAV (`clamdscan`, with `clamd` running) | Uploads are published with a "not scanned" warning. |
+| Podman 4 or newer | Uploaded files are converted, validated and tiled in child processes of the server, not in a container with no network (see SECURITY.md). With podman installed, `install.sh` turns the container on. |
 | Chromium | The library shows models without thumbnails. |
 
 Everything else (Node.js, the Caddy web server, the FBX converter) is in the bundle.

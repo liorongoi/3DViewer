@@ -7,7 +7,7 @@ import { useState } from "react";
 import { useDialog } from "./useDialog";
 import { useEngine, useSignal } from "../engine";
 import { useApp } from "../state/store";
-import { Box, Crosshair, Eye, House, Layers, Moon, Orbit, Plane, Route, Ruler, Search, Upload, ScanEye, Radar, Map } from "./icons";
+import { Box, Crosshair, Eye, House, Layers, Moon, Orbit, Plane, Route, Ruler, Search, Upload, ScanEye, Radar, Map, BookOpen } from "./icons";
 
 /** Ctrl+K: every command, layer and model, plus "fly to coordinates" (UI spec 1.1 #6). */
 export function CommandPalette({ onOpenModel }: { onOpenModel: (id: string) => void }) {
@@ -70,6 +70,7 @@ export function CommandPalette({ onOpenModel }: { onOpenModel: (id: string) => v
             ))}
             <Command.Item className={item} onSelect={run(() => set({ leftOpen: true }))}><Layers size={16} />{t("viewer.layers")}<Shortcut k="L" /></Command.Item>
             <Command.Item className={item} onSelect={run(() => set({ uploadOpen: true }))}><Upload size={16} />{t("library.upload")}</Command.Item>
+            <Command.Item className={item} onSelect={run(() => set({ manualOpen: true }))}><BookOpen size={16} />{t("help.manual")}</Command.Item>
             <Command.Item
               className={item}
               onSelect={run(() => {

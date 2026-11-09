@@ -55,6 +55,27 @@ token="$(login 2>/dev/null)"
 check "the admin signs in with the first admin password" "[[ -n '$token' ]]"
 check "the library answers" "https -f https://$HOST/api/models >/dev/null"
 
+echo "== conversion sandbox"
+check "install.sh turned the sandbox on (podman is installed)" "grep -q '^CONVERT_SANDBOX=podman' /etc/viewer/viewer.env && [[ -f /etc/systemd/system/viewer-server.service.d/sandbox.conf ]]"
+check "the server checked the sandbox at start: no network, read-only root" "journalctl -u viewer-server --no-pager | grep -q 'conversion sandbox ready'"
+# An FBX through the real upload API: the converter, the validator and the optimiser run in it.
+fbx="$ROOT/apps/web/public/samples/fbx/stanford-bunny.fbx"
+size=$(stat -c %s "$fbx")
+ing=$(https -f -H 'Content-Type: application/json' -d "{\"files\":[{\"path\":\"bunny.fbx\",\"size\":$size}],\"model\":{\"name\":\"Bunny, sandbox check\",\"status\":\"draft\",\"classificationId\":\"unclassified\"},\"placement\":{\"lat\":32.08,\"lon\":34.78,\"height\":0,\"aboveGround\":0}}" "https://$HOST/api/ingests")
+ing_id=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).id)' "$ing")
+up_url=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).uploads[0].url)' "$ing")
+https -f -X PATCH -H 'Content-Type: application/offset+octet-stream' -H 'Upload-Offset: 0' -H 'Tus-Resumable: 1.0.0' --data-binary "@$fbx" "https://$HOST${up_url}" >/dev/null
+https -f -X POST "https://$HOST/api/ingests/$ing_id/submit" >/dev/null
+state=""
+for _ in $(seq 1 120); do
+  state=$(https -f "https://$HOST/api/ingests/$ing_id" | node -e 'const r = JSON.parse(require("fs").readFileSync(0, "utf8")); process.stdout.write(r.state + " " + (r.error ?? ""))')
+  [[ "$state" == ready* || "$state" == failed* ]] && break
+  sleep 1
+done
+check "an FBX upload is converted, validated and published through the sandbox ($state)" "[[ '$state' == ready* ]]"
+check "the conversion ran in a container (podman left its state under /var/lib/viewer)" "[[ -d /var/lib/viewer/sandbox/storage ]]"
+check "no container is left running" "[[ -z \$(sudo -u viewer -H podman --root /var/lib/viewer/sandbox/storage --runroot /var/lib/viewer/sandbox/run --storage-driver vfs ps --all --quiet 2>/dev/null) ]]"
+
 echo "== base map package"
 mk="$WORK/tiles"
 node -e '

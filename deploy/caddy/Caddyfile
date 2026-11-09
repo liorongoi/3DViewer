@@ -48,7 +48,8 @@ https://{$VIEWER_HOST}:{$HTTPS_PORT:443} {
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options nosniff
 		Referrer-Policy no-referrer
-		X-Frame-Options DENY
+		# The user manual opens in a frame inside the app; other sites still cannot frame it.
+		X-Frame-Options SAMEORIGIN
 		-Server
 	}
 

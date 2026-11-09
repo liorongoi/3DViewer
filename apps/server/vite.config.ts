@@ -6,7 +6,7 @@ export default defineConfig({
   build: {
     ssr: true,
     rollupOptions: {
-      input: { main: "src/main.ts", "tiler-worker": "src/tiler-worker.ts" },
+      input: { main: "src/main.ts", "tiler-worker": "src/tiler-worker.ts", "convert-step": "src/convert-step.ts" },
       // Chunks beside the entries: the tiler finds its worker next to itself.
       output: { entryFileNames: "[name].js", chunkFileNames: "[name]-[hash].js" },
     },

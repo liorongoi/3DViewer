@@ -72,7 +72,7 @@ if [[ $ROLLBACK -eq 1 ]]; then
   cur="$(in_use)"
   say "going back to $(basename "$prev")"
   switch_to "$prev"
-  install -m 0644 "$prev"/deploy/systemd/* /etc/systemd/system/
+  install -m 0644 "$prev"/deploy/systemd/*.service "$prev"/deploy/systemd/*.timer /etc/systemd/system/
   echo "$cur" > "$RELEASES/previous"
   [[ $START -eq 1 ]] && { start_services || fail "the earlier version did not start: journalctl -u viewer-server"; }
   say "done"
@@ -90,6 +90,8 @@ say "VIEWER $VERSION"
 command -v curl >/dev/null || fail "curl is needed"
 command -v pg_dump >/dev/null || warn "pg_dump is not installed: install the PostgreSQL client (same major version as the database or newer) for backups"
 command -v clamdscan >/dev/null || warn "clamdscan is not installed: uploads will be published as \"not scanned\""
+podman="$(command -v podman 2>/dev/null || true)"
+[[ -n "$podman" ]] || warn "podman is not installed: uploaded files will be converted without the no-network container (docs/SECURITY.md)"
 chromium="$(command -v chromium chromium-browser google-chrome 2>/dev/null | head -1 || true)"
 [[ -n "$chromium" ]] || warn "Chromium is not installed: the library shows models without thumbnails"
 
@@ -127,6 +129,7 @@ if [[ ! -f "$ETC/viewer.env" ]]; then
       "$dest/deploy/viewer.env.example" > "$ETC/viewer.env"
   [[ -n "$DB_URL" ]] && sed -i "s|^DATABASE_URL=.*|DATABASE_URL=$DB_URL|" "$ETC/viewer.env"
   command -v clamdscan >/dev/null || sed -i 's|^CLAMDSCAN=|# CLAMDSCAN=|' "$ETC/viewer.env"
+  [[ -n "$podman" ]] && sed -i -e "s|^CONVERT_SANDBOX=.*|CONVERT_SANDBOX=podman|" -e "s|^# PODMAN=.*|PODMAN=$podman|" "$ETC/viewer.env"
   if [[ -n "$chromium" ]]; then
     sed -i -e "s|^# CHROMIUM=.*|CHROMIUM=$chromium|" -e "s|^# THUMBNAIL_WEB_URL=.*|THUMBNAIL_WEB_URL=https://${HOST_NAME:-$(hostname -f)}/|" "$ETC/viewer.env"
   fi
@@ -147,10 +150,26 @@ if [[ -n "$CERT" || -n "$KEY" ]]; then
   install -m 0640 -o root -g viewer "$CERT" "$ETC/tls/viewer-chain.pem"
   install -m 0640 -o root -g viewer "$KEY" "$ETC/tls/viewer.key"
 fi
+# A settings file from before the sandbox: add it, on when podman is there (nothing else changes).
+if ! grep -q '^#\? *CONVERT_SANDBOX=' "$ETC/viewer.env"; then
+  if [[ -n "$podman" ]]; then
+    say "turning on the conversion sandbox (CONVERT_SANDBOX=podman in $ETC/viewer.env)"
+    printf '\n# Added by install.sh: each conversion step in a container with no network (docs/SECURITY.md).\nCONVERT_SANDBOX=podman\nPODMAN=%s\n' "$podman" >> "$ETC/viewer.env"
+  else
+    printf '\n# Added by install.sh: install podman and set podman here to convert uploads in a container with no network.\nCONVERT_SANDBOX=none\n' >> "$ETC/viewer.env"
+  fi
+fi
 chown root:viewer "$ETC"/*.env && chmod 0640 "$ETC"/*.env
 
 # --- Services and tools -------------------------------------------------------------------------
-install -m 0644 "$dest"/deploy/systemd/* /etc/systemd/system/
+install -m 0644 "$dest"/deploy/systemd/*.service "$dest"/deploy/systemd/*.timer /etc/systemd/system/
+# Rootless podman makes namespaces for each step's container: the server may, only with the sandbox on.
+if grep -q '^CONVERT_SANDBOX=podman' "$ETC/viewer.env"; then
+  install -d -m 0755 /etc/systemd/system/viewer-server.service.d
+  install -m 0644 "$dest"/deploy/systemd/viewer-server.service.d/sandbox.conf /etc/systemd/system/viewer-server.service.d/sandbox.conf
+else
+  rm -f /etc/systemd/system/viewer-server.service.d/sandbox.conf
+fi
 for t in viewer-backup viewer-restore viewer-basemap-install; do ln -sfn "$CURRENT/deploy/bin/$t" "/usr/local/sbin/$t"; done
 
 # --- Ready to start? ---------------------------------------------------------------------------
@@ -180,7 +199,7 @@ else
     if [[ -n "$prev" && -d "$prev" && "$prev" != "$dest" ]]; then
       warn "going back to $(basename "$prev")"
       switch_to "$prev"
-      install -m 0644 "$prev"/deploy/systemd/* /etc/systemd/system/
+      install -m 0644 "$prev"/deploy/systemd/*.service "$prev"/deploy/systemd/*.timer /etc/systemd/system/
       # As if this version had never been installed: the one to go back to stays the same.
       if [[ -n "$before" ]]; then echo "$before" > "$RELEASES/previous"; else rm -f "$RELEASES/previous"; fi
       rm -rf "$dest"
