@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+# VIEWER base map packages (RND-11): install, list or remove the imagery and terrain that the
+# site serves itself, on the internal network with no internet.
+#
+#   viewer-basemap-install <package.tar> [--register]   install or replace a package
+#   viewer-basemap-install --list                         the installed packages
+#   viewer-basemap-install --remove <name>                remove one
+#
+# A package is made by scripts/build-basemap-package.sh. It is a tar of one folder <name>/ with
+# basemap.json (its name, version and sources), SHA256SUMS and the tiles. Every file is checked
+# against SHA256SUMS before the package goes live; a package with links, devices, absolute
+# paths or `..` is refused. A package of the same name is replaced in one step, so the viewer
+# never sees half of one.
+#
+# Caddy serves it at https://<VIEWER_HOST>/basemaps/<name>/. --register also adds its sources to
+# the admin page's base map list (asks for the admin password, or reads VIEWER_ADMIN_PASSWORD);
+# without it, the sources are printed for the admin to add by hand.
+#
+# BASEMAP_ROOT (default /var/lib/viewer/basemaps) and VIEWER_URL (default the server on
+# 127.0.0.1, from /etc/viewer/viewer.env) can be set in the environment.
+set -euo pipefail
+umask 027
+
+ROOT="${BASEMAP_ROOT:-/var/lib/viewer/basemaps}"
+ENV_FILE="${VIEWER_ENV:-/etc/viewer/viewer.env}"
+NODE="${NODE:-/opt/viewer/node/bin/node}"
+[[ -x "$NODE" ]] || NODE="$(command -v node || true)"
+
+fail() { echo "viewer-basemap-install: $*" >&2; exit 1; }
+say() { echo "· $*"; }
+
+api_url() {
+  if [[ -n "${VIEWER_URL:-}" ]]; then echo "${VIEWER_URL%/}"; return; fi
+  local port host
+  port="$(sed -n 's/^PORT=\([0-9]*\).*/\1/p' "$ENV_FILE" 2>/dev/null | tail -1)"
+  host="$(sed -n 's/^HOST=\([^ #]*\).*/\1/p' "$ENV_FILE" 2>/dev/null | tail -1)"
+  echo "http://${host:-127.0.0.1}:${port:-8787}"
+}
+
+# Reads basemap.json; prints "name<TAB>version<TAB>sources JSON". Refuses a manifest whose
+# sources point outside the package.
+read_manifest() {
+  [[ -n "$NODE" ]] || fail "node is needed to read basemap.json (/opt/viewer/node/bin/node)"
+  "$NODE" -e '
+    const fs = require("fs");
+    const m = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const bad = (why) => { console.error("basemap.json: " + why); process.exit(2); };
+    if (m.format !== "viewer-basemap/1") bad("not a VIEWER base map package (format)");
+    if (!/^[a-z0-9][a-z0-9-]{0,40}$/.test(m.name || "")) bad("name must be lower-case letters, digits and -");
+    if (!/^[A-Za-z0-9._-]{1,40}$/.test(m.version || "")) bad("version");
+    if (!Array.isArray(m.sources) || !m.sources.length || m.sources.length > 20) bad("sources");
+    const prefix = "basemaps/" + m.name + "/";
+    const kinds = { xyz: "imagery", tms: "imagery", terrarium: "terrain", "quantized-mesh": "terrain" };
+    for (const s of m.sources) {
+      if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(s.id || "")) bad("source id " + s.id);
+      if (kinds[s.type] !== s.kind) bad("source " + s.id + ": type " + s.type + " is not " + s.kind);
+      if (typeof s.url !== "string" || !s.url.startsWith(prefix) || s.url.includes("..")) bad("source " + s.id + ": url must start with " + prefix);
+      if (typeof s.label !== "string" || !s.label || s.label.length > 200) bad("source " + s.id + ": label");
+    }
+    process.stdout.write(m.name + "\t" + m.version + "\t" + JSON.stringify(m.sources) + "\n");
+  ' "$1"
+}
+
+list() {
+  [[ -d "$ROOT" ]] || { echo "no base map packages ($ROOT does not exist)"; return; }
+  local any=0
+  for m in "$ROOT"/*/basemap.json; do
+    [[ -f "$m" ]] || continue
+    any=1
+    IFS=$'\t' read -r name version sources < <(read_manifest "$m")
+    printf '%-24s %-14s %8s  %s\n' "$name" "$version" "$(du -sh "$(dirname "$m")" | cut -f1)" \
+      "$("$NODE" -e 'console.log(JSON.parse(process.argv[1]).map((s) => s.id + " (" + s.kind + ")").join(", "))' "$sources")"
+  done
+  [[ $any -eq 1 ]] || echo "no base map packages in $ROOT"
+}
+
+register() {
+  local sources="$1" url pw token
+  url="$(api_url)"
+  pw="${VIEWER_ADMIN_PASSWORD:-}"
+  if [[ -z "$pw" ]]; then
+    [[ -t 0 ]] || fail "--register needs the admin password: run it in a terminal, or set VIEWER_ADMIN_PASSWORD"
+    read -r -s -p "Admin password: " pw; echo
+  fi
+  token="$(PW="$pw" "$NODE" -e 'process.stdout.write(JSON.stringify({ password: process.env.PW }))' \
+    | curl -fsS -H 'Content-Type: application/json' --data-binary @- "$url/api/admin/login" \
+    | "$NODE" -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(0, "utf8")).token)')" \
+    || fail "could not sign in to $url as admin (wrong password, or the server is not running)"
+  curl -fsS "$url/api/basemaps" \
+    | "$NODE" -e '
+        const c = JSON.parse(require("fs").readFileSync(0, "utf8"));
+        const add = JSON.parse(process.argv[1]);
+        const ids = new Set(add.map((s) => s.id));
+        c.sources = [...(c.sources || []).filter((s) => !ids.has(s.id)), ...add];
+        const firstOf = (k) => add.find((s) => s.kind === k)?.id;
+        if (!c.defaultImagery && firstOf("imagery")) c.defaultImagery = firstOf("imagery");
+        if (!c.defaultTerrain && firstOf("terrain")) c.defaultTerrain = firstOf("terrain");
+        process.stdout.write(JSON.stringify(c));' "$sources" \
+    | curl -fsS -X PUT -H 'Content-Type: application/json' -H "Authorization: Bearer $token" --data-binary @- "$url/api/admin/basemaps" >/dev/null \
+    || fail "the server refused the base map list (see the admin page, Base maps)"
+  curl -fsS -X POST -H "Authorization: Bearer $token" "$url/api/admin/logout" >/dev/null 2>&1 || true
+  say "added to the admin page's base maps; the viewer offers them from its next start"
+}
+
+case "${1:-}" in
+  ""|-h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+  --list) list; exit 0 ;;
+  --remove)
+    name="${2:-}"
+    [[ "$name" =~ ^[a-z0-9][a-z0-9-]{0,40}$ && -f "$ROOT/$name/basemap.json" ]] || fail "no package named '$name' (see --list)"
+    [[ $EUID -eq 0 ]] || fail "run as root"
+    mv -T "$ROOT/$name" "$ROOT/.$name.removing"
+    rm -rf "$ROOT/.$name.removing"
+    say "removed $name. Remove its sources on the admin page (Base maps) too."
+    exit 0 ;;
+esac
+
+pkg="$1"; shift
+reg=0
+for a in "$@"; do
+  case "$a" in --register) reg=1 ;; *) fail "unknown option $a" ;; esac
+done
+[[ $EUID -eq 0 ]] || fail "run as root"
+[[ -f "$pkg" ]] || fail "$pkg is not a file"
+command -v sha256sum >/dev/null || fail "sha256sum is needed"
+
+# What is in it, before anything is written: one top folder, plain files and folders only.
+say "checking $(basename "$pkg")"
+top=""
+while IFS= read -r line; do
+  type="${line:0:1}"
+  [[ "$type" == "-" || "$type" == "d" ]] || fail "the package holds something other than files and folders: $line"
+done < <(tar -tvf "$pkg")
+while IFS= read -r entry; do
+  [[ "$entry" != /* && "/$entry/" != */../* ]] || fail "the package holds an unsafe path: $entry"
+  t="${entry%%/*}"
+  [[ -z "$top" ]] && top="$t"
+  [[ "$t" == "$top" ]] || fail "the package must hold one folder (found $top and $t)"
+done < <(tar -tf "$pkg")
+[[ "$top" =~ ^[a-z0-9][a-z0-9-]{0,40}$ ]] || fail "the package folder name '$top' is not a package name"
+
+need=$(( $(stat -c %s "$pkg") / 1024 + 10240 ))
+install -d -o root -g viewer -m 0750 "$ROOT"
+free=$(df -Pk "$ROOT" | awk 'NR==2 {print $4}')
+[[ $free -ge $need ]] || fail "not enough space in $ROOT: $((need / 1024)) MB needed, $((free / 1024)) MB free"
+
+work="$ROOT/.$top.partial"
+rm -rf "$work"
+mkdir -p "$work"
+trap 'rm -rf "$work"' EXIT
+tar -xf "$pkg" -C "$work" --no-same-owner --no-same-permissions --no-overwrite-dir
+src="$work/$top"
+[[ -f "$src/basemap.json" && -f "$src/SHA256SUMS" ]] || fail "the package has no basemap.json or SHA256SUMS"
+
+say "checking every file against SHA256SUMS"
+(cd "$src" && sha256sum -c --quiet --strict SHA256SUMS) || fail "the package is damaged (SHA256SUMS does not match); copy it again"
+listed="$(cut -c67- "$src/SHA256SUMS" | sed 's|^\./||' | sort)"
+actual="$(cd "$src" && find . -type f ! -name SHA256SUMS | sed 's|^\./||' | sort)"
+[[ "$listed" == "$actual" ]] || fail "the package has files SHA256SUMS does not list"
+
+IFS=$'\t' read -r name version sources < <(read_manifest "$src/basemap.json") || fail "basemap.json is not valid"
+[[ "$name" == "$top" ]] || fail "basemap.json names '$name' but the folder is '$top'"
+
+chown -R root:viewer "$src"
+find "$src" -type d -exec chmod 0750 {} +
+find "$src" -type f -exec chmod 0640 {} +
+
+dest="$ROOT/$name"
+old=""
+if [[ -e "$dest" ]]; then
+  old="$ROOT/.$name.old"
+  rm -rf "$old"
+  mv -T "$dest" "$old"
+fi
+mv -T "$src" "$dest"
+[[ -n "$old" ]] && rm -rf "$old"
+say "installed $name $version in $dest"
+
+if [[ $reg -eq 1 ]]; then
+  register "$sources"
+else
+  echo "  Add these sources on the admin page (Base maps), or run again with --register:"
+  "$NODE" -e '
+    for (const s of JSON.parse(process.argv[1])) console.log("    " + s.id + "  " + s.kind + "  " + s.type + "  " + s.url + (s.maxZoom != null ? "  (max zoom " + s.maxZoom + ")" : ""));' "$sources"
+fi

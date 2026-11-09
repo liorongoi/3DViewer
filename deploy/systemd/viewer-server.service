@@ -1,6 +1,5 @@
 # VIEWER API server and job workers (docs/OPERATIONS.md).
-# Install: cp deploy/systemd/*.service deploy/systemd/*.timer /etc/systemd/system/
-#          systemctl daemon-reload && systemctl enable --now viewer-server viewer-caddy viewer-backup.timer
+# Installed by install.sh from the offline bundle (docs/INSTALL.md), which also enables it.
 [Unit]
 Description=VIEWER server (API and job workers)
 Documentation=file:///opt/viewer/docs/OPERATIONS.md
@@ -14,7 +13,7 @@ Group=viewer
 WorkingDirectory=/opt/viewer/server
 EnvironmentFile=/etc/viewer/viewer.env
 Environment=NODE_ENV=production
-ExecStart=/usr/bin/node /opt/viewer/server/dist/main.js
+ExecStart=/opt/viewer/node/bin/node /opt/viewer/server/dist/main.js
 # A crash or a fatal error restarts the server; jobs in flight are taken up again when their
 # lease ends. Exit code 78 is a wrong setting: restarting would not help, so it stays stopped
 # and `systemctl status viewer-server` shows the message naming the setting.

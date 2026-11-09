@@ -12,3 +12,4 @@ apps/web/dist-preview
 apps/server/data/
 check-out/
 apps/desktop/release/
+/out/

@@ -13,54 +13,16 @@ How to install, configure, run, back up, restore and upgrade VIEWER on a site se
 
 Data lives in `/var/lib/viewer` (`DATA_DIR`). Published model files are in `/var/lib/viewer/storage/files`; uploads in progress are in `storage/uploads` and `storage/ingests`.
 
-## Requirements
+## Install and upgrade
 
-- Linux on x86-64 with systemd.
-- Node.js, the version named in `.nvmrc`.
-- PostgreSQL 15 or newer, with a database and a user that owns it.
-- Caddy 2.10 or newer.
-- Optional:
-  - ClamAV (`clamdscan` with `clamd` running), to scan uploads.
-  - FBX2glTF, to accept FBX.
-  - Chromium, for library thumbnails.
-- The organisation's TLS certificate (full chain) and key for the server's name.
+Install, upgrade and roll back from the offline server bundle with its `install.sh`: [INSTALL.md](./INSTALL.md) goes step by step. In short:
 
-## Install
+- the program is in `/opt/viewer-releases/<version>`, and `/opt/viewer` points at the one in use;
+- the settings are `/etc/viewer/viewer.env` and `/etc/viewer/caddy.env`, the certificate is in `/etc/viewer/tls`;
+- Node.js, Caddy and FBX2glTF come with the bundle; ClamAV, Chromium and the PostgreSQL client come from the operating system;
+- base map packages go to `/var/lib/viewer/basemaps` with `viewer-basemap-install`.
 
-1. Create the user and folders:
-   ```sh
-   useradd --system --home /var/lib/viewer --shell /usr/sbin/nologin viewer
-   install -d -o viewer -g viewer -m 0750 /var/lib/viewer /var/log/viewer /var/backups/viewer
-   install -d -o root -g viewer -m 0750 /etc/viewer /etc/viewer/tls
-   ```
-2. Build the release on a build machine with the repository:
-   ```sh
-   pnpm install --frozen-lockfile
-   pnpm -r run build
-   pnpm --filter @viewer/server deploy --prod --legacy out/server
-   ```
-3. Copy the release to `/opt/viewer`, owned by root:
-   - `out/server` goes to `/opt/viewer/server`;
-   - `apps/web/dist` goes to `/opt/viewer/web`;
-   - `deploy` goes to `/opt/viewer/deploy`;
-   - `docs` goes to `/opt/viewer/docs`.
-4. Write the settings:
-   - copy `deploy/viewer.env.example` to `/etc/viewer/viewer.env`;
-   - copy `deploy/caddy.env.example` to `/etc/viewer/caddy.env`;
-   - fill both in, then `chown root:viewer /etc/viewer/*.env && chmod 0640 /etc/viewer/*.env`;
-   - put the certificate and key in `/etc/viewer/tls`, readable by group `viewer`.
-5. Install the services and start them:
-   ```sh
-   cp /opt/viewer/deploy/systemd/* /etc/systemd/system/
-   systemctl daemon-reload
-   systemctl enable --now viewer-server viewer-caddy viewer-backup.timer
-   ```
-6. Check that it works:
-   - `curl -fsS http://127.0.0.1:8787/api/health` answers `"ok":true`;
-   - `https://<VIEWER_HOST>/` opens the app;
-   - sign in to the admin page with `ADMIN_PASSWORD`. Then remove `ADMIN_PASSWORD` from `viewer.env`: the password is stored, and the admin page changes it.
-
-On first start the server creates its tables. In production it does not load the sample library.
+The bundle is built on a machine with the repository and internet access, after `pnpm install --frozen-lockfile` and `pnpm -r run build`: `bash scripts/build-server-bundle.sh` writes `out/viewer-server-<version>-linux-x64.tar.gz`. `VIEWER_VERSION` sets the version.
 
 ## Settings
 
@@ -110,7 +72,7 @@ Caddy's settings (`/etc/viewer/caddy.env`) are described in `deploy/caddy/README
 
 It keeps the newest 14 backups; set `KEEP` to change that. The backup runs while the server is up: the database is dumped first, and published files are only ever added, never changed, so every file the dump names is in `files.tar`.
 
-- Run one by hand with `sudo -u viewer VIEWER_ENV=/etc/viewer/viewer.env /opt/viewer/deploy/bin/viewer-backup /var/backups/viewer`.
+- Run one by hand with `sudo systemctl start viewer-backup`.
 - The backup needs `pg_dump` of the same major version as the database server, or newer.
 - **Copy backups off the machine.** `/var/backups/viewer` on the same disk does not survive a lost disk.
 - Uploads in progress are not backed up. A user whose upload was cut off sends it again.
@@ -119,7 +81,7 @@ It keeps the newest 14 backups; set `KEEP` to change that. The backup runs while
 ## Restore
 
 1. `systemctl stop viewer-server`
-2. `sudo -u viewer VIEWER_ENV=/etc/viewer/viewer.env /opt/viewer/deploy/bin/viewer-restore /var/backups/viewer/viewer-<time> --yes`
+2. `sudo -u viewer VIEWER_ENV=/etc/viewer/viewer.env viewer-restore /var/backups/viewer/viewer-<time> --yes`
 3. `systemctl start viewer-server`, then check `/api/health` and open a model.
 
 The restore does these steps:
@@ -135,20 +97,14 @@ Everything after the backup is lost, including the audit entries written since; 
 ## Upgrade
 
 1. Read the release notes for the new version.
-2. Back up: `systemctl start viewer-backup` and wait until it finishes.
-3. `systemctl stop viewer-server`
-4. Replace `/opt/viewer/server`, `/opt/viewer/web`, `/opt/viewer/deploy` and `/opt/viewer/docs` with the new release. Keep the old folders, for example as `/opt/viewer.previous`.
-5. If `deploy/systemd` changed: copy the units again and run `systemctl daemon-reload`.
-6. `systemctl start viewer-server`. On start the server applies new database migrations, each one in a transaction; the log line `database ready` lists them.
-7. Check `/api/health`, open the app (browsers check `index.html` on every load, so users get the new version straight away), and open a model.
-8. `systemctl reload viewer-caddy` if the Caddyfile changed.
+2. Back up: `systemctl start viewer-backup` (it returns when the backup is done).
+3. From the new bundle's folder: `sudo ./install.sh`. It installs the new version beside the old one, switches `/opt/viewer` to it and restarts. If the new version does not start, it switches back by itself. On start the server applies new database migrations, each one in a transaction; the log line `database ready` lists them.
+4. Check `/api/health`, open the app (browsers check `index.html` on every load, so users get the new version straight away), and open a model.
 
 **Roll back:**
 
-1. Stop the server.
-2. Restore the backup from step 2. A newer database can have tables the old version does not know.
-3. Put back `/opt/viewer.previous`.
-4. Start the server.
+1. `sudo /opt/viewer/install.sh --rollback` switches to the version before and restarts it.
+2. If the new version had changed the database, restore the backup from step 2 first (see *Restore*): an older version may not know the newer tables.
 
 ## Problems
 
