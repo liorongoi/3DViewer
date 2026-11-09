@@ -8,6 +8,7 @@
 //   - A model the app was started with (Explorer's "Open with") opens the upload wizard, and
 //     "Keep on this computer only" opens it from viewer-file:// without sending it.
 //   - The folder dialog opens a 3D Tiles folder, which streams from disk in place.
+//   - An FBX is converted on this computer with the server's converter and opens offline.
 //   - A dropped file is read in place by path, not copied into memory.
 //   - The server stops: the pill turns offline and local files still open; it comes back: the
 //     pill turns online again and the library returns, with no restart.
@@ -38,6 +39,8 @@ const SAMPLES = path.join(ROOT, "apps/web/public/samples");
   fs.copyFileSync(path.join(SAMPLES, "khronos/WaterBottle.glb"), glb);
   const tiles = path.join(home, "Discrete LOD");
   fs.cpSync(path.join(SAMPLES, "3dtiles/TilesetWithDiscreteLOD"), tiles, { recursive: true });
+  const fbx = path.join(home, "stanford bunny.fbx");
+  fs.copyFileSync(path.join(SAMPLES, "fbx/stanford-bunny.fbx"), fbx);
   const dropped = path.join(home, "Lantern.glb");
   fs.copyFileSync(path.join(SAMPLES, "khronos/Lantern.glb"), dropped);
 
@@ -151,6 +154,24 @@ const SAMPLES = path.join(ROOT, "apps/web/public/samples");
     await page.waitForFunction(() => (window.viewerEngine.tileset?.statistics.numberOfLoadedTilesTotal ?? 0) > 0, null, { timeout: 120000 }).catch(() => undefined);
     cur = await page.evaluate(() => ({ url: window.viewerEngine.current.get().source.url, tiles: window.viewerEngine.tileset?.statistics.numberOfLoadedTilesTotal ?? 0 }));
     check(cur.url.startsWith("viewer-file://") && cur.url.endsWith("/tileset.json") && cur.tiles > 0, "the tileset streams from disk in place", `${cur.tiles} tiles loaded`);
+
+    // An FBX, converted on this computer with the server's converter (WP 5.2), opens offline.
+    await app.evaluate(({ dialog }, file) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
+    }, fbx);
+    await page.locator('button[data-tip="Earth"]').first().click();
+    await page.getByRole("button", { name: "Upload" }).first().click();
+    const t0 = Date.now();
+    await page.getByTestId("desktop-open-files").click();
+    await page.getByRole("dialog").getByTestId("upload-report").waitFor();
+    const fbxReport = await page.getByRole("dialog").getByTestId("upload-report").innerText();
+    check(/Converted to glTF on this computer/.test(fbxReport), "an FBX is converted to glTF on this computer", `${((Date.now() - t0) / 1000).toFixed(1)} s with the check`);
+    await publish("Bunny from FBX");
+    await engineReady("viewer-file://");
+    cur = await page.evaluate(() => ({ url: window.viewerEngine.current.get().source.url, format: window.viewerEngine.current.get().sourceFormat }));
+    check(cur.url.startsWith("viewer-file://") && cur.url.endsWith("/stanford%20bunny.glb") && cur.format === "fbx", "the converted model opens in place, marked as from FBX", JSON.stringify(cur));
+    const sneaky = await page.evaluate(() => window.viewerDesktop.convertFbx("viewer-file://nope/etc/x.fbx"));
+    check(!sneaky.ok && sneaky.reason === "notOpened", "only a file the user opened can be converted", JSON.stringify(sneaky));
 
     // A dropped file: the preload reads its path, the main process opens it in place.
     const drop = await page.evaluate(async () => {

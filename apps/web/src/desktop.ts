@@ -25,6 +25,7 @@ interface DesktopApi {
   openFiles(): Promise<DesktopFile[] | null>;
   openFolder(): Promise<DesktopFile[] | null>;
   openDropped(files: File[]): Promise<DesktopFile[] | null>;
+  convertFbx(url: string): Promise<{ ok: true; file: DesktopFile; ms: number } | { ok: false; reason: string; detail?: string }>;
   takeOpened(): Promise<DesktopFile[] | null>;
   onOpened(cb: () => void): void;
   platform: string;

@@ -14,5 +14,8 @@
   "devDependencies": {
     "@types/node": "26.6.6",
     "electron": "45.0.0"
+  },
+  "dependencies": {
+    "fbx2gltf": "0.9.7"
   }
 }

@@ -25,6 +25,12 @@ git clone -q --depth 1 --filter=blob:none --sparse https://github.com/CesiumGS/3
 (cd "$TMP/tiles" && git sparse-checkout set 1.0/TilesetWithDiscreteLOD 1.0/TilesetWithRequestVolume)
 cp -r "$TMP/tiles/1.0/TilesetWithDiscreteLOD" "$TMP/tiles/1.0/TilesetWithRequestVolume" "$OUT/3dtiles/"
 rm -rf "$OUT"/3dtiles/*/screenshot
+
+# One FBX for the desktop app's local conversion (WP 5.2): the scanned bunny from the three.js
+# examples (MIT), 8 MB ASCII FBX 7.5, also used in the FBX bake-off (docs/spikes/FBX_BAKEOFF.md).
+echo "· FBX sample"
+mkdir -p "$OUT/fbx"
+curl -sfL -o "$OUT/fbx/stanford-bunny.fbx" https://raw.githubusercontent.com/mrdoob/three.js/r170/examples/models/fbx/stanford-bunny.fbx
 if [[ "${LIGHT:-0}" == 1 ]]; then echo "Done (light): $OUT"; exit 0; fi
 echo "Done: $OUT"
 

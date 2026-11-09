@@ -27,6 +27,8 @@ contextBridge.exposeInMainWorld("viewerDesktop", {
     }).filter(Boolean);
     return ipcRenderer.invoke("viewer:openPaths", paths);
   },
+  /** Converts an opened FBX to a GLB on this computer, with the same converter as the server. */
+  convertFbx: (url: string): Promise<{ ok: true; file: ListedFile; ms: number } | { ok: false; reason: string; detail?: string }> => ipcRenderer.invoke("viewer:convertFbx", url),
   /** Files the app was started with (Explorer's "Open with"), once. */
   takeOpened: (): Promise<ListedFile[] | null> => ipcRenderer.invoke("viewer:takeOpened"),
   /** Called when files are opened while the app is already running; take them with takeOpened. */

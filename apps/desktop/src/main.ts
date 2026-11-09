@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { machineSources, readConfig } from "./config.js";
 import { Roots, SCHEME, listFiles, listFolder, serveLocal, type ListedFile } from "./local-files.js";
 import { SERVER_BASE, SERVER_SCHEME, proxyServer } from "./server-proxy.js";
+import { convertFbx, findConverter, stopAll } from "./fbx.js";
 
 /**
  * VIEWER desktop app (plan WP 5.1, 5.3, 5.4). It loads the same web build as the portal from a
@@ -135,6 +136,31 @@ async function start(): Promise<void> {
   });
   // Paths of files or folders dropped on the page (the preload reads them from the File objects).
   ipcMain.handle("viewer:openPaths", async (_e, paths: unknown) => listPaths(Array.isArray(paths) ? paths.filter((p): p is string => typeof p === "string") : []));
+  // Local FBX (WP 5.2): converts a file the user opened, never a path the page names.
+  const converter = findConverter({ env: process.env, packaged: app.isPackaged, resourcesPath: process.resourcesPath, here });
+  const fbxRoot = path.join(app.getPath("temp"), "VIEWER-fbx");
+  // Only one copy of the app runs, so what is left here is from an earlier run.
+  fs.rmSync(fbxRoot, { recursive: true, force: true });
+  app.on("will-quit", () => {
+    stopAll();
+    fs.rmSync(fbxRoot, { recursive: true, force: true });
+  });
+  let conversions = 0;
+  ipcMain.handle("viewer:convertFbx", async (_e, url: unknown) => {
+    if (!converter) return { ok: false, reason: "unavailable" };
+    let input: string | null = null;
+    try {
+      const u = new URL(String(url));
+      if (u.protocol === `${SCHEME}:`) input = roots.resolve(u.hostname, u.pathname.slice(1));
+    } catch {
+      /* not a URL */
+    }
+    if (!input || !/\.fbx$/i.test(input)) return { ok: false, reason: "notOpened" };
+    const r = await convertFbx(converter, input, { workDir: path.join(fbxRoot, String(++conversions)) });
+    if (!r.ok) return r;
+    const [file] = await listFiles(roots, [r.glb]);
+    return file ? { ok: true, file, ms: r.ms } : { ok: false, reason: "failed", detail: "" };
+  });
   // What the app was started with, once.
   ipcMain.handle("viewer:takeOpened", async () => listPaths(pendingPaths.splice(0)));
 

@@ -485,6 +485,7 @@ export const en = {
     northing: "Northing (m)",
     reading_one: "Reading {{count}} file…",
     reading_other: "Reading {{count}} files…",
+    convertingFbx: "Converting the FBX on this computer…",
     noModelFile: "No model file",
     files_one: "{{count}} file",
     files_other: "{{count}} files",
@@ -763,6 +764,16 @@ export const en = {
     fbxConvert: {
       title: "Converted to glTF on the server",
       detail: "The server converts FBX with FBX2glTF when you publish. The browser cannot preview FBX before that.",
+    },
+    fbxConvertedHere: {
+      title: "Converted to glTF on this computer in {{seconds}} s",
+      detail: "With FBX2glTF, the converter the server uses. If you send it to the server, the server converts the original FBX again and keeps it.",
+    },
+    fbxConvertFailedHere: {
+      title: "The FBX could not be converted on this computer",
+    },
+    fbxConvertTimeout: {
+      title: "Converting the FBX took more than 10 minutes and was stopped",
     },
     fileTooBig: {
       title: "File is over 2 GB",
@@ -1436,6 +1447,7 @@ export const he: Shape<typeof en> = {
     reading_one: "קורא קובץ {{count}}…",
     reading_other: "קורא {{count}} קבצים…",
     reading_two: "קורא {{count}} קבצים…",
+    convertingFbx: "ממיר את ה-FBX במחשב הזה…",
     noModelFile: "אין קובץ מודל",
     files_one: "קובץ {{count}}",
     files_other: "{{count}} קבצים",
@@ -1719,6 +1731,16 @@ export const he: Shape<typeof en> = {
     fbxConvert: {
       title: "מומר ל-glTF בשרת",
       detail: "השרת ממיר FBX בעזרת FBX2glTF בעת הפרסום. הדפדפן לא יכול להציג FBX לפני כן.",
+    },
+    fbxConvertedHere: {
+      title: "הומר ל-glTF במחשב הזה תוך {{seconds}} שניות",
+      detail: "בעזרת FBX2glTF, הממיר שהשרת משתמש בו. אם תשלחו אותו לשרת, השרת ימיר שוב את קובץ ה-FBX המקורי וישמור אותו.",
+    },
+    fbxConvertFailedHere: {
+      title: "לא ניתן היה להמיר את ה-FBX במחשב הזה",
+    },
+    fbxConvertTimeout: {
+      title: "ההמרה של ה-FBX נמשכה יותר מ-10 דקות והופסקה",
     },
     fileTooBig: {
       title: "הקובץ גדול מ-2 GB",

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { checkFiles, converterForEpsg, fmtBytes, gridFactors, placementFromGrid, prepareFiles, type CheckItem, type CheckReport, type LocalFile } from "@viewer/core";
+import { checkFiles, checkItem, converterForEpsg, fmtBytes, gridFactors, placementFromGrid, prepareFiles, type CheckItem, type CheckReport, type LocalFile } from "@viewer/core";
 import { uploadAndIngest, type UploadProgress } from "../server/api";
 import { refreshLibrary } from "../state/library";
 import { UPDATE_STATUSES, type ModelSummary, type UpdateStatus } from "@viewer/shared";
@@ -13,9 +13,37 @@ import { IconButton, cx } from "./primitives";
 import { useLevels } from "../state/classification";
 import { arrangeWhenOpen } from "../layers-standard";
 import { errorText } from "../server/error-text";
-import { desktop, fromDesktopList } from "../desktop";
+import { desktop, fromDesktop, fromDesktopList } from "../desktop";
 
 const STEPS = ["drop", "check", "place", "layers", "details"] as const;
+
+/** The checked files; for an FBX converted on this computer, the GLB made from it. */
+interface Checked {
+  report: CheckReport;
+  files: LocalFile[];
+  fromFbx?: boolean;
+}
+
+/**
+ * Desktop (WP 5.2): an FBX the user opened is converted on this computer with the server's
+ * converter, so it can be checked, placed and opened offline. The original FBX is still what
+ * goes to the server, which converts it again and keeps it.
+ */
+async function convertHere(r: Checked, started: () => void): Promise<Checked> {
+  const main = r.files.find((f) => f.path === r.report.mainFile);
+  if (!desktop || r.report.format !== "fbx" || !r.report.ok || !main?.url) return r;
+  started();
+  const c = await desktop.convertFbx(main.url).catch(() => null);
+  // No converter in this build, or not a file opened in place: the server converts it.
+  if (!c || (!c.ok && (c.reason === "unavailable" || c.reason === "notOpened"))) return r;
+  if (!c.ok) {
+    const failed = checkItem("conversion", "error", c.reason === "timeout" ? "fbxConvertTimeout" : "fbxConvertFailedHere", {}, c.detail || undefined);
+    return { ...r, report: { ...r.report, ok: false, items: r.report.items.map((i) => (i.id === "conversion" ? failed : i)) } };
+  }
+  const g = await checkFiles([fromDesktop(c.file)]);
+  const done = checkItem("conversion", "ok", "fbxConvertedHere", { seconds: (c.ms / 1000).toFixed(1) });
+  return { report: { ...g.report, items: [done, ...g.report.items] }, files: g.files, fromFbx: true };
+}
 
 const CRS = [
   // Labels are i18n keys (wizard.*), or a plain EPSG code for a system a sidecar file names.
@@ -67,7 +95,8 @@ export function UploadWizard() {
   const [step, setStep] = useState(0);
   const [files, setFiles] = useState<LocalFile[]>([]);
   const [checking, setChecking] = useState(false);
-  const [checked, setChecked] = useState<{ report: CheckReport; files: LocalFile[] } | null>(null);
+  const [converting, setConverting] = useState(false);
+  const [checked, setChecked] = useState<Checked | null>(null);
   const [place, setPlace] = useState<Place>(NEW_PLACE);
   const [meta, setMeta] = useState({ name: "", project: "", operation: "", entity: "", status: "draft" as UpdateStatus, description: "" });
   const [cls, setCls] = useState("");
@@ -89,22 +118,25 @@ export function UploadWizard() {
     let live = true;
     setChecking(true);
     setChecked(null);
-    void checkFiles(files).then((r) => {
-      if (!live) return;
-      setChecked(r);
-      setChecking(false);
-      // FBX is converted on the server (on the desktop too, until it converts locally).
-      if (r.report.format === "fbx") setKeepLocal(false);
-      setStep((s) => (s === 0 ? 1 : s));
-      const main = r.report.mainFile ?? files[0]!.path;
-      const stem = main.split("/").pop()!.replace(/\.[^.]+$/, "");
-      const top = files[0]!.path.includes("/") ? files[0]!.path.split("/")[0]! : "";
-      setMeta((m) => ({ ...m, name: m.name || (stem === "tileset" && top ? top : stem).replace(/[_-]+/g, " ") }));
-      const c = engine?.viewCentre();
-      const fp = r.report.filePosition;
-      if (fp) setPlace((p) => ({ ...p, fromFile: false, crs: fp.epsg, x: fp.x.toFixed(fp.epsg === 4326 ? 7 : 3), y: fp.y.toFixed(fp.epsg === 4326 ? 7 : 3), height: String(fp.height), onTerrain: false }));
-      else setPlace((p) => ({ ...p, fromFile: !!r.report.georef, crs: 4326, x: c ? c.lon.toFixed(6) : "35.2137", y: c ? c.lat.toFixed(6) : "31.7683" }));
-    });
+    void checkFiles(files)
+      .then((first) => convertHere(first, () => live && setConverting(true)))
+      .then((r) => {
+        if (!live) return;
+        setChecked(r);
+        setChecking(false);
+        setConverting(false);
+        // FBX that is still FBX here (a browser, or no converter) is converted on the server.
+        if (r.report.format === "fbx") setKeepLocal(false);
+        setStep((s) => (s === 0 ? 1 : s));
+        const main = r.report.mainFile ?? files[0]!.path;
+        const stem = main.split("/").pop()!.replace(/\.[^.]+$/, "");
+        const top = files[0]!.path.includes("/") ? files[0]!.path.split("/")[0]! : "";
+        setMeta((m) => ({ ...m, name: m.name || (stem === "tileset" && top ? top : stem).replace(/[_-]+/g, " ") }));
+        const c = engine?.viewCentre();
+        const fp = r.report.filePosition;
+        if (fp) setPlace((p) => ({ ...p, fromFile: false, crs: fp.epsg, x: fp.x.toFixed(fp.epsg === 4326 ? 7 : 3), y: fp.y.toFixed(fp.epsg === 4326 ? 7 : 3), height: String(fp.height), onTerrain: false }));
+        else setPlace((p) => ({ ...p, fromFile: !!r.report.georef, crs: 4326, x: c ? c.lon.toFixed(6) : "35.2137", y: c ? c.lat.toFixed(6) : "31.7683" }));
+      });
     return () => {
       live = false;
     };
@@ -222,7 +254,7 @@ export function UploadWizard() {
         classificationId: cls,
         version: 1,
         versions: 1,
-        sourceFormat: report.format ?? "glb",
+        sourceFormat: checked.fromFbx ? "fbx" : (report.format ?? "glb"),
         source: {
           kind: prepared.kind,
           url: prepared.url,
@@ -328,7 +360,7 @@ export function UploadWizard() {
                 />
               </div>
               )}
-              {checking && <p className="text-fg3">{t("wizard.reading", { count: files.length })}</p>}
+              {checking && <p className="text-fg3">{converting ? t("wizard.convertingFbx") : t("wizard.reading", { count: files.length })}</p>}
             </div>
           )}
           {step === 1 && report && (
