@@ -161,7 +161,9 @@ const LOCAL = new Set(["localhost:4173", "127.0.0.1:4173", "localhost:8787", "12
     // An air-gapped site hides the online sources: the pickers then offer none.
     const cfg = await api("GET", "/api/basemaps");
     await api("PUT", "/api/admin/basemaps", { ...cfg, hideOnline: true });
-    const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
+    // Software rendering (CI) can keep the page busy for tens of seconds.
+    ctx.setDefaultTimeout(120000);
     await ctx.addInitScript(() => {
       localStorage.setItem("viewer.lang", "en");
       localStorage.setItem("viewer.quality", "low");
@@ -171,7 +173,8 @@ const LOCAL = new Set(["localhost:4173", "127.0.0.1:4173", "localhost:8787", "12
     await page.goto("http://localhost:4173/", { waitUntil: "load" });
     await page.waitForSelector("[data-model-card]", { timeout: 60000 });
     await page.getByRole("button", { name: /A Beautiful Game/ }).first().click();
-    await page.waitForFunction(() => window.viewerEngine?.model?.ready, null, { timeout: 120000 });
+    await page.waitForFunction(() => window.viewerEngine?.model?.ready && !window.viewerEngine.loading.get(), null, { timeout: 120000 });
+    await page.waitForTimeout(1500);
     await page.getByRole("tab", { name: I18N.en.shell.mapData, exact: true }).click();
     await page.waitForTimeout(800);
     const notes = await page.locator("[role=radio] span.uppercase").allTextContents();
