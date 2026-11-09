@@ -46,14 +46,17 @@ describe.skipIf(process.platform === "win32")("local FBX conversion", () => {
     const bin = fake("slow.cjs", `setTimeout(() => {}, 60000);`);
     expect(await convertFbx(bin, input, { workDir: path.join(dir, "w5"), timeoutMs: 500 })).toMatchObject({ ok: false, reason: "timeout" });
   });
-  it("finds the converter from the environment first", () => {
+  it("finds the converter: next to the installed app only, or from the environment in development", () => {
     const bin = fake("found.cjs", "");
     expect(findConverter({ env: { VIEWER_FBX2GLTF: bin }, packaged: false, resourcesPath: "/nowhere", here: dir })).toBe(bin);
-    expect(findConverter({ env: {}, packaged: true, resourcesPath: "/nowhere", here: dir })).toBeNull();
+    expect(findConverter({ env: { VIEWER_FBX2GLTF: bin }, packaged: true, resourcesPath: "/nowhere", here: dir })).toBeNull();
   });
-  // The real FBX2glTF from the npm package, when it runs here (Linux CI and development).
+});
+
+describe("the real converter", () => {
+  // The real FBX2glTF from the npm package (Linux CI, the Windows installer job, development).
   const real = findConverter({ env: {}, packaged: false, resourcesPath: "", here: path.resolve(__dirname) });
-  it.skipIf(!real || process.platform !== "linux")("converts a real FBX with the real converter", async () => {
+  it.skipIf(!real || process.platform === "darwin")("converts a real FBX with the real converter", async () => {
     // The smallest valid FBX: an ASCII 7.4 file with one triangle.
     const tri = path.join(dir, "tri.fbx");
     fs.writeFileSync(tri, ASCII_TRIANGLE);

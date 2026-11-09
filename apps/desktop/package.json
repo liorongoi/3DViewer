@@ -9,11 +9,15 @@
     "build": "tsc -p .",
     "typecheck": "tsc -p . --noEmit",
     "test": "vitest run --passWithNoTests",
-    "start": "pnpm build && electron ."
+    "start": "pnpm build && electron .",
+    "dist": "electron-builder --config electron-builder.config.cjs --win nsis --publish never",
+    "dist:dir": "electron-builder --config electron-builder.config.cjs --win --dir --publish never"
   },
   "devDependencies": {
+    "@electron/fuses": "1.8.0",
     "@types/node": "26.6.6",
-    "electron": "45.0.0"
+    "electron": "45.0.0",
+    "electron-builder": "26.18.0"
   },
   "dependencies": {
     "fbx2gltf": "0.9.7"

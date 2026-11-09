@@ -31,6 +31,20 @@ While the server answers, the library is the server's and the status pill says *
 - **FBX (WP 5.2):** an FBX the user opened is converted to GLB on this computer with FBX2glTF 0.9.7, the converter the server uses (decision D-3), so it opens offline and looks as it will once published. If it is sent to the server, the original FBX goes, and the server converts it again and keeps it. The converter runs on its own: no shell, an empty work folder of its own (under the temp folder, cleared at start and quit) as its current and temp folder, none of the user's environment, at most 10 minutes, one at a time, killed when the app quits. Only a file the user opened can be converted; the page cannot name a path. The program comes from the `fbx2gltf` npm package in development and from `resources/bin` once installed (`VIEWER_FBX2GLTF` overrides both). It contains the Autodesk FBX SDK, whose licence the product owner accepted (risk R-02).
 - **Sandboxed:** only what the user opened is reachable. Paths outside it, `..` tricks and symlinks that leave it answer 404 (`src/local-files.test.ts`). A dropped file's path is read by the preload from the real `File`; the page cannot name a path itself.
 
+## Installer (WP 5.5)
+
+`pnpm --filter @viewer/desktop dist` (on Windows; after building the web app and the desktop app) makes `release/VIEWER-Setup-<version>.exe`, an NSIS installer from `electron-builder.config.cjs`:
+
+- **Per user, no administrator:** it installs to `%LOCALAPPDATA%\Programs\VIEWER` and writes only under HKCU; nothing goes to Program Files or HKLM. The user may choose another folder.
+- **Silent install for IT:** `VIEWER-Setup-<version>.exe /S /SERVER_URL=https://viewer.internal` writes the address to `viewer.json` next to `VIEWER.exe`. Without it, IT can still set the address machine-wide by `%ProgramData%\VIEWER\viewer.json` or the `ServerUrl` registry value (Group Policy); see *Library server address* above. Uninstall: `"Uninstall VIEWER.exe" /S`.
+- **Files:** `.glb` and `.gltf` open with VIEWER; `.fbx`, `.zip` and `.json` (tileset.json) only offer *Open with VIEWER*, so it never takes over files other programs own.
+- **Contents:** the app in an archive checked at start, the web build under `resources\web` (without the FBX test file), FBX2glTF under `resources\bin`, and `THIRD_PARTY_LICENSES.md`.
+- **Hardened binary:** Electron fuses switched off running as plain Node, `NODE_OPTIONS`, the inspector from the command line and extra `file://` privileges, and on cookie encryption, archive integrity checks and loading the app only from its archive (`scripts/check-fuses.cjs`). An installed app also ignores the development switches (`VIEWER_SMOKE`, `VIEWER_WEB_DIR`, `VIEWER_QUERY`, `VIEWER_FBX2GLTF`).
+- **Signing:** with `CSC_LINK` (the organisation's .pfx, or its base64) and `CSC_KEY_PASSWORD` the app and installer are signed (SHA-256, timestamped at `VIEWER_TIMESTAMP_URL` when set); without them they are built unsigned and the build says so. `VIEWER_VERSION` sets the version.
+- **CI:** the `desktop-installer` job builds it on Windows, checks the fuses, installs it silently as the runner's user with a server address, checks every point above, starts it, uninstalls it and checks nothing is left (`scripts/check-installer.ps1`). The installer is kept as a download for 14 days. A GitHub runner is not the locked-down Windows 10 and 11 image (AppLocker, no admin); that test is in the acceptance on the organisation's image.
+
+Building on Linux needs Wine for the NSIS step; `pnpm --filter @viewer/desktop dist:dir` gives the unpacked app without it.
+
 ## Hardening
 
 Context isolation, sandbox, no Node in the page, a narrow preload API (`viewerDesktop.info / openFiles / openFolder / openDropped / takeOpened / onOpened / platform`), no new windows, no navigation away, every permission request refused. Air gap: the session cancels any request that is not `viewer-app:`, `viewer-file:`, `viewer-server:`, `data:` or `blob:`, and the security policy repeats it; the page cannot reach the server's address directly either.

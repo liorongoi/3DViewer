@@ -17,12 +17,12 @@ import { createRequire } from "node:module";
 const BIN = process.platform === "win32" ? "FBX2glTF.exe" : "FBX2glTF";
 const PLATFORM_DIR: Record<string, string> = { win32: "Windows_NT", linux: "Linux", darwin: "Darwin" };
 
-/** Where FBX2glTF is: VIEWER_FBX2GLTF, next to the app when installed, or the npm package in development. */
+/** Where FBX2glTF is: next to the app when installed; in development VIEWER_FBX2GLTF, or the npm package. */
 export function findConverter(o: { env: Record<string, string | undefined>; packaged: boolean; resourcesPath: string; here: string }): string | null {
   const candidates: string[] = [];
-  if (o.env.VIEWER_FBX2GLTF) candidates.push(o.env.VIEWER_FBX2GLTF);
   if (o.packaged) candidates.push(path.join(o.resourcesPath, "bin", BIN));
   else {
+    if (o.env.VIEWER_FBX2GLTF) candidates.push(o.env.VIEWER_FBX2GLTF);
     try {
       const pkg = createRequire(path.join(o.here, "x.js")).resolve("fbx2gltf/package.json");
       candidates.push(path.join(path.dirname(pkg), "bin", PLATFORM_DIR[process.platform] ?? process.platform, BIN));

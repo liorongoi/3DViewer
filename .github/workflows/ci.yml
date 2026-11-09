@@ -36,6 +36,49 @@ jobs:
       - name: Build
         run: pnpm -r --if-present run build
 
+  # WP 5.5: the Windows installer, built, checked and installed on Windows on every pull request.
+  # It is signed when the repository has the organisation's certificate (secrets WIN_CSC_LINK and
+  # WIN_CSC_KEY_PASSWORD), and kept for 14 days as a download to try on a workstation.
+  desktop-installer:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+      VIEWER_VERSION: 0.5.${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Desktop unit tests on Windows, with the real FBX converter (WP 5.2)
+        run: pnpm --filter @viewer/desktop test
+      - name: Build the web app and the desktop app
+        run: |
+          pnpm --filter @viewer/web build
+          pnpm --filter @viewer/desktop build
+      - uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/electron/Cache
+          key: electron-win-${{ hashFiles('apps/desktop/package.json') }}
+      - name: Installer
+        run: pnpm --filter @viewer/desktop dist
+      - name: Electron fuses
+        run: node scripts/check-fuses.cjs apps/desktop/release/win-unpacked/VIEWER.exe
+      - name: Install for this user, start, uninstall
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem apps/desktop/release -Filter "VIEWER-Setup-*.exe").FullName
+          if ($env:CSC_LINK) { ./scripts/check-installer.ps1 -Installer $setup -RequireSignature } else { ./scripts/check-installer.ps1 -Installer $setup }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VIEWER-Setup-windows
+          path: apps/desktop/release/VIEWER-Setup-*.exe
+          retention-days: 14
+
   # WP 3.1: the server tests again against a real PostgreSQL (unit tests use embedded PGlite).
   server-postgres:
     runs-on: ubuntu-latest
