@@ -36,15 +36,14 @@ export function Workspace() {
   const loading = useSignal(engine?.loading, false);
   const error = useSignal(engine?.error, null);
   const top = "top-7"; // below the 20 px classification banner
-  const bottom = "bottom-7";
   const fade = fadeClasses(useChromeFade());
   if (fullscreen) return <FullscreenHint />;
 
   return (
     <>
       {/* left column */}
-      {/* In a model the column stops above the dock, which it would cover on screens under 1536 px. */}
-      <div className={cx("pointer-events-none fixed start-3 z-20 flex flex-col gap-2", top, route === "viewer" ? "bottom-[84px] 2xl:bottom-7" : bottom)}>
+      {/* The column stops above the dock, which it would cover on screens under 1536 px. */}
+      <div className={cx("pointer-events-none fixed start-3 z-20 flex flex-col gap-2 bottom-[84px] 2xl:bottom-7", top)}>
         <Guard part={route === "home" ? "library" : "model"}>
         {route === "home" ? (
           leftOpen ? (
@@ -95,7 +94,7 @@ export function Workspace() {
       </div>
 
       {/* right column */}
-      <div className={cx("pointer-events-none fixed end-3 z-20 flex flex-col items-end gap-2", route === "viewer" ? "bottom-[176px] 2xl:bottom-[120px]" : "bottom-[120px]", top)}>
+      <div className={cx("pointer-events-none fixed end-3 z-20 flex flex-col items-end gap-2", "bottom-[176px] 2xl:bottom-[120px]", top)}>
         <Guard part="tools">
         <PerfHud className="pointer-events-auto" />
         <ViewCube className={cx("pointer-events-auto", fade.ambient)} />
@@ -116,15 +115,15 @@ export function Workspace() {
       </div>
 
       {/* bottom */}
-      <div className={cx("pointer-events-none fixed inset-x-0 z-10 flex flex-col items-center gap-2", bottom, fade.ambient)}>
+      <div className={cx("pointer-events-none fixed inset-x-0 z-10 flex flex-col items-center gap-2", "bottom-7", fade.ambient)}>
         <Guard part="dock">
           <UndoBar />
           <HintLine />
           <Dock className="pointer-events-auto" />
         </Guard>
       </div>
-      {/* Below 1536 px the coordinates would cover the end of the dock: they sit above it. */}
-      <div className={cx("pointer-events-none fixed z-10 flex flex-col items-end gap-2 end-3", route === "viewer" ? "bottom-[84px] 2xl:bottom-7" : bottom, fade.ambient)}>
+      {/* Below 1536 px the coordinates would cover the end of the dock (in the library too): they sit above it. */}
+      <div className={cx("pointer-events-none fixed z-10 flex flex-col items-end gap-2 end-3 bottom-[84px] 2xl:bottom-7", fade.ambient)}>
         <Guard part="hud">
           <ScaleBar />
           <CoordinatesHud className="pointer-events-auto" />
