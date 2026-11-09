@@ -9,6 +9,7 @@
 #   TLS_KEY       its private key (PEM)
 #   WEB_ROOT      the built web app (apps/web/dist)
 #   FILES_ROOT    the server's published files (STORAGE_DIR/files)
+#   BASEMAP_ROOT  installed base map packages, default /var/lib/viewer/basemaps
 #   API_UPSTREAM  the Node server, default 127.0.0.1:8787
 #   LOG_DIR       default /var/log/viewer; HTTP_PORT and HTTPS_PORT default to 80 and 443
 {
@@ -85,6 +86,25 @@ https://{$VIEWER_HOST}:{$HTTPS_PORT:443} {
 			# No folder listings.
 			browse off
 			hide .*
+		}
+	}
+
+	# Base map packages (RND-11), installed by viewer-basemap-install: imagery and terrain tiles.
+	# A package can be replaced by a newer one under the same name, so tiles are cached for a
+	# day, with ETag. Quantized-mesh tiles are stored gzipped, as Cesium's terrain builder
+	# writes them, and are sent as they are.
+	handle_path /basemaps/* {
+		root * {$BASEMAP_ROOT:/var/lib/viewer/basemaps}
+		header Cache-Control "public, max-age=86400"
+		@terrain path *.terrain
+		header @terrain Content-Type "application/vnd.quantized-mesh"
+		header @terrain Content-Encoding gzip
+		@json path *.json
+		encode @json zstd gzip
+		header @json Content-Type "application/json"
+		file_server {
+			browse off
+			hide .* SHA256SUMS
 		}
 	}
 

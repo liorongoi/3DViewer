@@ -11,8 +11,8 @@ Type=notify
 User=viewer
 Group=viewer
 EnvironmentFile=/etc/viewer/caddy.env
-ExecStart=/usr/bin/caddy run --environ --config /opt/viewer/deploy/caddy/Caddyfile --adapter caddyfile
-ExecReload=/usr/bin/caddy reload --config /opt/viewer/deploy/caddy/Caddyfile --adapter caddyfile --force
+ExecStart=/opt/viewer/bin/caddy run --environ --config /opt/viewer/deploy/caddy/Caddyfile --adapter caddyfile
+ExecReload=/opt/viewer/bin/caddy reload --config /opt/viewer/deploy/caddy/Caddyfile --adapter caddyfile --force
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=10
@@ -32,8 +32,10 @@ ProtectControlGroups=yes
 RestrictSUIDSGID=yes
 LockPersonality=yes
 RestrictNamespaces=yes
-ReadWritePaths=/var/log/viewer
-ReadOnlyPaths=/opt/viewer /var/lib/viewer/storage/files /etc/viewer/tls
+# Caddy keeps its own state (OCSP staples, the last config) in /var/lib/viewer/caddy.
+Environment=XDG_DATA_HOME=/var/lib/viewer/caddy XDG_CONFIG_HOME=/var/lib/viewer/caddy
+ReadWritePaths=/var/log/viewer -/var/lib/viewer/caddy
+ReadOnlyPaths=/opt/viewer /opt/viewer-releases /var/lib/viewer/storage/files -/var/lib/viewer/basemaps /etc/viewer/tls
 
 [Install]
 WantedBy=multi-user.target

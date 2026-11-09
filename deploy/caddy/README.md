@@ -1,6 +1,6 @@
 # Production front end (Caddy)
 
-One HTTPS origin serves the web app, the API and the published model files (WP 3.7). Caddy 2.10 (Apache-2.0) is a single binary with no dependencies, so it installs offline.
+One HTTPS origin serves the web app, the API and the published model files (WP 3.7). Caddy 2.10 (Apache-2.0) is a single binary with no dependencies; the offline server bundle carries it as `/opt/viewer/bin/caddy`.
 
 ## What it does
 
@@ -13,6 +13,7 @@ One HTTPS origin serves the web app, the API and the published model files (WP 3
   - Files are cached for a year as immutable.
   - JSON and glTF are compressed with zstd or gzip.
   - Paths never change. A re-rendered thumbnail gets a new file name, so a new classification band is never hidden by a cache.
+- **`/basemaps/*`** is served from `BASEMAP_ROOT` (default `/var/lib/viewer/basemaps`): the imagery and terrain of the base map packages that `viewer-basemap-install` puts there (docs/INSTALL.md). Tiles are cached for a day with ETag; quantized-mesh tiles go out gzipped as stored.
 - **Everything else** is the web app.
   - The hashed assets under `/assets/` are immutable.
   - `index.html` is checked on every load, so an update reaches everyone at once.
@@ -24,13 +25,14 @@ One HTTPS origin serves the web app, the API and the published model files (WP 3
 export VIEWER_HOST=viewer.internal
 export TLS_CERT=/etc/viewer/tls/viewer-chain.pem TLS_KEY=/etc/viewer/tls/viewer.key
 export WEB_ROOT=/opt/viewer/web FILES_ROOT=/var/lib/viewer/storage/files
-caddy run --config /opt/viewer/deploy/caddy/Caddyfile --adapter caddyfile
+/opt/viewer/bin/caddy run --config /opt/viewer/deploy/caddy/Caddyfile --adapter caddyfile
 ```
 
 The other settings and their defaults:
 
 | Variable | Default |
 |---|---|
+| `BASEMAP_ROOT` | `/var/lib/viewer/basemaps` |
 | `API_UPSTREAM` | `127.0.0.1:8787` |
 | `HTTP_PORT` | `80` |
 | `HTTPS_PORT` | `443` |

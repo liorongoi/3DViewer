@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# WP 5.6 check: the offline server bundle installs, runs, upgrades and goes back, on a clean
+# Linux machine with systemd, as docs/INSTALL.md says. Run as root on a throw-away machine (CI):
+#
+#   sudo bash scripts/check-server-install.sh <bundle-1.tar.gz> <bundle-2.tar.gz> <DATABASE_URL>
+#
+# Bundle 2 must be a later version than bundle 1. It uses the name viewer.test (added to
+# /etc/hosts) with a certificate from a test CA it makes, and the real ports 80 and 443.
+set -uo pipefail
+B1="$(readlink -f "$1")" B2="$(readlink -f "$2")" DB="$3"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+WORK="$(mktemp -d)"
+HOST=viewer.test
+failed=0
+check() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; failed=$((failed + 1)); fi; }
+https() { curl -sS --cacert "$WORK/ca.pem" --resolve "$HOST:443:127.0.0.1" "$@"; }
+health_ok() { https -f "https://$HOST/api/health" 2>/dev/null | grep -q '"ok":true'; }
+
+# A test CA and a certificate for viewer.test.
+openssl req -x509 -newkey rsa:2048 -nodes -subj "/CN=VIEWER test CA" -keyout "$WORK/ca.key" -out "$WORK/ca.pem" -days 2 2>/dev/null
+openssl req -newkey rsa:2048 -nodes -subj "/CN=$HOST" -keyout "$WORK/viewer.key" -out "$WORK/viewer.csr" 2>/dev/null
+printf 'subjectAltName=DNS:%s\n' "$HOST" > "$WORK/san"
+openssl x509 -req -in "$WORK/viewer.csr" -CA "$WORK/ca.pem" -CAkey "$WORK/ca.key" -CAcreateserial -days 2 -extfile "$WORK/san" -out "$WORK/viewer.crt" 2>/dev/null
+cat "$WORK/viewer.crt" "$WORK/ca.pem" > "$WORK/chain.pem"
+
+unpack() { mkdir -p "$WORK/$2" && tar -xzf "$1" -C "$WORK/$2" && echo "$WORK/$2/$(ls "$WORK/$2")"; }
+d1="$(unpack "$B1" b1)"; d2="$(unpack "$B2" b2)"
+v1="$(awk '/^viewer /{print $2}' "$d1/VERSION")"; v2="$(awk '/^viewer /{print $2}' "$d2/VERSION")"
+
+echo "== first install ($v1)"
+t0=$(date +%s)
+(cd "$d1" && ./install.sh --host "$HOST" --database-url "$DB" --cert "$WORK/chain.pem" --key "$WORK/viewer.key") 2>&1 | tee "$WORK/install1.log"
+check "install.sh finishes and says it is running" "grep -q 'is running: https://$HOST/' '$WORK/install1.log'"
+echo "  (install took $(( $(date +%s) - t0 )) s)"
+check "/opt/viewer is version $v1" "[[ \$(readlink -e /opt/viewer) == /opt/viewer-releases/$v1 ]]"
+check "the services are running" "systemctl is-active --quiet viewer-server viewer-caddy viewer-backup.timer"
+check "the server runs as user viewer, on the bundled Node" "ps -o user=,args= -C node | grep -q '^viewer .*/opt/viewer/node/bin/node /opt/viewer/server/dist/main.js'"
+check "Caddy runs as user viewer, from the bundle" "ps -o user=,args= -C caddy | grep -q '^viewer .*/opt/viewer/bin/caddy run'"
+check "health over HTTPS, with the organisation's certificate" "health_ok"
+check "the web app over HTTPS" "https -f https://$HOST/ | grep -q '<div id=\"root\"'"
+check "plain HTTP redirects to HTTPS" "[[ \$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' --resolve $HOST:80:127.0.0.1 http://$HOST/x) == '301 https://$HOST:443/x' ]]"
+check "HSTS and nosniff are sent" "https -sI https://$HOST/ | grep -qi '^strict-transport-security' && https -sI https://$HOST/ | grep -qi '^x-content-type-options: nosniff'"
+check "TLS 1.1 is refused" "! curl -s -o /dev/null --tls-max 1.1 --cacert $WORK/ca.pem --resolve $HOST:443:127.0.0.1 https://$HOST/"
+check "the settings are root:viewer 0640" "[[ \$(stat -c '%U:%G %a' /etc/viewer/viewer.env) == 'root:viewer 640' ]]"
+check "the first admin password is root-only" "[[ \$(stat -c '%U %a' /etc/viewer/first-admin-password) == 'root 600' ]]"
+check "the program is owned by root and not writable by viewer" "! sudo -u viewer test -w /opt/viewer/server/dist/main.js"
+pw="$(cat /etc/viewer/first-admin-password)"
+login() { https -f -H 'Content-Type: application/json' -d "{\"password\":\"$pw\"}" "https://$HOST/api/admin/login" | node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(0,"utf8")).token)'; }
+token="$(login 2>/dev/null)"
+check "the admin signs in with the first admin password" "[[ -n '$token' ]]"
+check "the library answers" "https -f https://$HOST/api/models >/dev/null"
+
+echo "== base map package"
+mk="$WORK/tiles"
+node -e '
+  const fs = require("fs"), zlib = require("zlib"), path = require("path");
+  const root = process.argv[1];
+  // A 1x1 PNG: enough for the server; the viewer is checked elsewhere.
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  for (const [z, x, y] of [[0, 0, 0], [1, 1, 0], [2, 2, 1]]) {
+    fs.mkdirSync(path.join(root, "img", `${z}/${x}`), { recursive: true });
+    fs.writeFileSync(path.join(root, "img", `${z}/${x}/${y}.png`), png);
+    fs.mkdirSync(path.join(root, "qm", `${z}/${x}`), { recursive: true });
+    fs.writeFileSync(path.join(root, "qm", `${z}/${x}/${y}.terrain`), Buffer.alloc(88, 1));
+  }
+  fs.writeFileSync(path.join(root, "qm", "layer.json"), JSON.stringify({ tilejson: "2.1.0", format: "quantized-mesh-1.0", version: "1.0.0", scheme: "tms", tiles: ["{z}/{x}/{y}.terrain?v={version}"], minzoom: 0, maxzoom: 2, projection: "EPSG:4326", available: [] }));
+' "$mk"
+bash "$ROOT/scripts/build-basemap-package.sh" --name site --version 1 --imagery "$mk/img" --terrain "$mk/qm" --out "$WORK/pkg" >/dev/null
+VIEWER_ADMIN_PASSWORD="$pw" viewer-basemap-install "$WORK/pkg/site-1.basemap.tar" --register 2>&1 | tee "$WORK/basemap.log"
+check "viewer-basemap-install installs and registers the package" "grep -q 'added to the admin page' '$WORK/basemap.log'"
+check "its sources are in the base map list, as the defaults" "https -f https://$HOST/api/basemaps | node -e 'const c = JSON.parse(require(\"fs\").readFileSync(0, \"utf8\")); process.exit(c.defaultImagery === \"site-imagery\" && c.defaultTerrain === \"site-terrain\" && c.sources.length === 2 ? 0 : 1)'"
+check "an imagery tile comes through Caddy" "[[ \$(https -s -o /dev/null -w '%{http_code} %{content_type}' https://$HOST/basemaps/site/imagery/1/1/0.png) == '200 image/png' ]]"
+check "a terrain tile comes gzipped as quantized-mesh" "https -sI https://$HOST/basemaps/site/terrain/0/0/0.terrain | grep -qi '^content-encoding: gzip' && https -sI https://$HOST/basemaps/site/terrain/0/0/0.terrain | grep -qi '^content-type: application/vnd.quantized-mesh'"
+check "the terrain's layer.json comes through" "https -f https://$HOST/basemaps/site/terrain/layer.json | grep -q quantized-mesh"
+check "SHA256SUMS and folder listings are not served" "[[ \$(https -s -o /dev/null -w '%{http_code}' https://$HOST/basemaps/site/SHA256SUMS) == 404 && \$(https -s -o /dev/null -w '%{http_code}' https://$HOST/basemaps/site/) == 404 ]]"
+check "a missing tile is a 404, not the web app" "[[ \$(https -s -o /dev/null -w '%{http_code}' https://$HOST/basemaps/site/imagery/9/9/9.png) == 404 ]]"
+
+echo "== backup"
+systemctl start viewer-backup
+check "the nightly backup runs and writes a database dump" "ls /var/backups/viewer/viewer-*/database.dump >/dev/null 2>&1 && systemctl show -p Result --value viewer-backup | grep -q success"
+
+echo "== upgrade to $v2"
+(cd "$d2" && ./install.sh) 2>&1 | tee "$WORK/install2.log"
+check "the upgrade finishes and says it is running" "grep -q 'is running' '$WORK/install2.log'"
+check "/opt/viewer is version $v2, $v1 is the one to go back to" "[[ \$(readlink -e /opt/viewer) == /opt/viewer-releases/$v2 && \$(cat /opt/viewer-releases/previous) == /opt/viewer-releases/$v1 ]]"
+check "the settings were kept (the same admin password works)" "[[ -n \$(login 2>/dev/null) ]]"
+check "the base map package is still served" "[[ \$(https -s -o /dev/null -w '%{http_code}' https://$HOST/basemaps/site/imagery/0/0/0.png) == 200 ]]"
+check "health after the upgrade" "health_ok"
+
+echo "== a version that does not start goes back by itself"
+bad="$WORK/bad/viewer-server-broken"
+mkdir -p "$WORK/bad" && cp -a "$d2" "$bad"
+sed -i "s/^viewer .*/viewer $v2-broken/" "$bad/VERSION"
+echo 'console.error("DATABASE_URL: broken on purpose"); process.exit(78);' > "$bad/server/dist/main.js"
+(cd "$bad" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+(cd "$bad" && ./install.sh) > "$WORK/install3.log" 2>&1
+code=$?
+cat "$WORK/install3.log"
+check "install.sh fails and says so" "[[ $code -ne 0 ]] && grep -q 'going back to $v2' '$WORK/install3.log'"
+check "/opt/viewer is back on $v2, with $v1 still the one to go back to" "[[ \$(readlink -e /opt/viewer) == /opt/viewer-releases/$v2 && \$(cat /opt/viewer-releases/previous) == /opt/viewer-releases/$v1 && ! -e /opt/viewer-releases/$v2-broken ]]"
+check "health after going back" "health_ok"
+
+echo "== rollback by hand"
+/opt/viewer/install.sh --rollback 2>&1 | tee "$WORK/rollback.log"
+check "--rollback goes back to $v1" "[[ \$(readlink -e /opt/viewer) == /opt/viewer-releases/$v1 ]]"
+check "health after the rollback" "health_ok"
+
+echo "== a damaged bundle is refused"
+dmg="$WORK/dmg/viewer-server-damaged"
+mkdir -p "$WORK/dmg" && cp -a "$d2" "$dmg" && echo x >> "$dmg/web/index.html"
+check "install.sh refuses it before changing anything" "! (cd '$dmg' && ./install.sh) >/dev/null 2>&1 && [[ \$(readlink -e /opt/viewer) == /opt/viewer-releases/$v1 ]]"
+
+echo "== hardening (systemd-analyze security, lower is better)"
+systemd-analyze security --no-pager viewer-server viewer-caddy 2>/dev/null | tail -3 || true
+
+if [[ $failed -gt 0 ]]; then
+  journalctl -u viewer-server -u viewer-caddy -n 60 --no-pager || true
+  echo "$failed FAILED"; exit 1
+fi
+echo "ALL PASSED"
