@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { machineSources, readConfig } from "./config.js";
 import { Roots, SCHEME, listFiles, listFolder, serveLocal, type ListedFile } from "./local-files.js";
 import { SERVER_BASE, SERVER_SCHEME, proxyServer } from "./server-proxy.js";
+import { convertFbx, findConverter, stopAll } from "./fbx.js";
 
 /**
  * VIEWER desktop app (plan WP 5.1, 5.3, 5.4). It loads the same web build as the portal from a
@@ -15,9 +16,11 @@ import { SERVER_BASE, SERVER_SCHEME, proxyServer } from "./server-proxy.js";
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+// Development and test switches; an installed app ignores them (WP 5.5).
+const dev: Record<string, string | undefined> = app.isPackaged ? {} : process.env;
 const APP = "viewer-app";
 // Web build: next to the app when packaged, the web app's dist folder in development.
-const webDir = process.env.VIEWER_WEB_DIR ?? (app.isPackaged ? path.join(process.resourcesPath, "web") : path.resolve(here, "../../web/dist"));
+const webDir = dev.VIEWER_WEB_DIR ?? (app.isPackaged ? path.join(process.resourcesPath, "web") : path.resolve(here, "../../web/dist"));
 const exeDir = app.isPackaged ? path.dirname(process.execPath) : path.resolve(here, "..");
 const config = readConfig(machineSources(exeDir));
 for (const p of config.problems) console.warn(`VIEWER configuration: ${p}`);
@@ -81,12 +84,12 @@ async function createWindow(): Promise<BrowserWindow> {
   win.webContents.on("will-navigate", (e, url) => {
     if (!url.startsWith(`${APP}://`)) e.preventDefault();
   });
-  if (process.env.VIEWER_SMOKE) {
+  if (dev.VIEWER_SMOKE) {
     win.webContents.on("console-message", (e) => console.log(`[page ${e.level}] ${e.message.slice(0, 300)}`));
     win.webContents.on("did-fail-load", (_e, code, desc, url) => console.log(`[load fail] ${code} ${desc} ${url}`));
     console.log("[smoke] loading", webDir);
   }
-  await win.loadURL(`${APP}://app/index.html${process.env.VIEWER_QUERY ?? ""}`);
+  await win.loadURL(`${APP}://app/index.html${dev.VIEWER_QUERY ?? ""}`);
   return win;
 }
 
@@ -94,7 +97,7 @@ async function start(): Promise<void> {
   roots.add(webDir, "app");
   protocol.handle(APP, async (req) => {
     const res = await serveLocal(roots, req);
-    if (process.env.VIEWER_SMOKE && res.status >= 400) console.log("[viewer-app]", res.status, req.url);
+    if (dev.VIEWER_SMOKE && res.status >= 400) console.log("[viewer-app]", res.status, req.url);
     res.headers.set("Content-Security-Policy", CSP);
     return res;
   });
@@ -110,7 +113,7 @@ async function start(): Promise<void> {
   // Air gap: the page may only talk to its own schemes; the server goes through viewer-server://.
   session.defaultSession.webRequest.onBeforeRequest((d, cb) => {
     const ok = /^(viewer-app|viewer-file|viewer-server|data|blob|devtools|chrome-extension):/.test(d.url);
-    if (process.env.VIEWER_SMOKE && !ok) console.log("[blocked]", d.url);
+    if (dev.VIEWER_SMOKE && !ok) console.log("[blocked]", d.url);
     cb({ cancel: !ok });
   });
   session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
@@ -135,12 +138,37 @@ async function start(): Promise<void> {
   });
   // Paths of files or folders dropped on the page (the preload reads them from the File objects).
   ipcMain.handle("viewer:openPaths", async (_e, paths: unknown) => listPaths(Array.isArray(paths) ? paths.filter((p): p is string => typeof p === "string") : []));
+  // Local FBX (WP 5.2): converts a file the user opened, never a path the page names.
+  const converter = findConverter({ env: dev, packaged: app.isPackaged, resourcesPath: process.resourcesPath, here });
+  const fbxRoot = path.join(app.getPath("temp"), "VIEWER-fbx");
+  // Only one copy of the app runs, so what is left here is from an earlier run.
+  fs.rmSync(fbxRoot, { recursive: true, force: true });
+  app.on("will-quit", () => {
+    stopAll();
+    fs.rmSync(fbxRoot, { recursive: true, force: true });
+  });
+  let conversions = 0;
+  ipcMain.handle("viewer:convertFbx", async (_e, url: unknown) => {
+    if (!converter) return { ok: false, reason: "unavailable" };
+    let input: string | null = null;
+    try {
+      const u = new URL(String(url));
+      if (u.protocol === `${SCHEME}:`) input = roots.resolve(u.hostname, u.pathname.slice(1));
+    } catch {
+      /* not a URL */
+    }
+    if (!input || !/\.fbx$/i.test(input)) return { ok: false, reason: "notOpened" };
+    const r = await convertFbx(converter, input, { workDir: path.join(fbxRoot, String(++conversions)) });
+    if (!r.ok) return r;
+    const [file] = await listFiles(roots, [r.glb]);
+    return file ? { ok: true, file, ms: r.ms } : { ok: false, reason: "failed", detail: "" };
+  });
   // What the app was started with, once.
   ipcMain.handle("viewer:takeOpened", async () => listPaths(pendingPaths.splice(0)));
 
   const win = await createWindow();
-  if (process.env.VIEWER_SMOKE) console.log("[smoke] page loaded");
-  if (process.env.VIEWER_SMOKE) await smoke(win, process.env.VIEWER_SMOKE);
+  if (dev.VIEWER_SMOKE) console.log("[smoke] page loaded");
+  if (dev.VIEWER_SMOKE) await smoke(win, dev.VIEWER_SMOKE);
 }
 
 app.on("window-all-closed", () => app.quit());
@@ -192,7 +220,7 @@ async function smoke(win: BrowserWindow, dir: string): Promise<void> {
   try {
     console.log("SMOKE " + JSON.stringify(await win.webContents.executeJavaScript(js)));
     const img = await win.webContents.capturePage();
-    fs.writeFileSync(process.env.VIEWER_SMOKE_SHOT ?? "smoke.png", img.toPNG());
+    fs.writeFileSync(dev.VIEWER_SMOKE_SHOT ?? "smoke.png", img.toPNG());
   } catch (e) {
     console.log("SMOKE-FAIL " + String(e));
   }
