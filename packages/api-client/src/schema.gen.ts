@@ -41,7 +41,7 @@ export type paths = {
                 };
             };
             responses: {
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -50,7 +50,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -121,7 +121,7 @@ export type paths = {
                         };
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -130,7 +130,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -153,7 +153,7 @@ export type paths = {
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -162,7 +162,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -211,7 +211,7 @@ export type paths = {
                 };
             };
             responses: {
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -220,7 +220,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -268,7 +268,7 @@ export type paths = {
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -277,7 +277,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -330,7 +330,7 @@ export type paths = {
                 };
             };
             responses: {
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -339,7 +339,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -395,7 +395,7 @@ export type paths = {
                 };
             };
             responses: {
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -404,7 +404,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -446,7 +446,7 @@ export type paths = {
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -455,7 +455,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -502,7 +502,7 @@ export type paths = {
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -511,7 +511,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -557,7 +557,7 @@ export type paths = {
                 };
             };
             responses: {
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -566,7 +566,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -617,7 +617,7 @@ export type paths = {
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -626,7 +626,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -676,7 +676,7 @@ export type paths = {
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -685,7 +685,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -729,7 +729,7 @@ export type paths = {
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -738,7 +738,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -787,7 +787,7 @@ export type paths = {
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -796,7 +796,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -840,7 +840,7 @@ export type paths = {
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -849,7 +849,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -893,7 +893,7 @@ export type paths = {
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -902,7 +902,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -971,7 +971,7 @@ export type paths = {
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -980,7 +980,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -1074,7 +1074,7 @@ export type paths = {
                 };
             };
             responses: {
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -1083,7 +1083,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -1136,7 +1136,7 @@ export type paths = {
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -1145,7 +1145,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -1193,7 +1193,7 @@ export type paths = {
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -1202,7 +1202,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -1251,7 +1251,7 @@ export type paths = {
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -1260,7 +1260,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -1340,7 +1340,7 @@ export type paths = {
                 };
             };
             responses: {
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -1349,7 +1349,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -1396,7 +1396,7 @@ export type paths = {
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -1405,7 +1405,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -1454,7 +1454,7 @@ export type paths = {
                 };
             };
             responses: {
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -1463,7 +1463,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -1506,7 +1506,7 @@ export type paths = {
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -1515,7 +1515,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -1555,7 +1555,7 @@ export type paths = {
                 };
             };
             responses: {
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -1564,7 +1564,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -1651,7 +1651,7 @@ export type paths = {
                 };
             };
             responses: {
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -1660,7 +1660,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -1710,7 +1710,7 @@ export type paths = {
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "4XX": {
                     headers: {
                         [name: string]: unknown;
@@ -1719,7 +1719,7 @@ export type paths = {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Default Response */
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
                 "5XX": {
                     headers: {
                         [name: string]: unknown;
@@ -1784,10 +1784,21 @@ export type components = {
             order: number;
             textColor: string;
         };
+        /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
         Error: {
             code?: string;
+            details?: {
+                key: string;
+                params?: {
+                    [key: string]: string | number;
+                };
+            }[];
             error: string;
             files?: string[];
+            key: string;
+            params?: {
+                [key: string]: string | number;
+            };
             problems?: string[];
         };
         IngestStatus: {

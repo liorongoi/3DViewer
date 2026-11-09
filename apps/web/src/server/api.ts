@@ -1,6 +1,6 @@
-import { createApiClient, must, type ApiClient, type paths, type Schemas } from "@viewer/api-client";
+import { createApiClient, errorFrom, must, type ApiClient, type paths, type Schemas } from "@viewer/api-client";
 import type { CheckReport, LocalFile } from "@viewer/core";
-import type { BaseMapConfig, ClassificationLevel, LayerManifest, ModelSummary } from "@viewer/shared";
+import { ServerError, type BaseMapConfig, type ClassificationLevel, type LayerManifest, type ModelSummary } from "@viewer/shared";
 
 /**
  * The VIEWER server (Phase 3). The web app finds it at VITE_API_URL, or on its own origin.
@@ -135,14 +135,14 @@ async function sendFile(srv: ServerInfo, url: string, f: LocalFile, onBytes: (n:
         offset = await headOffset(target);
         continue;
       }
-      if (!r.ok) throw new Error(((await r.json().catch(() => null)) as { error?: string } | null)?.error ?? `Upload failed (${r.status}).`);
+      if (!r.ok) throw r.headers.get("content-type")?.includes("json") ? errorFrom(await r.json().catch(() => null), r.status) : new ServerError("uploadFailed", { status: r.status });
       const next = Number(r.headers.get("upload-offset"));
       onBytes(next - offset);
       offset = next;
       failures = 0;
     } catch (e) {
       if (signal?.aborted) throw e;
-      if (++failures > 6) throw new Error(`The connection kept dropping while sending ${f.path}.`);
+      if (++failures > 6) throw new ServerError("connectionDropped", { file: f.path });
       await new Promise((res) => setTimeout(res, 500 * 2 ** failures));
       const before = offset;
       offset = await headOffset(target).catch(() => offset);
@@ -153,7 +153,7 @@ async function sendFile(srv: ServerInfo, url: string, f: LocalFile, onBytes: (n:
 
 async function headOffset(url: string): Promise<number> {
   const r = await fetch(url, { method: "HEAD", headers: { "tus-resumable": "1.0.0" } });
-  if (!r.ok) throw new Error(`The server lost this upload (${r.status}).`);
+  if (!r.ok) throw new ServerError("uploadLost", { status: r.status });
   return Number(r.headers.get("upload-offset"));
 }
 

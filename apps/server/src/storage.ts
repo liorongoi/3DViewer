@@ -2,6 +2,7 @@ import { createReadStream } from "node:fs";
 import { mkdir, stat } from "node:fs/promises";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
+import { problem } from "./errors.ts";
 
 /** Where the server keeps bytes: uploads in progress, unpacked ingests, and published model files. */
 export class Storage {
@@ -84,7 +85,7 @@ export function registerFiles(app: FastifyInstance, storage: Storage): void {
   app.get<{ Params: { "*": string } }>("/files/*", { schema: { hide: true } }, async (req, reply) => {
     const full = Storage.inside(storage.files, decodeURIComponent(req.params["*"]));
     const st = full ? await stat(full).catch(() => null) : null;
-    if (!full || !st?.isFile()) return reply.status(404).send({ error: "Not found." });
+    if (!full || !st?.isFile()) return reply.status(404).send(problem("notFound"));
     const etag = `"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`;
     reply
       .header("etag", etag)

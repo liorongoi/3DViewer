@@ -4,6 +4,7 @@ import path from "node:path";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import swagger from "@fastify/swagger";
 import { UPDATE_STATUSES, type LayerManifest } from "@viewer/shared/model";
+import { ServerError } from "@viewer/shared";
 import { registerAdmin } from "./admin.ts";
 import { audit, auditCsv, verifyAudit, type AuditRow } from "./audit.ts";
 import type { Db } from "./db.ts";
@@ -12,6 +13,7 @@ import { enqueue } from "./jobs.ts";
 import { registerFiles, type Storage } from "./storage.ts";
 import { addSchemas, arrayOf, bool, closed, int, ref, text, checkContract } from "./schemas.ts";
 import { addVersion, createModel, getManifest, getModel, manifestProblem, setManifest, listModels, listVersions, updateModel, type LibraryFilter, type ModelPatch, type NewModel } from "./library.ts";
+import { problem } from "./errors.ts";
 
 export interface AppOptions {
   db: Db;
@@ -128,7 +130,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     app.addHook("onRequest", async (req, reply) => {
       if (!WRITE_METHODS.has(req.method) || req.url.startsWith("/api/tus/")) return;
       const s = wait(req.ip);
-      if (s > 0) return reply.status(429).header("retry-after", String(s)).send({ error: `Too many changes from this address. Try again in ${s} s.`, code: "RATE_LIMITED" });
+      if (s > 0) return reply.status(429).header("retry-after", String(s)).send(problem("rateLimited", { seconds: s }, { code: "RATE_LIMITED" }));
     });
   }
 
@@ -148,8 +150,10 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   const who = async (req: FastifyRequest) => ({ ip: req.ip, host: await hostOf(req) });
 
   app.setErrorHandler((err: { statusCode?: number; message: string; code?: string }, _req, reply) => {
+    if (err instanceof ServerError) return reply.status(err.status ?? 400).send(problem(err.key, err.params));
     const status = err.statusCode ?? 500;
-    reply.status(status).send({ error: status >= 500 ? "The server could not complete the request." : err.message, code: err.code });
+    // A request the schema or Fastify refused keeps its own (English) detail.
+    reply.status(status).send(status >= 500 ? problem("serverFailed", undefined, { code: err.code }) : problem("invalidRequest", { detail: err.message }, { code: err.code }));
   });
 
   // Readiness, for a load balancer or monitor: the database answers and storage can be written.
@@ -212,7 +216,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     },
     async (req, reply) => {
       const m = await getModel(db, req.params.id, req.query.version);
-      if (!m) return reply.status(404).send({ error: req.query.version && (await getModel(db, req.params.id)) ? `This model has no version ${req.query.version}.` : "No model with this id." });
+      if (!m) return reply.status(404).send(req.query.version && (await getModel(db, req.params.id)) ? problem("noVersion", { version: req.query.version }) : problem("noModel"));
       await audit(db, { ...(await who(req)), action: "model.view", target: m.id, detail: { version: m.version } });
       return { ...m, history: await listVersions(db, m.id) };
     },
@@ -247,7 +251,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     },
     async (req, reply) => {
       const [cls] = await db.query("SELECT 1 FROM classifications WHERE id = $1", [req.body.classificationId]);
-      if (!cls) return reply.status(400).send({ error: "Unknown classification. Choose one of the levels the admin defined." });
+      if (!cls) return reply.status(400).send(problem("unknownClassification"));
       const w = await who(req);
       const id = await db.tx(async (q) => {
         const id = await createModel(q, { ...req.body, id: undefined, versions: 1 });
@@ -276,7 +280,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     async (req, reply) => {
       if (req.body.classificationId) {
         const [cls] = await db.query("SELECT 1 FROM classifications WHERE id = $1", [req.body.classificationId]);
-        if (!cls) return reply.status(400).send({ error: "Unknown classification." });
+        if (!cls) return reply.status(400).send(problem("unknownClassification"));
       }
       const w = await who(req);
       const changes = await db.tx(async (q) => {
@@ -288,7 +292,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
         }
         return c;
       });
-      if (!changes) return reply.status(404).send({ error: "No model with this id." });
+      if (!changes) return reply.status(404).send(problem("noModel"));
       return getModel(db, req.params.id);
     },
   );
@@ -310,7 +314,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
         if (v) await audit(q, { ...w, action: "version.create", target: req.params.id, detail: { version: v, note: req.body.note ?? "" } });
         return v;
       });
-      if (!v) return reply.status(404).send({ error: "No model with this id." });
+      if (!v) return reply.status(404).send(problem("noModel"));
       return reply.status(201).send(await getModel(db, req.params.id));
     },
   );
@@ -327,7 +331,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
         response: { 200: manifestAnswer },
       },
     },
-    async (req, reply) => (await getManifest(db, req.params.id, req.query.version)) ?? reply.status(404).send({ error: "No model, or no such version." }),
+    async (req, reply) => (await getManifest(db, req.params.id, req.query.version)) ?? reply.status(404).send(problem("noModelOrVersion")),
   );
   app.put<{ Params: { id: string }; Body: { manifest: LayerManifest | null } }>(
     "/api/models/:id/layers",
@@ -340,15 +344,15 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       },
     },
     async (req, reply) => {
-      const problem = req.body.manifest && manifestProblem(req.body.manifest);
-      if (problem) return reply.status(400).send({ error: problem });
+      const bad = req.body.manifest && manifestProblem(req.body.manifest);
+      if (bad) return reply.status(400).send(problem(bad));
       const w = await who(req);
       const version = await db.tx(async (q) => {
         const v = await setManifest(q, req.params.id, req.body.manifest);
         if (v) await audit(q, { ...w, action: "layers.update", target: req.params.id, detail: { version: v, layers: req.body.manifest?.layers.length ?? 0, cleared: !req.body.manifest } });
         return v;
       });
-      if (!version) return reply.status(404).send({ error: "No model with this id." });
+      if (!version) return reply.status(404).send(problem("noModel"));
       return { version, manifest: req.body.manifest };
     },
   );

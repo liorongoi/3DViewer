@@ -6,6 +6,7 @@ import { useOpenModel } from "../useAppEffects";
 import { useApp } from "../state/store";
 import { Check, ChevronDown, Loader2 } from "./icons";
 import { cx } from "./primitives";
+import { errorText } from "../server/error-text";
 
 /**
  * The open model's version and its history (WP 4.4, UPL-05). Choosing a version opens it from
@@ -30,7 +31,7 @@ export function VersionPicker({ model }: { model: ModelSummary }) {
     let on = true;
     getModelDetail(server, model.id)
       .then((d) => on && useApp.setState({ versionHistory: { id: d.id, list: d.history } }))
-      .catch((e: Error) => on && setProblem(t("versions.readFailed", { reason: e.message })));
+      .catch((e: unknown) => on && setProblem(t("versions.readFailed", { reason: errorText(e, t) })));
     return () => {
       on = false;
     };
@@ -57,7 +58,7 @@ export function VersionPicker({ model }: { model: ModelSummary }) {
       await openVersion(model.id, v);
       setOpen(false);
     } catch (e) {
-      setProblem(t("versions.openFailed", { v, reason: (e as Error).message }));
+      setProblem(t("versions.openFailed", { v, reason: errorText(e, t) }));
     } finally {
       setBusy(null);
     }

@@ -4,11 +4,13 @@ import path from "node:path";
 import type { FastifyInstance, FastifyRequest, onRequestAsyncHookHandler } from "fastify";
 import { argon2id, argon2Verify } from "hash-wasm";
 import type { BaseMapConfig } from "@viewer/shared/model";
+import { ServerError, serverErrorText, type ErrorParams, type ServerErrorKey } from "@viewer/shared";
 import { audit } from "./audit.ts";
 import type { Db, Queryable } from "./db.ts";
 import { enqueue } from "./jobs.ts";
 import { bool, closed, int, iso, num, ref, text } from "./schemas.ts";
 import type { Storage } from "./storage.ts";
+import { problem } from "./errors.ts";
 
 /**
  * Admin (WP 3.9, VWR-ADM-01, ADM-02, RND-11). There are no user accounts: one admin password,
@@ -84,13 +86,13 @@ export async function storageUsage(q: Queryable): Promise<{ publishedBytes: numb
 }
 
 /** The quota check for a new upload: an error message, or null when it fits. */
-export async function quotaError(q: Queryable, addBytes: number): Promise<string | null> {
+export async function quotaError(q: Queryable, addBytes: number): Promise<ReturnType<typeof problem> | null> {
   const quota = await getSetting<number | null>(q, "storage.quotaBytes");
   if (quota == null) return null;
   const { usedBytes } = await storageUsage(q);
   if (usedBytes + addBytes <= quota) return null;
   const gb = (n: number) => `${(n / 1024 ** 3).toFixed(1)} GB`;
-  return `The library is full: ${gb(usedBytes)} of ${gb(quota)} is used and this upload needs ${gb(addBytes)}. Ask the administrator to free space or raise the quota.`;
+  return problem("libraryFull", { used: gb(usedBytes), quota: gb(quota), needed: gb(addBytes) });
 }
 
 // ---- Base map sources (RND-11) ----
@@ -130,17 +132,17 @@ const baseMapSchema = {
 } as const;
 
 /** Problems a schema cannot see: duplicate ids, a source type that does not fit its kind, a bad URL. */
-export function baseMapProblems(c: BaseMapConfig): string[] {
-  const out: string[] = [];
+export function baseMapProblems(c: BaseMapConfig): { key: ServerErrorKey; params: ErrorParams }[] {
+  const out: { key: ServerErrorKey; params: ErrorParams }[] = [];
   const seen = new Set<string>();
   for (const s of c.sources) {
-    if (seen.has(s.id)) out.push(`Two sources have the id "${s.id}".`);
+    if (seen.has(s.id)) out.push({ key: "sourceIdTwice", params: { id: s.id } });
     seen.add(s.id);
     const terrain = s.type === "terrarium" || s.type === "quantized-mesh";
-    if (terrain !== (s.kind === "terrain")) out.push(`"${s.label}": a ${s.type} source is ${terrain ? "terrain" : "imagery"}, not ${s.kind}.`);
-    if (/^[a-z][a-z0-9+.-]*:/i.test(s.url) && !/^https?:\/\//i.test(s.url)) out.push(`"${s.label}": the address must start with http://, https:// or be a path on this server.`);
-    if ((s.type === "xyz" || s.type === "terrarium") && !/\{z\}/.test(s.url)) out.push(`"${s.label}": an ${s.type} address needs {z}, {x} and {y} in it.`);
-    if (s.type === "wmts" && !s.layer) out.push(`"${s.label}": a WMTS source needs its layer name.`);
+    if (terrain !== (s.kind === "terrain")) out.push({ key: terrain ? "sourceIsTerrain" : "sourceIsImagery", params: { label: s.label, type: s.type } });
+    if (/^[a-z][a-z0-9+.-]*:/i.test(s.url) && !/^https?:\/\//i.test(s.url)) out.push({ key: "sourceAddress", params: { label: s.label } });
+    if ((s.type === "xyz" || s.type === "terrarium") && !/\{z\}/.test(s.url)) out.push({ key: "sourceNeedsZxy", params: { label: s.label, type: s.type } });
+    if (s.type === "wmts" && !s.layer) out.push({ key: "sourceNeedsLayer", params: { label: s.label } });
   }
   return out;
 }
@@ -160,7 +162,7 @@ export function registerAdmin(app: FastifyInstance, db: Db, opts: AdminOptions):
     return s?.token_hash ?? null;
   };
   const guard: onRequestAsyncHookHandler = async (req, reply) => {
-    if (!(await session(req))) return reply.status(401).send({ error: "Sign in as administrator first." });
+    if (!(await session(req))) return reply.status(401).send(problem("signIn"));
   };
 
   app.get("/api/admin/status", { schema: { tags: ["admin"], response: { 200: closed({ passwordSet: bool, signedIn: bool }, ["passwordSet", "signedIn"]) } } }, async (req) => ({
@@ -176,16 +178,16 @@ export function registerAdmin(app: FastifyInstance, db: Db, opts: AdminOptions):
       const f = fails.get(req.ip);
       if (f && f.until > Date.now()) {
         const s = Math.ceil((f.until - Date.now()) / 1000);
-        return reply.status(429).header("retry-after", s).send({ error: `Too many wrong passwords. Try again in ${s} s.` });
+        return reply.status(429).header("retry-after", s).send(problem("tooManyPasswords", { seconds: s }));
       }
       const stored = await getSetting<string>(db, "admin.password");
-      if (!stored) return reply.status(503).send({ error: "No admin password is set. The person who runs the server sets ADMIN_PASSWORD and restarts it." });
+      if (!stored) return reply.status(503).send(problem("noAdminPassword"));
       if (!(await argon2Verify({ password: req.body.password, hash: stored }))) {
         const n = (f?.n ?? 0) + 1;
         // After 5 wrong tries in a row, wait 30 s, then twice as long after each further miss, up to 15 min.
         fails.set(req.ip, { n, until: n >= LOCK_AFTER ? Date.now() + Math.min(15 * 60, 30 * 2 ** (n - LOCK_AFTER)) * 1000 : 0 });
         await audit(db, { ...w, action: "admin.login.failed", detail: { attempt: n } });
-        return reply.status(401).send({ error: "Wrong password." });
+        return reply.status(401).send(problem("wrongPassword"));
       }
       fails.delete(req.ip);
       const token = randomBytes(32).toString("base64url");
@@ -220,7 +222,7 @@ export function registerAdmin(app: FastifyInstance, db: Db, opts: AdminOptions):
     },
     async (req, reply) => {
       const stored = (await getSetting<string>(db, "admin.password"))!;
-      if (!(await argon2Verify({ password: req.body.current, hash: stored }))) return reply.status(400).send({ error: "The current password is wrong." });
+      if (!(await argon2Verify({ password: req.body.current, hash: stored }))) return reply.status(400).send(problem("currentPasswordWrong"));
       const hash = await hashPassword(req.body.next);
       const mine = await session(req);
       await db.tx(async (q) => {
@@ -256,7 +258,7 @@ export function registerAdmin(app: FastifyInstance, db: Db, opts: AdminOptions):
       const b = req.body;
       // The band must stay readable (NFR-17): WCAG AA for normal text.
       const ratio = contrast(b.color, b.textColor);
-      if (ratio < 4.5) return reply.status(400).send({ error: `The text colour on the band colour has a contrast of ${ratio.toFixed(1)}:1; it needs at least 4.5:1 to be readable.` });
+      if (ratio < 4.5) return reply.status(400).send(problem("lowContrast", { ratio: ratio.toFixed(1) }));
       const id = req.params.id;
       const w = await opts.who(req);
       const result = await db.tx(async (q) => {
@@ -285,18 +287,18 @@ export function registerAdmin(app: FastifyInstance, db: Db, opts: AdminOptions):
     async (req, reply) => {
       const id = req.params.id;
       const [{ n }] = (await db.query<{ n: number }>("SELECT count(*)::int AS n FROM models WHERE classification_id = $1", [id])) as [{ n: number }];
-      if (n) return reply.status(409).send({ error: `${n} model${n === 1 ? " is" : "s are"} at this level. Move ${n === 1 ? "it" : "them"} to another level first.` });
+      if (n) return reply.status(409).send(problem("levelInUse", { count: n }));
       const [{ c }] = (await db.query<{ c: number }>("SELECT count(*)::int AS c FROM classifications")) as [{ c: number }];
       const w = await opts.who(req);
       const gone = await db.tx(async (q) => {
         const [old] = await q.query<{ label: string }>("SELECT label FROM classifications WHERE id = $1", [id]);
         if (!old) return false;
-        if (c <= 1) throw Object.assign(new Error("The last level cannot be removed; every model needs one."), { statusCode: 409 });
+        if (c <= 1) throw new ServerError("lastLevel", {}, undefined, [], 409);
         await q.query("DELETE FROM classifications WHERE id = $1", [id]);
         await audit(q, { ...w, action: "classification.delete", target: id, detail: { label: old.label } });
         return true;
       });
-      if (!gone) return reply.status(404).send({ error: "No level with this id." });
+      if (!gone) return reply.status(404).send(problem("noLevel"));
       return { ok: true };
     },
   );
@@ -316,8 +318,8 @@ export function registerAdmin(app: FastifyInstance, db: Db, opts: AdminOptions):
     async (req, reply) => {
       const id = req.params.id;
       const [m] = await db.query<{ name: string; classification_id: string }>("SELECT name, classification_id FROM models WHERE id = $1", [id]);
-      if (!m) return reply.status(404).send({ error: "No model with this id." });
-      if (req.body.confirm.trim() !== m.name.trim()) return reply.status(400).send({ error: "To delete for good, type the model's name exactly." });
+      if (!m) return reply.status(404).send(problem("noModel"));
+      if (req.body.confirm.trim() !== m.name.trim()) return reply.status(400).send(problem("confirmName"));
       const w = await opts.who(req);
       const freed = await db.tx(async (q) => {
         const [v] = await q.query<{ b: string | number | null; n: number }>("SELECT sum(size_bytes) AS b, count(*)::int AS n FROM versions WHERE model_id = $1", [id]);
@@ -372,7 +374,11 @@ export function registerAdmin(app: FastifyInstance, db: Db, opts: AdminOptions):
 
   app.put<{ Body: BaseMapConfig }>("/api/admin/basemaps", { onRequest: guard, schema: { tags: ["admin"], body: baseMapSchema, response: { 200: ref("BaseMapConfig") } } }, async (req, reply) => {
     const problems = baseMapProblems(req.body);
-    if (problems.length) return reply.status(400).send({ error: problems.join(" "), problems });
+    if (problems.length) {
+      const texts = problems.map((p) => serverErrorText(p.key, p.params));
+      // The first as the key; the client shows each of `details`.
+      return reply.status(400).send({ ...problem(problems[0]!.key, problems[0]!.params), error: texts.join(" "), problems: texts, details: problems });
+    }
     const w = await opts.who(req);
     await db.tx(async (q) => {
       await setSetting(q, "basemaps", req.body);

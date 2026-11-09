@@ -12,6 +12,7 @@ import { Check, ChevronLeft, ChevronRight, Upload, Wand2, X, AlertTriangle, Fold
 import { IconButton, cx } from "./primitives";
 import { useLevels } from "../state/classification";
 import { arrangeWhenOpen } from "../layers-standard";
+import { errorText } from "../server/error-text";
 
 const STEPS = ["drop", "check", "place", "layers", "details"] as const;
 
@@ -217,7 +218,7 @@ export function UploadWizard() {
       // Let the store update reach the library before opening.
       setTimeout(() => openModel(id), 0);
     } catch (e) {
-      setPublishError((e as Error).message);
+      setPublishError(errorText(e, t));
     } finally {
       setPublishing(false);
     }

@@ -202,12 +202,12 @@ export async function setManifest(q: Queryable, id: string, manifest: LayerManif
 }
 
 /** Why a manifest cannot be saved, or null when it can: too deep, too large, or not whole numbers. */
-export function manifestProblem(m: LayerManifest): string | null {
+export function manifestProblem(m: LayerManifest): "layersTooDeep" | "tooManyLayers" | null {
   let count = 0;
-  const rec = (ls: LayerManifest["layers"], depth: number): string | null => {
-    if (depth > 64) return "The layers are nested more than 64 deep.";
+  const rec = (ls: LayerManifest["layers"], depth: number): "layersTooDeep" | "tooManyLayers" | null => {
+    if (depth > 64) return "layersTooDeep";
     for (const l of ls) {
-      if (++count > 100_000) return "There are more than 100,000 layers.";
+      if (++count > 100_000) return "tooManyLayers";
       const r = rec(l.children ?? [], depth + 1);
       if (r) return r;
     }

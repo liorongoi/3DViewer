@@ -7,6 +7,7 @@ import { putLayerManifest } from "../server/api";
 import { STANDARD_LAYERS, standardGroups } from "../layers-standard";
 import { ArrowDown, ArrowUp, FolderPlus, GripVertical, IndentDecrease, IndentIncrease, Merge, Wand2, X } from "./icons";
 import { IconButton, cx } from "./primitives";
+import { errorText } from "../server/error-text";
 
 type Drop = { key: string; where: "before" | "after" | "inside" };
 
@@ -53,7 +54,7 @@ export function LayerEditor({ onClose }: { onClose: () => void }) {
       if (engine.current.get() === model) engine.setLayerManifest(manifest);
       onClose();
     } catch (e) {
-      setProblem(t("layerEditor.saveFailed", { reason: (e as Error).message }));
+      setProblem(t("layerEditor.saveFailed", { reason: errorText(e, t) }));
     } finally {
       setSaving(false);
     }

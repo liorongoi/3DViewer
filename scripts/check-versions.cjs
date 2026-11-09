@@ -113,6 +113,21 @@ const { describeFailure, watchConsole } = require("./lib/page-diagnostics.cjs");
     const c = changes[0]?.detail?.changes ?? {};
     check(changes.length === 1 && c.name?.[1] === saved.name && c.name?.[0] === before.name && c.project && c.status && c.description && !c.operation, "the audit log records each changed field, old and new", Object.keys(c).join(", "));
 
+    // ---- A server error is shown from the app's own strings, by its key ----
+    // The answer's English text is replaced, so only the key can produce the message shown.
+    const refuse = (route) => route.fulfill({ status: 429, contentType: "application/json", body: JSON.stringify({ error: "(server text)", key: "rateLimited", params: { seconds: 42 }, code: "RATE_LIMITED" }) });
+    await page.route(/\/api\/models\/m-lantern$/, (route) => (route.request().method() === "PATCH" ? refuse(route) : route.fallback()));
+    await props.getByRole("button", { name: "Edit details" }).click();
+    await form.getByLabel("Project name").fill("Refused by the server");
+    await form.getByRole("button", { name: "Save" }).click();
+    const alert = form.getByRole("alert");
+    await alert.waitFor({ timeout: 20000 });
+    const shown = await alert.innerText();
+    check(shown.includes("Too many changes from this address. Try again in 42 s.") && !shown.includes("(server text)"), "a server error is shown from the app's strings by its key", shown);
+    await page.unroute(/\/api\/models\/m-lantern$/);
+    await form.getByRole("button", { name: "Cancel" }).click();
+    await form.waitFor({ state: "detached", timeout: 20000 });
+
     // ---- The classification, for everyone ----
     const levels = await api("GET", "/api/classifications");
     const other = levels.find((l) => l.id !== saved.classificationId).id;
