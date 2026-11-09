@@ -15,7 +15,7 @@ const OUT = path.join(ROOT, "docs/manual/img");
 const MODEL = /A Beautiful Game/;
 
 (async () => {
-  const I18N = await import(path.join(ROOT, "packages/shared/src/i18n.ts"));
+  const I18N = await import(require("node:url").pathToFileURL(path.join(ROOT, "packages/shared/src/i18n.ts")).href);
   const langs = process.argv[2] ? [process.argv[2]] : ["en", "he"];
   const password = "manual-screens-0123";
   const { stop } = await startServer({ password });

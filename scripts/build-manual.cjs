@@ -148,7 +148,7 @@ async function main() {
   fs.mkdirSync(OUT, { recursive: true });
   // The app passes its theme (?theme=dark|light); a file, as the desktop app allows no inline script.
   fs.writeFileSync(path.join(OUT, "theme.js"), 'var m = /[?&]theme=(dark|light)/.exec(location.search);\nif (m) document.documentElement.setAttribute("data-theme", m[1]);\n');
-  const I18N = await import(path.join(ROOT, "packages/shared/src/i18n.ts"));
+  const I18N = await import(require("node:url").pathToFileURL(path.join(ROOT, "packages/shared/src/i18n.ts")).href);
   const langs = fs.readdirSync(SRC).filter((f) => /^[a-z]{2}\.md$/.test(f)).map((f) => f.slice(0, 2));
   for (const lang of langs) {
     const S = I18N[lang];
