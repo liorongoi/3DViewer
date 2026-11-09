@@ -93,9 +93,8 @@ let current = null;
       const e = window.viewerEngine;
       e.widget.scene.shadowMap.enabled = false;
       e.shadowsWanted = false;
-      // Drawn on a timer: software rendering flat out starves the input events.
-      e.widget.useDefaultRenderLoop = false;
-      window.__renderTimer = setInterval(() => e.widget.render(), 100);
+      // The viewer's own loop, which draws on demand. A timer that drew every 100 ms queued
+      // frames faster than software rendering draws them, and the page stopped answering.
     });
     if (!(await page.getByRole("tree", { name: "Layers" }).isVisible())) await page.keyboard.press("l");
     const tree = page.getByRole("tree", { name: "Layers" });
