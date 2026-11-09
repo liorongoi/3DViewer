@@ -35,6 +35,13 @@ jobs:
         run: pnpm -r --if-present run test
       - name: Build
         run: pnpm -r --if-present run build
+      # NFR-14: conversion steps in rootless podman containers with no network, as this user.
+      - name: Conversion sandbox (rootless podman)
+        run: |
+          podman --version
+          pnpm --filter @viewer/server exec vitest run src/sandbox.e2e.test.ts
+        env:
+          SANDBOX_TEST: "1"
 
   # WP 5.5: the Windows installer, built, checked and installed on Windows on every pull request.
   # It is signed when the repository has the organisation's certificate (secrets WIN_CSC_LINK and
@@ -145,6 +152,9 @@ jobs:
         run: |
           VIEWER_VERSION=0.6.${{ github.run_number }} bash scripts/build-server-bundle.sh
           VIEWER_VERSION=0.6.${{ github.run_number }}-next bash scripts/build-server-bundle.sh
+      # The conversion sandbox (NFR-14) uses podman from the OS packages, as a site installs it.
+      - name: Podman
+        run: command -v podman || sudo apt-get install -y podman
       # The nightly backup runs pg_dump, which must be the database's major version or newer.
       - name: PostgreSQL 17 client
         run: |

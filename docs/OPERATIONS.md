@@ -40,6 +40,10 @@ The server reads its settings from `/etc/viewer/viewer.env` when it starts. It c
 | `WORKERS` | `1` | `0` runs the API without job workers, for a site that runs workers on another machine. |
 | `CLAMDSCAN` | none | Path of `clamdscan`. Without it, uploads are published with a "not scanned" warning. |
 | `FBX2GLTF` | none | Path of FBX2glTF. Without it, FBX uploads fail. |
+| `CONVERT_SANDBOX` | `none` | `podman`: each step that reads an uploaded file (FBX conversion, the validators, tiling, optimising) runs in a rootless container of its own with no network, a read-only root and only that upload's folder to write. The server checks this when it starts and does not start if a step could reach the network. `install.sh` sets it when podman is installed. `none`: the steps run in child processes of the server. |
+| `PODMAN` | `/usr/bin/podman` | Path of podman, with `CONVERT_SANDBOX=podman`. |
+| `CONVERT_MEMORY_MB` | `0` | Memory limit for one conversion step, in MB. Needs cgroup delegation for the `viewer` user; `0` sets none (the service's own limits apply). |
+| `CONVERT_ROOTFS` | the release's `sandbox/rootfs` | The container's root: only the C libraries Node.js and FBX2glTF load. |
 | `STRICT_VALIDATION` | `0` | `1` stops a publish when the official glTF or 3D Tiles validator finds errors. `0` shows them as warnings. |
 | `JOB_LEASE_SECONDS` | `300` | How long before another worker takes up the job of a worker that died (10 to 86400). |
 | `THUMBNAIL_WEB_URL`, `CHROMIUM` | none | Where the web app is served, and the Chromium binary, for library thumbnails. |
@@ -116,3 +120,4 @@ Everything after the backup is lost, including the audit entries written since; 
 | Users see "Too many changes from this address" (429) | One address went past `WRITE_RATE_LIMIT`. This is usually a faulty script. | Find the address in the audit log. Raise the limit only if the use is real. |
 | Admin password lost | | Set `ADMIN_PASSWORD` to a new password and `ADMIN_PASSWORD_RESET=1`, restart, sign in, then remove both lines. |
 | Uploads say "not scanned for viruses" | `CLAMDSCAN` is not set. | Install ClamAV, set `CLAMDSCAN` and restart. |
+| The server stops at start with "CONVERT_SANDBOX=podman, but …" (exit 78) | The conversion sandbox does not run, or a step in it could reach the network. The message says which. | Check podman runs as `viewer`: `sudo -u viewer -H podman --version`. On Ubuntu 24.04, AppArmor must allow podman to make user namespaces (the `podman` profile from the `apparmor` package). Fix it, or set `CONVERT_SANDBOX=none` and restart. |

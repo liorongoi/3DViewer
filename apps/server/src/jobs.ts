@@ -13,10 +13,9 @@ export interface Job {
   max_attempts: number;
 }
 
-/** Thrown for a problem a retry cannot fix (a damaged file, a missing converter). */
-export class PermanentError extends Error {
-  override name = "PermanentError";
-}
+import { PermanentError } from "./permanent.ts";
+
+export { PermanentError };
 
 export async function enqueue(q: Queryable, kind: string, payload: Record<string, unknown>, maxAttempts = 3): Promise<string> {
   const [r] = await q.query<{ id: string }>("INSERT INTO jobs (kind, payload, max_attempts) VALUES ($1, $2, $3) RETURNING id", [kind, JSON.stringify(payload), maxAttempts]);

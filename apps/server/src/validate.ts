@@ -1,6 +1,8 @@
 import { createRequire } from "node:module";
 import { spawn } from "node:child_process";
+import path from "node:path";
 import { checkItem, type CheckItem } from "@viewer/core/loaders";
+import type { Sandbox } from "./sandbox.ts";
 
 /**
  * The official Khronos and Cesium validators (WP 3.3, UPL-02): gltf-validator for glTF and GLB,
@@ -17,10 +19,13 @@ export interface ValidateOptions {
   strict?: boolean;
   /** Stop the validator after this long and say so in the report. */
   timeoutMs?: number;
+  /** Run it in the conversion sandbox, with this folder writable (sandbox.ts). */
+  sandbox?: Sandbox;
+  sandboxWork?: string;
 }
 
 /** One problem as the validators report it, with its causes flattened. */
-interface Issue {
+export interface Issue {
   severity: "ERROR" | "WARNING" | "INFO";
   code: string;
   message: string;
@@ -76,8 +81,10 @@ function resolveOrNull(id: string): string | null {
   }
 }
 
+export type ValidatorRun = Issue[] | { failed: string } | "timeout";
+
 /** Runs the validator for this format. Resolves to the issues, or to why it could not run. */
-function runWorker(kind: "3dtiles" | "gltf", file: string, timeoutMs: number): Promise<Issue[] | { failed: string } | "timeout"> {
+export function runValidator(kind: "3dtiles" | "gltf", file: string, timeoutMs: number): Promise<ValidatorRun> {
   const tiles = resolveOrNull("3d-tiles-validator");
   const gltf = resolveOrNull("gltf-validator");
   if (!(kind === "3dtiles" ? tiles : gltf)) return Promise.resolve({ failed: `${kind === "3dtiles" ? "3d-tiles-validator" : "gltf-validator"} is not installed` });
@@ -85,7 +92,7 @@ function runWorker(kind: "3dtiles" | "gltf", file: string, timeoutMs: number): P
     const child = spawn(process.execPath, ["-e", WORKER, JSON.stringify({ kind, file, tiles, gltf })], { stdio: ["ignore", "ignore", "pipe", "ipc"] });
     let err = "";
     let settled = false;
-    const finish = (v: Issue[] | { failed: string } | "timeout") => {
+    const finish = (v: ValidatorRun) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -125,7 +132,7 @@ export async function validateOfficial(format: "3dtiles" | "gltf" | "glb", file:
   const kind = format === "3dtiles" ? "3dtiles" : "gltf";
   const name = kind === "3dtiles" ? "3D Tiles" : "glTF";
   const timeoutMs = opts.timeoutMs ?? 15 * 60_000;
-  const r = await runWorker(kind, file, timeoutMs);
+  const r = opts.sandbox ? await opts.sandbox.run<ValidatorRun>({ task: "validate", kind, file, timeoutMs }, opts.sandboxWork ?? path.dirname(file), { timeoutMs: timeoutMs + 60_000 }) : await runValidator(kind, file, timeoutMs);
   if (r === "timeout") return checkItem("validator", "warning", "validatorTimeout", { format: name, minutes: Math.round(timeoutMs / 60_000) });
   if (!Array.isArray(r)) return checkItem("validator", "warning", "validatorFailed", { format: name }, r.failed);
   const errors = r.filter((i) => i.severity === "ERROR").length;

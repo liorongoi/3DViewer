@@ -8,6 +8,7 @@
 #   server/        the API server with its production packages
 #   web/           the web app (without the sample data)
 #   deploy/        systemd units, Caddy config, settings templates, backup, restore, base maps
+#   sandbox/rootfs the conversion sandbox's root: the C libraries Node.js and FBX2glTF load
 #   docs/          INSTALL.md and OPERATIONS.md
 #   install.sh     installs or upgrades it (docs/INSTALL.md)
 #   VERSION, SHA256SUMS
@@ -72,6 +73,8 @@ echo "· web app"
 mkdir -p "$STAGE/web"
 (cd "$ROOT/apps/web/dist" && tar --exclude=./samples -cf - .) | tar -xf - -C "$STAGE/web"
 cp -r "$ROOT/deploy" "$STAGE/deploy"
+echo "· conversion sandbox"
+bash "$ROOT/scripts/build-sandbox-rootfs.sh" "$STAGE/sandbox/rootfs" "$STAGE/node/bin/node" "$STAGE/bin/FBX2glTF" "$STAGE/server/node_modules" | sed 's/^/  /'
 mkdir -p "$STAGE/docs"
 cp "$ROOT/docs/INSTALL.md" "$ROOT/docs/OPERATIONS.md" "$ROOT/docs/SECURITY.md" "$STAGE/docs/"
 cp "$ROOT/THIRD_PARTY_LICENSES.md" "$STAGE/"
