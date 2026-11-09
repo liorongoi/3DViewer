@@ -81,7 +81,10 @@ check "SHA256SUMS and folder listings are not served" "[[ \$(https -s -o /dev/nu
 check "a missing tile is a 404, not the web app" "[[ \$(https -s -o /dev/null -w '%{http_code}' https://$HOST/basemaps/site/imagery/9/9/9.png) == 404 ]]"
 
 echo "== 20 users at once, through Caddy and TLS (NFR-05, NFR-01)"
+# Node finds the host by name (curl above is told the address with --resolve).
+grep -q " $HOST # viewer-check" /etc/hosts || echo "127.0.0.1 $HOST # viewer-check" >> /etc/hosts
 node "$ROOT/scripts/load-20-users.cjs" "https://$HOST" "$WORK/ca.pem" > "$WORK/load.log" 2>&1; load=$?
+sed -i "/ $HOST # viewer-check\$/d" /etc/hosts
 sed 's/^/  /' "$WORK/load.log" | tail -25
 check "20 users open a 200 MB model together, each within 5 s and with no errors" "[[ $load -eq 0 ]]"
 
