@@ -34,7 +34,7 @@ check "install.sh finishes and says it is running" "grep -q 'is running: https:/
 echo "  (install took $(( $(date +%s) - t0 )) s)"
 check "/opt/viewer is version $v1" "[[ \$(readlink -e /opt/viewer) == /opt/viewer-releases/$v1 ]]"
 check "the services are running" "systemctl is-active --quiet viewer-server viewer-caddy viewer-backup.timer"
-check "the server runs as user viewer, on the bundled Node" "ps -o user=,args= -C node | grep -q '^viewer .*/opt/viewer/node/bin/node /opt/viewer/server/dist/main.js'"
+check "the server runs as user viewer, on the bundled Node" "pgrep -u viewer -f '^/opt/viewer/node/bin/node /opt/viewer/server/dist/main.js' >/dev/null"
 check "Caddy runs as user viewer, from the bundle" "ps -o user=,args= -C caddy | grep -q '^viewer .*/opt/viewer/bin/caddy run'"
 check "health over HTTPS, with the organisation's certificate" "health_ok"
 check "the web app over HTTPS" "https -f https://$HOST/ | grep -q '<div id=\"root\"'"
@@ -114,7 +114,7 @@ echo "== hardening (systemd-analyze security, lower is better)"
 systemd-analyze security --no-pager viewer-server viewer-caddy 2>/dev/null | tail -3 || true
 
 if [[ $failed -gt 0 ]]; then
-  journalctl -u viewer-server -u viewer-caddy -n 60 --no-pager || true
+  journalctl -u viewer-server -u viewer-caddy -u viewer-backup -n 80 --no-pager | grep -v '"msg":"\(incoming request\|request completed\)"' || true
   echo "$failed FAILED"; exit 1
 fi
 echo "ALL PASSED"

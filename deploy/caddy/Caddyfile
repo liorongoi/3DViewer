@@ -82,9 +82,9 @@ https://{$VIEWER_HOST}:{$HTTPS_PORT:443} {
 		header *.gltf Content-Type "model/gltf+json"
 		header *.glb Content-Type "model/gltf-binary"
 		header *.ktx2 Content-Type "image/ktx2"
+		# No folder listings: file_server lists a folder only when told to with `browse` (and
+		# `browse off` would turn listings on, reading a template file named "off").
 		file_server {
-			# No folder listings.
-			browse off
 			hide .*
 		}
 	}
@@ -103,7 +103,6 @@ https://{$VIEWER_HOST}:{$HTTPS_PORT:443} {
 		encode @json zstd gzip
 		header @json Content-Type "application/json"
 		file_server {
-			browse off
 			hide .* SHA256SUMS
 		}
 	}

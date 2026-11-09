@@ -24,7 +24,15 @@ DATA_DIR="${DATA_DIR:-./data}"
 STORAGE_DIR="${STORAGE_DIR:-$DATA_DIR/storage}"
 ROOT="${1:-${BACKUP_DIR:-/var/backups/viewer}}"
 KEEP="${KEEP:-14}"
-PG_DUMP="${PG_DUMP:-pg_dump}"
+# The newest PostgreSQL client installed: Debian and Ubuntu keep each major version in
+# /usr/lib/postgresql/<n>/bin, RHEL in /usr/pgsql-<n>/bin. The plain `pg_dump` on Debian picks
+# the version of a local cluster, which may be older than the database server.
+pg_bin() {
+  local d
+  d="$(ls -1d /usr/lib/postgresql/*/bin /usr/pgsql-*/bin 2>/dev/null | awk -F'[/-]' '{for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+$/) {print $i "\t" $0; break}}' | sort -n | tail -1 | cut -f2)"
+  if [[ -n "$d" && -x "$d/$1" ]]; then echo "$d/$1"; else echo "$1"; fi
+}
+PG_DUMP="${PG_DUMP:-$(pg_bin pg_dump)}"
 
 fail() { echo "viewer-backup: $*" >&2; exit 1; }
 [[ -d "$STORAGE_DIR/files" ]] || fail "STORAGE_DIR/files ($STORAGE_DIR/files) does not exist. Is VIEWER_ENV right?"
