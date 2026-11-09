@@ -10,6 +10,7 @@ import { useOpenModel } from "../useAppEffects";
 import { fromDrop, fromInput, suggestLayer } from "../upload/read-drop";
 import { Check, ChevronLeft, ChevronRight, Upload, Wand2, X, AlertTriangle, FolderOpen, XCircle } from "./icons";
 import { IconButton, cx } from "./primitives";
+import { useDialog } from "./useDialog";
 import { useLevels } from "../state/classification";
 import { arrangeWhenOpen } from "../layers-standard";
 import { errorText } from "../server/error-text";
@@ -89,6 +90,8 @@ export function UploadWizard() {
   });
   const open = useApp((s) => s.uploadOpen);
   const set = useApp((s) => s.set);
+  const closeRef = useRef<() => void>(() => undefined);
+  const dialog = useDialog<HTMLDivElement>(open, { onClose: () => closeRef.current() });
   const addUpload = useApp((s) => s.addUpload);
   const engine = useEngine();
   const { open: openModel } = useOpenModel();
@@ -171,6 +174,7 @@ export function UploadWizard() {
     setPublishError(null);
     setKeepLocal(false);
   };
+  closeRef.current = close;
 
   const browserCanOpen = report?.ok && report.format !== "fbx";
   const placeOk = place.fromFile && report?.georef ? true : Number.isFinite(parseFloat(place.x)) && Number.isFinite(parseFloat(place.y));
@@ -293,7 +297,7 @@ export function UploadWizard() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-6">
-      <div role="dialog" aria-label={t("upload.title")} className="glass flex h-[min(720px,90vh)] w-[min(980px,96vw)] flex-col rounded-[16px]">
+      <div ref={dialog} role="dialog" aria-modal="true" aria-label={t("upload.title")} className="glass flex h-[min(720px,90vh)] w-[min(980px,96vw)] flex-col rounded-[16px]">
         <header className="flex items-center gap-4 border-b border-line px-5 h-14">
           <h2 className="text-[15px] font-semibold">{t("upload.title")}</h2>
           <ol className="flex flex-1 items-center justify-center gap-1">

@@ -95,7 +95,7 @@ export function Workspace() {
       </div>
 
       {/* right column */}
-      <div className={cx("pointer-events-none fixed end-3 z-20 flex flex-col items-end gap-2 bottom-[120px]", top)}>
+      <div className={cx("pointer-events-none fixed end-3 z-20 flex flex-col items-end gap-2", route === "viewer" ? "bottom-[176px] 2xl:bottom-[120px]" : "bottom-[120px]", top)}>
         <Guard part="tools">
         <PerfHud className="pointer-events-auto" />
         <ViewCube className={cx("pointer-events-auto", fade.ambient)} />
@@ -123,7 +123,8 @@ export function Workspace() {
           <Dock className="pointer-events-auto" />
         </Guard>
       </div>
-      <div className={cx("pointer-events-none fixed z-10 flex flex-col items-end gap-2 end-3", bottom, fade.ambient)}>
+      {/* Below 1536 px the coordinates would cover the end of the dock: they sit above it. */}
+      <div className={cx("pointer-events-none fixed z-10 flex flex-col items-end gap-2 end-3", route === "viewer" ? "bottom-[84px] 2xl:bottom-7" : bottom, fade.ambient)}>
         <Guard part="hud">
           <ScaleBar />
           <CoordinatesHud className="pointer-events-auto" />

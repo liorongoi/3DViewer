@@ -1,17 +1,16 @@
-import { useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { classificationIdOf, useClassOf, useLevels } from "../state/classification";
 import { useLibrary } from "../state/library";
 import { useTranslation } from "react-i18next";
-import { UPDATE_STATUSES, type ModelSummary } from "@viewer/shared";
+import { UPDATE_STATUSES, matchesQuery, type ModelSummary } from "@viewer/shared";
 import { useApp, type Filters } from "../state/store";
 import { Box, Boxes, ChevronDown, FileBox, Search, X } from "./icons";
 import { StatusBadge, cx } from "./primitives";
 
 export function filterModels(models: ModelSummary[], f: Filters, classOf: (m: ModelSummary) => string = (m) => m.classificationId): ModelSummary[] {
-  const q = f.query.trim().toLocaleLowerCase();
   return models.filter(
     (m) =>
-      (!q || [m.name, m.project, m.operation, m.responsibleEntity, m.description].some((s) => s.toLocaleLowerCase().includes(q))) &&
+      matchesQuery(f.query, [m.name, m.project, m.operation, m.responsibleEntity, m.description]) &&
       (!f.project || m.project === f.project) &&
       (!f.operation || m.operation === f.operation) &&
       (!f.status || m.status === f.status) &&
@@ -139,20 +138,47 @@ function FilterChip({ label, value, options, onChange }: { label: string; value:
 
 const FORMAT_LABEL: Record<string, string> = { glb: "GLB", gltf: "glTF", fbx: "FBX", "3dtiles": "3D Tiles" };
 
+/**
+ * True once the element comes within a screen or so of the view, and from then on. A library of a
+ * thousand models would otherwise fetch every turntable (about 50 KB each) as soon as it opens.
+ */
+function useNearView<T extends Element>() {
+  const ref = useRef<T>(null);
+  const [near, setNear] = useState(() => typeof IntersectionObserver === "undefined");
+  useEffect(() => {
+    const el = ref.current;
+    if (near || !el) return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) {
+        setNear(true);
+        io.disconnect();
+      }
+    }, { rootMargin: "600px 0px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [near]);
+  return [ref, near] as const;
+}
+
 export function ModelCard({ m, onOpen, dense }: { m: ModelSummary; onOpen: () => void; dense?: boolean }) {
   const { t } = useTranslation();
   const cls = useClassOf()(m);
   const [thumbOk, setThumbOk] = useState(true);
   const [frame, setFrame] = useState<number | null>(null);
+  const [ref, near] = useNearView<HTMLButtonElement>();
   // The server's turntable when it has one; the bundled samples otherwise.
   const thumb = m.thumbnail ?? `samples/thumbs/${m.id}.webp`;
   const Icon = m.sourceFormat === "3dtiles" ? Boxes : m.sourceFormat === "fbx" ? FileBox : Box;
   return (
     <button
+      ref={ref}
       type="button"
+      data-model-card
       onClick={onOpen}
       className={cx(
         "group relative flex w-full flex-col overflow-hidden rounded-[10px] border border-line bg-s2 text-start transition-[transform,border-color] duration-150 hover:-translate-y-0.5 hover:border-line-strong",
+        // Cards out of view are not laid out or painted (a library can hold thousands).
+        "[content-visibility:auto] [contain-intrinsic-size:auto_240px]",
         dense && "flex-row",
       )}
       onPointerMove={(e) => {
@@ -163,7 +189,7 @@ export function ModelCard({ m, onOpen, dense }: { m: ModelSummary; onOpen: () =>
     >
       {cls && <span aria-label={cls.label} data-content className="absolute inset-x-0 top-0 z-10 h-1.5" style={{ background: cls.color }} />}
       <div className={cx("relative overflow-hidden bg-[radial-gradient(120%_90%_at_50%_30%,#2a2e36,#121417)]", dense ? "h-20 w-28 shrink-0" : "aspect-[16/9] w-full")}>
-        {thumbOk ? (
+        {!near && thumbOk ? null : thumbOk ? (
           <div
             role="img"
             data-content
@@ -207,7 +233,8 @@ export function ModelCard({ m, onOpen, dense }: { m: ModelSummary; onOpen: () =>
 
 export function LibraryGrid({ onOpen }: { onOpen: (id: string) => void }) {
   const { t } = useTranslation();
-  const models = useFilteredModels();
+  // Deferred: with a thousand cards, typing in the search stays quick while the grid catches up.
+  const models = useDeferredValue(useFilteredModels());
   if (!models.length) return <p className="p-8 text-center text-fg3">{t("library.empty")}</p>;
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">

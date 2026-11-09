@@ -12,6 +12,7 @@ import { copyText } from "../clipboard";
 import { useCoordinates } from "../useCoordinates";
 import { AlertTriangle, Bookmark, Copy, Crosshair, Eye, EyeOff, Info, Orbit, Pencil, Play, Route, Ruler, StopCircle, Trash2, Video, X } from "./icons";
 import { IconButton, Panel, Segmented, StatusBadge, cx } from "./primitives";
+import { useTabs } from "./useTabs";
 import { AnalysisTab } from "./AnalysisTab";
 import { errorText } from "../server/error-text";
 
@@ -20,10 +21,11 @@ export function SidePanel({ onClose, className }: { onClose?: () => void; classN
   const { t } = useTranslation();
   const tab = useApp((s) => s.rightTab);
   const set = useApp((s) => s.set);
+  const tabs = useTabs("side", ["measure", "analysis", "props", "tours"] as const, tab, (id) => set({ rightTab: id }));
   return (
     <Panel className={cx("w-[340px] max-h-full", className)}>
       <header className="flex h-11 shrink-0 items-center gap-1 ps-1.5 pe-1.5 border-b border-line">
-        <div role="tablist" className="flex flex-1 gap-0.5">
+        <div {...tabs.list} className="flex flex-1 gap-0.5">
           {(
             [
               ["measure", t("viewer.measurements")],
@@ -34,10 +36,8 @@ export function SidePanel({ onClose, className }: { onClose?: () => void; classN
           ).map(([id, label]) => (
             <button
               key={id}
-              role="tab"
-              aria-selected={tab === id}
+              {...tabs.tab(id)}
               type="button"
-              onClick={() => set({ rightTab: id })}
               className={cx(
                 "h-8 whitespace-nowrap rounded-[6px] px-2 text-[13px] font-medium",
                 tab === id ? "bg-s3 text-fg" : "text-fg3 hover:text-fg",
@@ -53,7 +53,7 @@ export function SidePanel({ onClose, className }: { onClose?: () => void; classN
           </IconButton>
         )}
       </header>
-      <div className="min-h-0 flex-1 overflow-auto scrollbar-thin">
+      <div {...tabs.panel(tab)} className="min-h-0 flex-1 overflow-auto scrollbar-thin">
         {tab === "measure" && <MeasurementsTab />}
         {tab === "analysis" && <AnalysisTab />}
         {tab === "props" && <PropertiesTab />}

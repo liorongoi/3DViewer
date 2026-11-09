@@ -177,7 +177,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [shell, layers, tools, accuracy]
+        suite: [shell, layers, tools, accuracy, a11y, outbound]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -209,6 +209,17 @@ jobs:
       - name: Versions, details edited in the viewer, and share links with their version and measurements (WP 4.4, 4.6)
         if: matrix.suite == 'shell'
         run: node scripts/check-versions.cjs
+      - name: The library with a thousand models and 5,000 versions (WP 6.3, NFR-06)
+        if: matrix.suite == 'shell'
+        run: node scripts/check-library-scale.cjs
+      - name: Every screen by keyboard and screen reader, in both languages and themes, against the server (WP 6.2, NFR-17, NFR-16)
+        if: matrix.suite == 'a11y'
+        run: node scripts/check-a11y.cjs check-out/a11y
+      - name: Zero outbound connections in a full session, by packet capture in an isolated network (AC-10, NFR-12)
+        if: matrix.suite == 'outbound'
+        run: |
+          sudo apt-get install -y -q tcpdump > /dev/null
+          sudo -E env PATH="$PATH" bash scripts/check-outbound.sh check-out/outbound
       - name: Layers (AC-05)
         if: matrix.suite == 'layers'
         run: node scripts/check-layers.cjs

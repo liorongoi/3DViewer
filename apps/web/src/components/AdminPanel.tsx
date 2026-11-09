@@ -10,6 +10,7 @@ import { refreshLibrary } from "../state/library";
 import { useApp } from "../state/store";
 import { AlertTriangle, ArrowDown, ArrowUp, Check, Download, HardDrive, Layers, Lock, Map, Plus, ShieldCheck, Trash2, X } from "./icons";
 import { IconButton, cx } from "./primitives";
+import { useDialog } from "./useDialog";
 import { errorText } from "../server/error-text";
 
 /**
@@ -37,19 +38,14 @@ export function AdminPanel() {
       .catch(() => setState("signed-out"));
   }, [open, api]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && set({ adminOpen: false });
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, set]);
+  const ref = useDialog<HTMLDivElement>(open, { onClose: () => set({ adminOpen: false }) });
 
   if (!open) return null;
   const close = () => set({ adminOpen: false });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-6">
-      <div role="dialog" aria-label={t("admin.title")} className="flex h-[min(760px,92vh)] border border-line bg-s1solid shadow-2xl w-[min(1040px,96vw)] flex-col rounded-[16px]">
+      <div ref={ref} role="dialog" aria-modal="true" aria-label={t("admin.title")} className="flex h-[min(760px,92vh)] border border-line bg-s1solid shadow-2xl w-[min(1040px,96vw)] flex-col rounded-[16px]">
         <header className="flex h-14 items-center gap-3 border-b border-line px-5">
           <ShieldCheck size={18} className="text-accent" />
           <h2 className="flex-1 text-[15px] font-semibold">{t("admin.title")}</h2>
@@ -691,7 +687,7 @@ function DeleteTab({ api, fail }: { api: AdminApi; fail: Fail }) {
               onClick={() => (setPick(x.id), setTyped(""))}
               className={cx("flex w-full items-center gap-2 border-b border-line px-3 py-2 text-start last:border-b-0", pick === x.id ? "bg-accent-soft" : "hover:bg-s3")}
             >
-              <span className="min-w-0 flex-1 truncate font-medium">{x.name}</span>
+              <span className="min-w-0 flex-1 truncate font-medium" dir="auto" data-content>{x.name}</span>
               <span className="num text-[11px] text-fg3">
                 v{x.version} · {fmtBytes(x.sizeBytes)}
               </span>
@@ -802,7 +798,8 @@ function AuditTab({ api, fail }: { api: AdminApi; fail: Fail }) {
         </button>
       </div>
       {check && <p className={cx("mb-3 text-[12px]", chainBroken ? "text-[var(--bad)]" : "text-fg2")}>{check}</p>}
-      <div className="overflow-x-auto rounded-[10px] border border-line">
+      {/* A wide table scrolls sideways: the keyboard can reach it to scroll (WCAG 2.1.1). */}
+      <div role="region" tabIndex={0} aria-label={t("admin.tabs.audit")} className="overflow-x-auto rounded-[10px] border border-line">
         <table className="w-full text-[12px]">
           <thead className="bg-s2 text-start text-fg3">
             <tr>
@@ -815,7 +812,7 @@ function AuditTab({ api, fail }: { api: AdminApi; fail: Fail }) {
           </thead>
           <tbody>
             {(rows ?? []).map((r) => (
-              <tr key={r.seq} className="border-t border-line align-top">
+              <tr key={r.seq} className="border-t border-line align-top" data-content>
                 <td className="num px-2 py-1 text-fg3">{r.seq}</td>
                 <td className="num whitespace-nowrap px-2 py-1">{new Date(r.at).toLocaleString()}</td>
                 <td className="whitespace-nowrap px-2 py-1 font-mono" dir="ltr">

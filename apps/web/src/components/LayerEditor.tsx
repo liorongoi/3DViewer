@@ -7,6 +7,7 @@ import { putLayerManifest } from "../server/api";
 import { STANDARD_LAYERS, standardGroups } from "../layers-standard";
 import { ArrowDown, ArrowUp, FolderPlus, GripVertical, IndentDecrease, IndentIncrease, Merge, Wand2, X } from "./icons";
 import { IconButton, cx } from "./primitives";
+import { useDialog } from "./useDialog";
 import { errorText } from "../server/error-text";
 
 type Drop = { key: string; where: "before" | "after" | "inside" };
@@ -30,7 +31,7 @@ export function LayerEditor({ onClose }: { onClose: () => void }) {
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [focusKey, setFocusKey] = useState<string | null>(null);
-  const box = useRef<HTMLDivElement>(null);
+  const box = useDialog<HTMLDivElement>(true, { onClose: () => !saving && onClose() });
   const standard = STANDARD_LAYERS.map((s) => t(`layerEditor.standard.${s}`));
   const changed = JSON.stringify(toManifest(tree)) !== JSON.stringify(toManifest(start));
 
@@ -159,7 +160,6 @@ export function LayerEditor({ onClose }: { onClose: () => void }) {
         aria-label={t("layerEditor.title")}
         data-testid="layer-editor"
         className="glass flex max-h-[86vh] w-[640px] max-w-[94vw] flex-col rounded-[14px]"
-        onKeyDown={(e) => e.key === "Escape" && (e.stopPropagation(), !saving && onClose())}
       >
         <header className="flex items-start gap-3 border-b border-line p-4 pb-3">
           <div className="min-w-0 flex-1">

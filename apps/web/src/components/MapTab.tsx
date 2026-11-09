@@ -51,7 +51,7 @@ function Choice({ checked, label, note, onSelect, disabled }: { checked: boolean
       <span className={cx("grid h-3.5 w-3.5 place-items-center rounded-full border", checked ? "border-accent" : "border-line-strong")}>
         {checked && <span className="h-1.5 w-1.5 rounded-full bg-accent" />}
       </span>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span className="min-w-0 flex-1 truncate" dir="auto">{label}</span>
       {note && <span className="rounded bg-s3 px-1 text-[10px] uppercase tracking-wide text-fg3">{note}</span>}
     </button>
   );

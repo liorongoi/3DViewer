@@ -70,15 +70,15 @@ Every requirement in the SRS mapped to the work package (WP) that builds it and 
 | NFR-02 | 3D Tiles first view ≤ 3 s | 1.5, 6.3 | Perf run |
 | NFR-03 | ≥ 60 fps average, never < 30 | 1.5, 6.3 | AC-04; perf HUD export |
 | NFR-04 | VRAM budget 10 GB default, no crash | 1.5 | Budget overflow test |
-| NFR-05 | 20 concurrent users | 3.7, 6.3 | k6 load test |
-| NFR-06 | ≥ 10 TB, ≥ 5,000 versions | 3.1, 6.3 | Synthetic storage test |
+| NFR-05 | 20 concurrent users | 3.7, 6.3 | `scripts/load-20-users.cjs` against the installed server, through Caddy and TLS, in `check-server-install.sh` (CI `server-install`) |
+| NFR-06 | ≥ 10 TB, ≥ 5,000 versions | 3.1, 6.3 | Synthetic storage test: `apps/server/src/storage-scale.test.ts` on PostgreSQL (CI `server-postgres`); `scripts/check-library-scale.cjs` in the browser (CI `browser (shell)`) |
 | NFR-07 | Error ≤ 0.1% or 1 cm | 2.4, 2.7 | AC-06 |
 | NFR-08 | Matches Khronos reference viewer | 1.4 | AC-03 |
 | NFR-09 | ≥ 99.5% availability in working hours | 5.6, 6.6 | Monitoring + runbook; pilot |
 | NFR-10 | No data loss on failed upload/conversion | 3.2, 3.4 | Kill-worker and cut-network tests |
 | NFR-11 | Every action logged with workstation, IP, time; ≥ 1 year | 3.8 | AC-08 audit check |
-| NFR-12 | Zero outbound connections | 4.3 (plan), 6.4 | AC-10; `--network=none` CI job |
-| NFR-13 | TLS 1.2+ with org certificates | 3.7, 5.6 | TLS scan |
+| NFR-12 | Zero outbound connections | 4.3 (plan), 6.4 | AC-10: packet capture of a full session in an isolated network, `scripts/check-outbound.sh` (CI `browser (outbound)`); EXE refuses other hosts, `check-desktop.cjs` |
+| NFR-13 | TLS 1.2+ with org certificates | 3.7, 5.6, 6.4 | `check-server-install.sh`: TLS 1.2/1.3 only, forward-secret AEAD suites only, HSTS (CI `server-install`) |
 | NFR-14 | AV scan + sandboxed parsing | 3.3, 3.4 | Hostile file tests; pen test |
 | NFR-15 | 4 of 5 new users finish core task ≤ 5 min | 0.7, 6.5 | Usability test |
 | NFR-16 | Hebrew (RTL) and English, live switch, remembered | 1.8, 6.1 | Native-speaker review; RTL visual tests |
@@ -92,7 +92,7 @@ Every requirement in the SRS mapped to the work package (WP) that builds it and 
 | Item | Covered by |
 |---|---|
 | C-1 No internet | Plan 4.3; offline mirror (0.1); bundled fonts/HDRs; AC-10 |
-| C-2 Licences reviewed | WP 0.2; licence column in plan section 3; SBOM per release |
+| C-2 Licences reviewed | WP 0.2; licence column in plan section 3; `THIRD_PARTY_LICENSES.md` and a CycloneDX SBOM (`scripts/sbom.cjs`) in each release, both checked against the allowed list; see [SECURITY.md](./SECURITY.md) |
 | C-3 FBX proprietary | WP 0.4 bake-off without Autodesk SDK |
 | C-4 EXE = web features | Same build (AD-01/02); parity checklist in 5.1 |
 | AC-01 … AC-10 | Gates G1–G6 (plan 5.2); final run in WP 6.7 |

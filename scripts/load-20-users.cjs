@@ -94,7 +94,14 @@ const fmt = (ms) => `${(ms / 1000).toFixed(2)} s`;
   console.log(`Published in ${fmt(Date.now() - t)} (upload, checks, validators)`);
   fs.unlinkSync(file);
   const model = await json("GET", `/api/models/${st.modelId}`);
-  const glbUrl = `/${model.source.url}`;
+  // The server's optimiser shrinks this test file (one triangle and padding) to a few hundred
+  // bytes; the upload as sent is kept beside it under original/, from the same route with the same
+  // caching. The test reads whichever of the two is the full 200 MB.
+  const published = `/${model.source.url}`;
+  const original = published.replace(/\/([^/]+)$/, "/original/$1");
+  let glbUrl = published;
+  if ((await request("HEAD", published)).headers["content-length"] !== String(SIZE)) glbUrl = original;
+  console.log(`Reading ${glbUrl === original ? "the original upload (the optimised file is smaller)" : "the published file"}: ${glbUrl}`);
 
   // 2. Twenty users. One scenario has all of them open the model at the same instant (the worst
   // case: 4 GB requested at once, which on a 1 Gbit/s network takes 34 s whatever the server

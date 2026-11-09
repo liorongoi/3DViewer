@@ -5,7 +5,8 @@
 #   sudo bash scripts/check-server-install.sh <bundle-1.tar.gz> <bundle-2.tar.gz> <DATABASE_URL>
 #
 # Bundle 2 must be a later version than bundle 1. It uses the name viewer.test (added to
-# /etc/hosts) with a certificate from a test CA it makes, and the real ports 80 and 443.
+# /etc/hosts) with a certificate from a test CA it makes, and the real ports 80 and 443. It also runs
+# the 20-user load test (scripts/load-20-users.cjs) against the installed system.
 set -uo pipefail
 B1="$(readlink -f "$1")" B2="$(readlink -f "$2")" DB="$3"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -41,6 +42,10 @@ check "the web app over HTTPS" "https -f https://$HOST/ | grep -q '<div id=\"roo
 check "plain HTTP redirects to HTTPS" "[[ \$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' --resolve $HOST:80:127.0.0.1 http://$HOST/x) == '301 https://$HOST:443/x' ]]"
 check "HSTS and nosniff are sent" "https -sI https://$HOST/ | grep -qi '^strict-transport-security' && https -sI https://$HOST/ | grep -qi '^x-content-type-options: nosniff'"
 check "TLS 1.1 is refused" "! curl -s -o /dev/null --tls-max 1.1 --cacert $WORK/ca.pem --resolve $HOST:443:127.0.0.1 https://$HOST/"
+tls12() { echo | openssl s_client -connect 127.0.0.1:443 -servername "$HOST" -tls1_2 "$@" 2>/dev/null | grep -q 'Cipher is [A-Z0-9]'; }
+check "TLS 1.2 and TLS 1.3 are offered" "https -so /dev/null --tlsv1.2 --tls-max 1.2 https://$HOST/ && https -so /dev/null --tlsv1.3 https://$HOST/"
+check "TLS 1.2 offers only forward-secret AEAD suites (ECDHE with AES-GCM or ChaCha20)" "tls12 -cipher 'ECDHE+AESGCM' && ! tls12 -cipher 'ALL:!AESGCM:!CHACHA20:@SECLEVEL=0' && ! tls12 -cipher 'kRSA:@SECLEVEL=0'"
+check "the release carries its SBOM (CycloneDX), with the server's packages, Node.js and Caddy" "/opt/viewer/node/bin/node -e 'const b = require(\"/opt/viewer/sbom.cdx.json\"); const n = b.components.map((c) => c.name); process.exit(b.bomFormat === \"CycloneDX\" && [\"fastify\", \"cesium\", \"fbx2gltf\", \"node\", \"caddy\"].every((x) => n.includes(x)) ? 0 : 1)'"
 check "the settings are root:viewer 0640" "[[ \$(stat -c '%U:%G %a' /etc/viewer/viewer.env) == 'root:viewer 640' ]]"
 check "the first admin password is root-only" "[[ \$(stat -c '%U %a' /etc/viewer/first-admin-password) == 'root 600' ]]"
 check "the program is owned by root and not writable by viewer" "! sudo -u viewer test -w /opt/viewer/server/dist/main.js"
@@ -74,6 +79,14 @@ check "a terrain tile comes gzipped as quantized-mesh" "https -sI https://$HOST/
 check "the terrain's layer.json comes through" "https -f https://$HOST/basemaps/site/terrain/layer.json | grep -q quantized-mesh"
 check "SHA256SUMS and folder listings are not served" "[[ \$(https -s -o /dev/null -w '%{http_code}' https://$HOST/basemaps/site/SHA256SUMS) == 404 && \$(https -s -o /dev/null -w '%{http_code}' https://$HOST/basemaps/site/) == 404 ]]"
 check "a missing tile is a 404, not the web app" "[[ \$(https -s -o /dev/null -w '%{http_code}' https://$HOST/basemaps/site/imagery/9/9/9.png) == 404 ]]"
+
+echo "== 20 users at once, through Caddy and TLS (NFR-05, NFR-01)"
+# Node finds the host by name (curl above is told the address with --resolve).
+grep -q " $HOST # viewer-check" /etc/hosts || echo "127.0.0.1 $HOST # viewer-check" >> /etc/hosts
+node "$ROOT/scripts/load-20-users.cjs" "https://$HOST" "$WORK/ca.pem" > "$WORK/load.log" 2>&1; load=$?
+sed -i "/ $HOST # viewer-check\$/d" /etc/hosts
+sed 's/^/  /' "$WORK/load.log" | tail -25
+check "20 users open a 200 MB model together, each within 5 s and with no errors" "[[ $load -eq 0 ]]"
 
 echo "== backup"
 systemctl start viewer-backup
