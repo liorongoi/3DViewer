@@ -47,6 +47,8 @@ describe.runIf(run)("conversion sandbox (podman)", () => {
     dir = await mkdtemp(path.join(tmpdir(), "viewer-sandbox-"));
     const rootfs = path.join(dir, "rootfs");
     execFileSync("bash", [path.join(ROOT, "scripts/build-sandbox-rootfs.sh"), rootfs, process.execPath, fbx2gltf, path.join(ROOT, "node_modules/.pnpm")], { stdio: "inherit" });
+    // Read-only, as the release folder is to the server under systemd.
+    execFileSync("chmod", ["-R", "a-w", rootfs]);
     // From source the server's packages are the workspace's: the whole checkout is mounted read-only.
     sandbox = new PodmanSandbox({ podman: process.env.PODMAN ?? "podman", rootfs, stateDir: path.join(dir, "podman"), mounts: [ROOT, path.dirname(fbx2gltf)] });
     db = await openPglite();
@@ -60,6 +62,7 @@ describe.runIf(run)("conversion sandbox (podman)", () => {
   afterAll(async () => {
     await app?.close();
     await db?.close();
+    if (dir) execFileSync("chmod", ["-R", "u+w", dir]);
     await rm(dir, { recursive: true, force: true });
   });
 

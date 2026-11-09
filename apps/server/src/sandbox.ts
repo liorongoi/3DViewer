@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, realpath } from "node:fs/promises";
+import { chmod, cp, lstat, mkdir, readdir, realpath, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PermanentError } from "./permanent.ts";
@@ -68,9 +68,30 @@ export class PodmanSandbox implements Sandbox {
   readonly kind = "podman";
   private mounts: Promise<string[]>;
   private opts: PodmanOptions;
+  private root: Promise<string> | undefined;
   constructor(opts: PodmanOptions) {
     this.opts = opts;
     this.mounts = programMounts(opts.mounts);
+  }
+
+  /**
+   * The root the containers use: a copy of the release's, under the state folder. podman writes
+   * into a root before it mounts it read-only (the /etc/mtab link, the mount points), and the
+   * release folder is read-only to the server under systemd. The container still cannot write it.
+   */
+  private rootfs(): Promise<string> {
+    this.root ??= (async () => {
+      const dest = path.join(this.opts.stateDir, "rootfs");
+      await rm(dest, { recursive: true, force: true });
+      await cp(this.opts.rootfs, dest, { recursive: true, verbatimSymlinks: true });
+      // The copy keeps the release's modes; its folders must be the server's to write.
+      for (const f of [".", ...(await readdir(dest, { recursive: true }))]) {
+        const st = await lstat(path.join(dest, f));
+        if (st.isDirectory()) await chmod(path.join(dest, f), st.mode | 0o700);
+      }
+      return dest;
+    })();
+    return this.root;
   }
 
   /**
@@ -102,7 +123,7 @@ export class PodmanSandbox implements Sandbox {
       ...ro,
       "--volume", `${work}:${work}:rw`,
       "--workdir", work,
-      "--rootfs", this.opts.rootfs,
+      "--rootfs", await this.rootfs(),
       // Real paths: only those are mounted (/opt/viewer is a link to the release in use).
       await realpath(process.execPath), await realpath(STEP), JSON.stringify(step.task === "fbx" ? { ...step, bin: await realpath(step.bin) } : step),
     ];

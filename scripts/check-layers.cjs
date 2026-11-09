@@ -203,6 +203,17 @@ let current = null;
         return false;
       }));
 
+    // A pick right after the parts are shown again can run before the model is back in the
+    // frame's pick pass (seen in CI: the grid missed, then a pick a moment later hit). A part that
+    // can be clicked is found within a few frames.
+    const modelHitSoon = async () => {
+      for (let i = 0; i < 5; i++) {
+        if (await modelHit()) return true;
+        await page.waitForTimeout(1000);
+      }
+      return false;
+    };
+
     // When a click misses: what the view holds, for the check's detail.
     const viewState = () =>
       page.evaluate(() => {
@@ -277,7 +288,7 @@ let current = null;
 
     // ---- LYR-03: show all / hide all ----
     {
-      const hit = await modelHit();
+      const hit = await modelHitSoon();
       check(hit, T("the model can be clicked before Hide all"), hit ? undefined : await viewState());
     }
     await button("Hide all").click();
@@ -289,7 +300,7 @@ let current = null;
     await page.waitForTimeout(400);
     rows = await matches("Show all");
     {
-      const hit = await modelHit();
+      const hit = await modelHitSoon();
       check(rows.every((r) => r.shown) && hit, T("Show all shows every part again"), hit ? undefined : await viewState());
     }
 

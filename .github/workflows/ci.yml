@@ -35,6 +35,8 @@ jobs:
         run: pnpm -r --if-present run test
       - name: Build
         run: pnpm -r --if-present run build
+      - name: The FBX sample
+        run: test -f apps/web/public/samples/fbx/stanford-bunny.fbx || (mkdir -p apps/web/public/samples/fbx && curl -sfL --retry 3 -o apps/web/public/samples/fbx/stanford-bunny.fbx https://raw.githubusercontent.com/mrdoob/three.js/r170/examples/models/fbx/stanford-bunny.fbx)
       # NFR-14: conversion steps in rootless podman containers with no network, as this user.
       - name: Conversion sandbox (rootless podman)
         run: |
@@ -152,6 +154,8 @@ jobs:
         run: |
           VIEWER_VERSION=0.6.${{ github.run_number }} bash scripts/build-server-bundle.sh
           VIEWER_VERSION=0.6.${{ github.run_number }}-next bash scripts/build-server-bundle.sh
+      - name: The FBX sample
+        run: test -f apps/web/public/samples/fbx/stanford-bunny.fbx || (mkdir -p apps/web/public/samples/fbx && curl -sfL --retry 3 -o apps/web/public/samples/fbx/stanford-bunny.fbx https://raw.githubusercontent.com/mrdoob/three.js/r170/examples/models/fbx/stanford-bunny.fbx)
       # The conversion sandbox (NFR-14) uses podman from the OS packages, as a site installs it.
       - name: Podman
         run: command -v podman || sudo apt-get install -y podman
@@ -236,6 +240,12 @@ jobs:
       - name: Layer editor, saved for everyone and carried to the next version, and the upload wizard's standard names (WP 4.3)
         if: matrix.suite == 'layers'
         run: node scripts/check-layer-editor.cjs
+      - name: Real map servers, MapServer and MapProxy, and public WMTS and WMS (WP 1.9, 3.9, GEO-03)
+        if: matrix.suite == 'layers'
+        run: |
+          sudo apt-get install -y -q cgi-mapserver > /dev/null
+          python3 -m venv "$RUNNER_TEMP/mapproxy" && "$RUNNER_TEMP/mapproxy/bin/pip" install -q MapProxy
+          MAPSERV=/usr/lib/cgi-bin/mapserv MAPPROXY="$RUNNER_TEMP/mapproxy/bin/mapproxy-util" ONLINE=1 node scripts/check-map-servers.cjs
       - name: A fault in one part keeps the rest working
         if: matrix.suite == 'tools'
         run: node scripts/check-faults.cjs
