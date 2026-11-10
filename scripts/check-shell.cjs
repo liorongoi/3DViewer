@@ -25,7 +25,7 @@ const AXE = fs.readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
 // Words that stay in Latin letters in the Hebrew interface: formats, standards, units, codes,
 // product and data names.
 const LATIN_OK = new Set(
-  "VIEWER GLB glTF gltf FBX OBJ 3D Tiles tileset json zip KTX2 PNG JPG CSV GeoJSON GeoTIFF COG KML KMZ WMTS WMS XYZ TMS SHP shapefile EPSG WGS ITM UTM N S E W km m cm mm ft in MB GB KB TB fps Ctrl Shift Alt Esc Enter Tab Space PgUp PgDn Home End F Del Backspace Cesium CesiumJS OpenStreetMap OSM Esri AWS Terrarium Lyon Tarn Jerusalem Natural Earth ISO TOP API IP SIEM CEF HTTPS URL ID AA WCAG".split(" "),
+  "HOLO GLB glTF gltf FBX OBJ 3D Tiles tileset json zip KTX2 PNG JPG CSV GeoJSON GeoTIFF COG KML KMZ WMTS WMS XYZ TMS SHP shapefile EPSG WGS ITM UTM N S E W km m cm mm ft in MB GB KB TB fps Ctrl Shift Alt Esc Enter Tab Space PgUp PgDn Home End F Del Backspace Cesium CesiumJS OpenStreetMap OSM Esri AWS Terrarium Lyon Tarn Jerusalem Natural Earth ISO TOP API IP SIEM CEF HTTPS URL ID AA WCAG".split(" "),
 );
 
 const LABELS = {

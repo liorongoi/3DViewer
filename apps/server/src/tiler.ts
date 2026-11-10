@@ -441,7 +441,7 @@ function writeGlb(geos: Geo[], mats: Awaited<ReturnType<typeof exportMaterials>>
   const local = new Map<number, number>();
   for (const g of geos) for (const f of g.fid) if (!local.has(f)) local.set(f, local.size);
   const gltf: Record<string, unknown> & { materials: unknown[]; textures: unknown[]; images: unknown[]; samplers: unknown[] } = {
-    asset: { version: "2.0", generator: "VIEWER tiler" },
+    asset: { version: "2.0", generator: "HOLO tiler" },
     scene: 0,
     scenes: [{ nodes: [0] }],
     nodes: [{ mesh: 0 }],
@@ -580,7 +580,7 @@ export async function tileModel(file: string, outDir: string, opts: TileOptions 
   const root = await build(all, 1);
   const diag = Math.hypot(root.max[0]! - root.min[0]!, root.max[1]! - root.min[1]!, root.max[2]! - root.min[2]!);
   const tileset = {
-    asset: { version: "1.1", generator: "VIEWER tiler" },
+    asset: { version: "1.1", generator: "HOLO tiler" },
     geometricError: Math.max(root.error * 2, diag),
     root: { ...root.json, refine: "REPLACE" },
     // The original's layer tree, for the viewer's Layers panel; each tile's features name their node.

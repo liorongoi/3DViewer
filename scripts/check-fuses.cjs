@@ -1,5 +1,5 @@
-// WP 5.5: the packaged VIEWER.exe has its Electron fuses set as electron-builder.config.cjs asks.
-//   node scripts/check-fuses.cjs apps/desktop/release/win-unpacked/VIEWER.exe
+// WP 5.5: the packaged HOLO.exe has its Electron fuses set as electron-builder.config.cjs asks.
+//   node scripts/check-fuses.cjs apps/desktop/release/win-unpacked/HOLO.exe
 const path = require("node:path");
 const { getCurrentFuseWire, FuseV1Options } = require(path.join(__dirname, "../apps/desktop/node_modules/@electron/fuses"));
 

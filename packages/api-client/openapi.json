@@ -1,7 +1,7 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "VIEWER library API",
+    "title": "HOLO library API",
     "version": "0.1.0",
     "description": "Library, versions and audit for the 3D Intelligence Model Viewer."
   },

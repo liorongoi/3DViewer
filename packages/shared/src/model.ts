@@ -108,7 +108,7 @@ export interface BaseMapSource {
   /**
    * xyz and terrarium: a template with {z}, {x} and {y}. tms and quantized-mesh: the service root.
    * wmts: a GetCapabilities address, or the service address with layer, style, matrixSet and format.
-   * A path without a scheme is on the VIEWER server.
+   * A path without a scheme is on the HOLO server.
    */
   url: string;
   layer?: string;

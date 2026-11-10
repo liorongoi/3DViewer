@@ -7,7 +7,7 @@ import path from "node:path";
  * per machine, by whichever of these fits their tooling; the first one found wins:
  *
  * 1. VIEWER_SERVER_URL in the environment (testing, or a launcher script);
- * 2. viewer.json next to VIEWER.exe: {"serverUrl": "https://viewer.internal"} (the installer
+ * 2. viewer.json next to HOLO.exe: {"serverUrl": "https://viewer.internal"} (the installer
  *    writes it when given SERVER_URL=...);
  * 3. %ProgramData%\VIEWER\viewer.json, the same file for every user of the machine;
  * 4. the registry: ServerUrl under HKLM\Software\VIEWER, then HKCU\Software\VIEWER (Group Policy).

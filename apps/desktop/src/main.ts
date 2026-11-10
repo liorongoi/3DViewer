@@ -8,7 +8,7 @@ import { SERVER_BASE, SERVER_SCHEME, proxyServer } from "./server-proxy.js";
 import { convertFbx, findConverter, stopAll } from "./fbx.js";
 
 /**
- * VIEWER desktop app (plan WP 5.1, 5.3, 5.4). It loads the same web build as the portal from a
+ * HOLO desktop app (plan WP 5.1, 5.3, 5.4). It loads the same web build as the portal from a
  * private viewer-app:// origin. Local files are reached only through viewer-file://, for what
  * the user opened; the library server only through viewer-server://, forwarded to the one
  * address IT configured (config.ts). Hardened: context isolation, sandbox, no Node in the page,
@@ -23,7 +23,7 @@ const APP = "viewer-app";
 const webDir = dev.VIEWER_WEB_DIR ?? (app.isPackaged ? path.join(process.resourcesPath, "web") : path.resolve(here, "../../web/dist"));
 const exeDir = app.isPackaged ? path.dirname(process.execPath) : path.resolve(here, "..");
 const config = readConfig(machineSources(exeDir));
-for (const p of config.problems) console.warn(`VIEWER configuration: ${p}`);
+for (const p of config.problems) console.warn(`HOLO configuration: ${p}`);
 
 protocol.registerSchemesAsPrivileged([
   { scheme: APP, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, codeCache: true } },
@@ -70,7 +70,7 @@ async function createWindow(): Promise<BrowserWindow> {
     width: 1600,
     height: 960,
     backgroundColor: "#0E0F12",
-    title: "VIEWER",
+    title: "HOLO",
     webPreferences: {
       preload: path.join(here, "preload.cjs"),
       contextIsolation: true,
@@ -140,7 +140,7 @@ async function start(): Promise<void> {
   ipcMain.handle("viewer:openPaths", async (_e, paths: unknown) => listPaths(Array.isArray(paths) ? paths.filter((p): p is string => typeof p === "string") : []));
   // Local FBX (WP 5.2): converts a file the user opened, never a path the page names.
   const converter = findConverter({ env: dev, packaged: app.isPackaged, resourcesPath: process.resourcesPath, here });
-  const fbxRoot = path.join(app.getPath("temp"), "VIEWER-fbx");
+  const fbxRoot = path.join(app.getPath("temp"), "HOLO-fbx");
   // Only one copy of the app runs, so what is left here is from an earlier run.
   fs.rmSync(fbxRoot, { recursive: true, force: true });
   app.on("will-quit", () => {

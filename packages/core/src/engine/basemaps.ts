@@ -125,7 +125,7 @@ export const catalogue = signal<{ baseMaps: BaseMapDef[]; terrains: TerrainDef[]
 
 const isCapabilities = (u: string) => /\.xml(\?|$)|request=getcapabilities/i.test(u);
 
-/** One admin-configured imagery source. `base` resolves paths on the VIEWER server. */
+/** One admin-configured imagery source. `base` resolves paths on the HOLO server. */
 export function siteBaseMap(s: BaseMapSource, base: string): BaseMapDef {
   const url = new URL(s.url, base.endsWith("/") ? base : `${base}/`).href.replace(/%7B/gi, "{").replace(/%7D/gi, "}");
   const credit = s.attribution ? new Credit(s.attribution) : undefined;

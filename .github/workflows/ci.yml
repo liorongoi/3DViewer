@@ -77,16 +77,16 @@ jobs:
       - name: Installer
         run: pnpm --filter @viewer/desktop dist
       - name: Electron fuses
-        run: node scripts/check-fuses.cjs apps/desktop/release/win-unpacked/VIEWER.exe
+        run: node scripts/check-fuses.cjs apps/desktop/release/win-unpacked/HOLO.exe
       - name: Install for this user, start, uninstall
         shell: pwsh
         run: |
-          $setup = (Get-ChildItem apps/desktop/release -Filter "VIEWER-Setup-*.exe").FullName
+          $setup = (Get-ChildItem apps/desktop/release -Filter "HOLO-Setup-*.exe").FullName
           if ($env:CSC_LINK) { ./scripts/check-installer.ps1 -Installer $setup -RequireSignature } else { ./scripts/check-installer.ps1 -Installer $setup }
       - uses: actions/upload-artifact@v4
         with:
-          name: VIEWER-Setup-windows
-          path: apps/desktop/release/VIEWER-Setup-*.exe
+          name: HOLO-Setup-windows
+          path: apps/desktop/release/HOLO-Setup-*.exe
           retention-days: 14
 
   # WP 3.1: the server tests again against a real PostgreSQL (unit tests use embedded PGlite).

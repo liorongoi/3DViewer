@@ -1,4 +1,4 @@
-# VIEWER — 3D Intelligence Model Viewer
+# HOLO — 3D Intelligence Model Viewer
 
 An office-level viewer for georeferenced 3D models of terrain and urban environments (FBX, glTF, GLB, OGC 3D Tiles), delivered as a web portal and a Windows desktop app that run entirely inside an internal network.
 

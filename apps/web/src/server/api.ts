@@ -4,7 +4,7 @@ import { desktopInfo } from "../desktop";
 import { ServerError, type BaseMapConfig, type ClassificationLevel, type LayerManifest, type ModelSummary } from "@viewer/shared";
 
 /**
- * The VIEWER server (Phase 3). The web app finds it at VITE_API_URL, or on its own origin; the
+ * The HOLO server (Phase 3). The web app finds it at VITE_API_URL, or on its own origin; the
  * desktop app at the address IT configured (WP 5.4), through its viewer-server:// bridge.
  * With no server it runs on the bundled sample library and local files.
  */

@@ -18,7 +18,7 @@ const path = require("path");
 const ts = require(require.resolve("typescript", { paths: [path.join(__dirname, "../packages/api-client")] }));
 
 const LATIN_OK = new Set(
-  "VIEWER GLB glTF gltf FBX OBJ 3D Tiles tileset json zip KTX2 PNG JPG CSV GeoJSON GeoTIFF COG KML KMZ WMTS WMS XYZ TMS SHP shapefile EPSG WGS ITM UTM N S E W km m cm mm ft in MB GB KB TB px fps Ctrl Shift Alt Esc Enter Tab Space PgUp PgDn Home End F Del Backspace Cesium CesiumJS OpenStreetMap OSM Esri AWS Terrarium Sentinel Lyon Tarn Jerusalem Natural Earth ISO TOP API IP SIEM CEF HTTPS URL ID AA WCAG English x y z X Y Z A B Q WASD".split(" "),
+  "HOLO GLB glTF gltf FBX OBJ 3D Tiles tileset json zip KTX2 PNG JPG CSV GeoJSON GeoTIFF COG KML KMZ WMTS WMS XYZ TMS SHP shapefile EPSG WGS ITM UTM N S E W km m cm mm ft in MB GB KB TB px fps Ctrl Shift Alt Esc Enter Tab Space PgUp PgDn Home End F Del Backspace Cesium CesiumJS OpenStreetMap OSM Esri AWS Terrarium Sentinel Lyon Tarn Jerusalem Natural Earth ISO TOP API IP SIEM CEF HTTPS URL ID AA WCAG English x y z X Y Z A B Q WASD".split(" "),
 );
 const UI_ATTRS = new Set(["label", "title", "aria-label", "aria-description", "aria-valuetext", "placeholder", "alt", "hint", "tip", "data-tip", "tooltip", "backLabel", "description", "message", "heading", "subtitle", "caption", "emptyText", "note", "confirmLabel", "summary"]);
 const UI_PROPS = /^(label|title|hint|tip|tooltip|description|message|text|placeholder|caption|note|summary|heading|subtitle|detail|help|unitLabel|ariaLabel)$/;

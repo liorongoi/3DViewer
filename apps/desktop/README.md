@@ -1,4 +1,4 @@
-# VIEWER desktop (Electron)
+# HOLO desktop (Electron)
 
 The Windows EXE wraps the same web build as the portal (plan 3.2, WP 5.1). It opens models from the computer, streams big local 3D Tiles from disk (WP 5.3), and uses the library server when IT has configured one and it answers (WP 5.4).
 
@@ -13,7 +13,7 @@ pnpm --filter @viewer/desktop start
 IT sets it once per machine, by whichever fits their tooling; the first one found wins:
 
 1. `VIEWER_SERVER_URL` in the environment (testing, or a launcher script);
-2. `viewer.json` next to `VIEWER.exe`: `{"serverUrl": "https://viewer.internal"}` (the installer writes it when given `SERVER_URL=…`);
+2. `viewer.json` next to `HOLO.exe`: `{"serverUrl": "https://viewer.internal"}` (the installer writes it when given `SERVER_URL=…`);
 3. `%ProgramData%\VIEWER\viewer.json`, the same file for every user of the machine;
 4. the registry value `ServerUrl` under `HKLM\Software\VIEWER`, then `HKCU\Software\VIEWER` (Group Policy).
 
@@ -33,11 +33,11 @@ While the server answers, the library is the server's and the status pill says *
 
 ## Installer (WP 5.5)
 
-`pnpm --filter @viewer/desktop dist` (on Windows; after building the web app and the desktop app) makes `release/VIEWER-Setup-<version>.exe`, an NSIS installer from `electron-builder.config.cjs`:
+`pnpm --filter @viewer/desktop dist` (on Windows; after building the web app and the desktop app) makes `release/HOLO-Setup-<version>.exe`, an NSIS installer from `electron-builder.config.cjs`:
 
-- **Per user, no administrator:** it installs to `%LOCALAPPDATA%\Programs\VIEWER` and writes only under HKCU; nothing goes to Program Files or HKLM. The user may choose another folder.
-- **Silent install for IT:** `VIEWER-Setup-<version>.exe /S /SERVER_URL=https://viewer.internal` writes the address to `viewer.json` next to `VIEWER.exe`. Without it, IT can still set the address machine-wide by `%ProgramData%\VIEWER\viewer.json` or the `ServerUrl` registry value (Group Policy); see *Library server address* above. Uninstall: `"Uninstall VIEWER.exe" /S`.
-- **Files:** `.glb` and `.gltf` open with VIEWER; `.fbx`, `.zip` and `.json` (tileset.json) only offer *Open with VIEWER*, so it never takes over files other programs own.
+- **Per user, no administrator:** it installs to `%LOCALAPPDATA%\Programs\HOLO` and writes only under HKCU; nothing goes to Program Files or HKLM. The user may choose another folder.
+- **Silent install for IT:** `HOLO-Setup-<version>.exe /S /SERVER_URL=https://viewer.internal` writes the address to `viewer.json` next to `HOLO.exe`. Without it, IT can still set the address machine-wide by `%ProgramData%\VIEWER\viewer.json` or the `ServerUrl` registry value (Group Policy); see *Library server address* above. Uninstall: `"Uninstall HOLO.exe" /S`.
+- **Files:** `.glb` and `.gltf` open with HOLO; `.fbx`, `.zip` and `.json` (tileset.json) only offer *Open with HOLO*, so it never takes over files other programs own.
 - **Contents:** the app in an archive checked at start, the web build under `resources\web` (without the FBX test file), FBX2glTF under `resources\bin`, and `THIRD_PARTY_LICENSES.md`.
 - **Hardened binary:** Electron fuses switched off running as plain Node, `NODE_OPTIONS`, the inspector from the command line and extra `file://` privileges, and on cookie encryption, archive integrity checks and loading the app only from its archive (`scripts/check-fuses.cjs`). An installed app also ignores the development switches (`VIEWER_SMOKE`, `VIEWER_WEB_DIR`, `VIEWER_QUERY`, `VIEWER_FBX2GLTF`).
 - **Signing:** with `CSC_LINK` (the organisation's .pfx, or its base64) and `CSC_KEY_PASSWORD` the app and installer are signed (SHA-256, timestamped at `VIEWER_TIMESTAMP_URL` when set); without them they are built unsigned and the build says so. `VIEWER_VERSION` sets the version.

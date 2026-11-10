@@ -1,4 +1,4 @@
-# VIEWER server (Phase 3)
+# HOLO server (Phase 3)
 
 Library API, versions and the audit log. Fastify on Node 22, PostgreSQL.
 

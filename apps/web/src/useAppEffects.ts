@@ -117,7 +117,7 @@ export function useAppEffects(): void {
     engine.setMemoryBudget(memoryGb * 1024 ** 3);
   }, [engine, quality, unit, adaptive, environment, memoryGb]);
 
-  // Look for the VIEWER server, then keep checking (WP 5.4): the app switches between library
+  // Look for the HOLO server, then keep checking (WP 5.4): the app switches between library
   // mode and local mode as the network comes and goes, without a restart.
   useEffect(() => {
     let live = true;

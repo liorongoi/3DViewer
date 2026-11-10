@@ -1,4 +1,4 @@
-// Writes src/schema.gen.ts, the TypeScript types of the VIEWER API, from openapi.json (WP 3.1).
+// Writes src/schema.gen.ts, the TypeScript types of the HOLO API, from openapi.json (WP 3.1).
 // openapi.json is written by the server's contract test (UPDATE_API=1 pnpm --filter @viewer/server test),
 // so the order after an API change is: server test with UPDATE_API=1, then this.
 //   node scripts/generate.mjs          writes the file

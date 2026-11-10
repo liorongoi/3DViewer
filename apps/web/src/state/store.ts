@@ -59,7 +59,7 @@ interface AppState {
   classOverrides: Record<string, string>;
   /** Models uploaded in this browser session (kept in memory until the server stores them, Phase 3). */
   uploads: ModelSummary[];
-  /** The VIEWER server, when one answers (Phase 3). Without it the app uses the sample library. */
+  /** The HOLO server, when one answers (Phase 3). Without it the app uses the sample library. */
   server: import("../server/api").ServerInfo | null;
   /**
    * Server reachability (WP 5.4): "none" when no server is configured, so there is nothing to
