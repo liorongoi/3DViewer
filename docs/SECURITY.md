@@ -1,14 +1,14 @@
 # Security controls and evidence
 
-For the accreditation package (WP 6.4). Each section says what VIEWER does, how it is checked, and where the evidence is. The checks run in CI on every change. Their output (logs, screenshots and the packet capture) is kept as build artifacts.
+For the accreditation package (WP 6.4). Each section says what HOLO does, how it is checked, and where the evidence is. The checks run in CI on every change. Their output (logs, screenshots and the packet capture) is kept as build artifacts.
 
 ## No outbound connections (NFR-12, C-1, AC-10)
 
-VIEWER needs nothing from the internet:
+HOLO needs nothing from the internet:
 - Fonts, icons, the sample data and the base maps used inside the network all ship with it.
 - Base maps and terrain come from the site's own sources (`viewer-basemap-install`).
 - The built-in online sources (Esri, EOX, OpenStreetMap, AWS terrain) are offered only as a choice. They are never the default. An administrator can hide them with **Hide online sources**.
-- The desktop app refuses every network request except to the configured VIEWER server.
+- The desktop app refuses every network request except to the configured HOLO server.
 
 **Evidence: `scripts/check-outbound.sh`** (CI job `browser (outbound)`, artifact `check-out/outbound/`).
 
@@ -36,7 +36,7 @@ The desktop app's refusal of other hosts is checked by `scripts/check-desktop.cj
 
 ## TLS (NFR-13)
 
-Caddy serves VIEWER over HTTPS with the organisation's certificate:
+Caddy serves HOLO over HTTPS with the organisation's certificate:
 - **Protocols:** only TLS 1.2 and TLS 1.3.
 - **TLS 1.2 suites:** only forward-secret AEAD ones (ECDHE with AES-GCM or ChaCha20-Poly1305). This is Caddy's default.
 - **HTTP:** plain HTTP is redirected to HTTPS.

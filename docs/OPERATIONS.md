@@ -1,6 +1,6 @@
 # Operations guide
 
-How to install, configure, run, back up, restore and upgrade VIEWER on a site server. The files it refers to are in `deploy/`.
+How to install, configure, run, back up, restore and upgrade HOLO on a site server. The files it refers to are in `deploy/`.
 
 ## What runs
 

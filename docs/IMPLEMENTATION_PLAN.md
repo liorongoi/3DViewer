@@ -624,6 +624,8 @@ Phase 5 builds and tests the installer **pipeline**. The release installers them
 
 **WP 6.6, 9 Nov 2026.** The user manual is in `docs/manual/en.md` and `docs/manual/he.md`, with screenshots of the build in each language (`docs/manual/img`, taken by `scripts/manual-screenshots.cjs` against the real server). `scripts/build-manual.cjs` turns each into a page at `manual/<lang>/` during the web build, taking the app's name from the interface strings, so the web app, the desktop app and the server bundle all carry it. It opens from the keyboard and mouse help (**User manual**) and from the command palette, in the interface's language and theme. The admin install guide is `docs/INSTALL.md`, and the runbook is `docs/OPERATIONS.md`.
 
+**WP 6.8, 10 Nov 2026.** The release workflow (`.github/workflows/release.yml`, run from the Actions tab on main or by pushing a tag `v1.0.0`) builds the Windows installer and the offline server bundle at one version, checks the manual is in both, installs, starts and uninstalls the installer on Windows, and publishes both as a GitHub release with their SHA-256 sums. The installer is signed when the repository has the organisation's code-signing certificate (`WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD`); until then it is built unsigned, and the release notes say so.
+
 ---
 
 ## 6. Quality strategy
