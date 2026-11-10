@@ -1,0 +1,147 @@
+# WP 6.8: the release installers, built from the frozen release with the user manual inside.
+# Run it from the Actions tab (Release ▸ Run workflow) on main, or push a tag such as v1.0.0.
+# It builds the Windows installer and the offline server bundle, checks the installer installs,
+# starts and uninstalls, and publishes both as a GitHub release with their SHA-256 sums.
+# The installer is signed when the repository has the secrets WIN_CSC_LINK and WIN_CSC_KEY_PASSWORD.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version, such as 1.0.0"
+        required: true
+        default: "1.0.0"
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  VERSION: ${{ inputs.version || github.ref_name }}
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Version
+        shell: pwsh
+        run: |
+          $v = "$env:VERSION" -replace '^v', ''
+          if ($v -notmatch '^\d+\.\d+\.\d+$') { throw "The version must look like 1.0.0, not '$v'" }
+          "VIEWER_VERSION=$v" >> $env:GITHUB_ENV
+      - name: Build the web app and the desktop app
+        run: |
+          pnpm --filter @viewer/web build
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          pnpm --filter @viewer/desktop build
+      - name: The manual is in the build
+        shell: pwsh
+        run: |
+          foreach ($l in "en", "he") { if (-not (Test-Path "apps/web/dist/manual/$l/index.html")) { throw "No $l manual in the build" } }
+      - uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/electron/Cache
+          key: electron-win-${{ hashFiles('apps/desktop/package.json') }}
+      - name: Installer
+        run: pnpm --filter @viewer/desktop dist
+      - name: Electron fuses
+        run: node scripts/check-fuses.cjs apps/desktop/release/win-unpacked/HOLO.exe
+      - name: Install for this user, start, uninstall
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem apps/desktop/release -Filter "HOLO-Setup-*.exe").FullName
+          if ($env:CSC_LINK) { ./scripts/check-installer.ps1 -Installer $setup -RequireSignature } else { ./scripts/check-installer.ps1 -Installer $setup }
+      - name: Checksum
+        shell: pwsh
+        run: |
+          $f = Get-Item "apps/desktop/release/HOLO-Setup-$env:VIEWER_VERSION.exe"
+          "$((Get-FileHash $f -Algorithm SHA256).Hash.ToLower())  $($f.Name)" | Out-File -Encoding ascii "$($f.FullName).sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            apps/desktop/release/HOLO-Setup-*.exe
+            apps/desktop/release/HOLO-Setup-*.exe.sha256
+          compression-level: 0
+
+  server:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Version
+        run: |
+          v="${VERSION#v}"
+          [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "The version must look like 1.0.0, not '$v'"; exit 1; }
+          echo "VIEWER_VERSION=$v" >> "$GITHUB_ENV"
+      - name: Build
+        run: pnpm -r --if-present run build
+      - name: The manual is in the build
+        run: test -f apps/web/dist/manual/en/index.html && test -f apps/web/dist/manual/he/index.html
+      - name: Offline server bundle
+        run: bash scripts/build-server-bundle.sh
+      - name: The manual is in the bundle
+        run: |
+          tar -tzf "out/viewer-server-$VIEWER_VERSION-linux-x64.tar.gz" > files.txt
+          grep -q "web/manual/he/index.html" files.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server
+          path: |
+            out/viewer-server-*-linux-x64.tar.gz
+            out/viewer-server-*-linux-x64.tar.gz.sha256
+          compression-level: 0
+
+  publish:
+    needs: [windows, server]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          v="${VERSION#v}"
+          ls -l dist
+          signed="unsigned (Windows shows \"unknown publisher\" on first run)"
+          [[ -n "${{ secrets.WIN_CSC_LINK }}" ]] && signed="signed"
+          cat > notes.md <<EOF
+          HOLO $v.
+
+          - **HOLO-Setup-$v.exe**: the Windows desktop app, $signed. Per-user, no admin rights. Silent install for IT: \`HOLO-Setup-$v.exe /S /SERVER_URL=https://holo.internal\`.
+          - **viewer-server-$v-linux-x64.tar.gz**: the offline server bundle. Install it as docs/INSTALL.md says.
+
+          Both include the user manual in English and Hebrew (Help ▸ User manual). Each file has its SHA-256 beside it.
+          EOF
+          gh release create "v$v" dist/* --target "${{ github.sha }}" --title "HOLO $v" --notes-file notes.md
