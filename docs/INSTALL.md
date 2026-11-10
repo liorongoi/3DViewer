@@ -1,6 +1,6 @@
-# Installing the VIEWER server
+# Installing the HOLO server
 
-This guide installs VIEWER on a site server from the offline bundle, with no internet. It takes about an hour, most of it preparing the database and the certificate. Day-to-day running, backups and restores are in [OPERATIONS.md](./OPERATIONS.md).
+This guide installs HOLO on a site server from the offline bundle, with no internet. It takes about an hour, most of it preparing the database and the certificate. Day-to-day running, backups and restores are in [OPERATIONS.md](./OPERATIONS.md).
 
 ## What you need
 
@@ -44,9 +44,9 @@ CREATE ROLE viewer LOGIN PASSWORD '<a long random password>';
 CREATE DATABASE viewer OWNER viewer ENCODING 'UTF8' TEMPLATE template0;
 ```
 
-Allow the VIEWER server to connect in `pg_hba.conf` (for example `hostssl viewer viewer <server address>/32 scram-sha-256`) and reload PostgreSQL. VIEWER creates its own tables on first start.
+Allow the HOLO server to connect in `pg_hba.conf` (for example `hostssl viewer viewer <server address>/32 scram-sha-256`) and reload PostgreSQL. HOLO creates its own tables on first start.
 
-The address VIEWER uses is then `postgres://viewer:<password>@<database host>:5432/viewer`. If the password has characters such as `@`, `/` or `:`, write them percent-encoded (`@` is `%40`).
+The address HOLO uses is then `postgres://viewer:<password>@<database host>:5432/viewer`. If the password has characters such as `@`, `/` or `:`, write them percent-encoded (`@` is `%40`).
 
 ## 3. Install
 
@@ -77,7 +77,7 @@ If the server does not start, `install.sh` shows its last messages. A wrong sett
 ## 4. Check it works
 
 1. On the server: `curl -fsS http://127.0.0.1:8787/api/health` answers `{"ok":true, ...}`.
-2. From a user's computer: `https://viewer.internal/` opens VIEWER, with the browser showing the certificate as trusted.
+2. From a user's computer: `https://viewer.internal/` opens HOLO, with the browser showing the certificate as trusted.
 3. Open Settings, then **Administration…**, and sign in with the first admin password. Change it on the **Password** tab.
 4. Then, on the server:
    ```sh
@@ -112,7 +112,7 @@ Then, on the admin page, **Base maps**: tick *Hide the internet sources* so user
 Give IT the Windows installer and the server's address. They install it silently for each user:
 
 ```
-VIEWER-Setup-<version>.exe /S /SERVER_URL=https://viewer.internal
+HOLO-Setup-<version>.exe /S /SERVER_URL=https://viewer.internal
 ```
 
 Or set the address for a whole machine, by `%ProgramData%\VIEWER\viewer.json` or the `ServerUrl` registry value (Group Policy); `apps/desktop/README.md` has the details. The certificate must be trusted by Windows (the organisation's root in the machine's store).
