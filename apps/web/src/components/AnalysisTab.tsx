@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { SplatGeometryNote } from "./SplatPanel";
 import { useEngine, useSignal } from "../engine";
 import { useApp } from "../state/store";
 import { Download, Eye, EyeOff, Radar, Ruler, ScanEye, Trash2, X } from "./icons";
@@ -12,6 +13,7 @@ import { pushUndo } from "../state/undo";
 export function AnalysisTab() {
   return (
     <div className="flex flex-col gap-3 p-2">
+      <SplatGeometryNote />
       <SightSection />
       <ViewshedSection />
     </div>

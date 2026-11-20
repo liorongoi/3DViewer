@@ -34,11 +34,11 @@ import { useDialog } from "./useDialog";
 const STEPS = ["have", "want", "how", "details"] as const;
 const INPUT_ICON = { video: Film, photos: Images, satellite: Satellite } as const;
 const GOAL_ICON = { scene: Aperture, surface: Ruler, area: Building2, satellite: Satellite } as const;
-const VIDEO = /\.(mp4|mov|m4v|avi|mkv|webm|mts)$/i;
+const VIDEO = /\.(mp4|mov|m4v|lrv|ts|mts|avi|mkv|webm)$/i;
 const PHOTO = /\.(jpe?g|png|tiff?|heic|webp|dng)$/i;
 const SATELLITE = /\.(tiff?|ntf|nitf|jp2|rpb|rpc|xml|txt|json|geojson)$/i;
 const SIDECAR = /\.(txt|json|csv|xml|srt|gpx|kml)$/i;
-const ACCEPT = { video: ".mp4,.mov,.m4v,.avi,.mkv,.webm,.mts,.zip", photos: ".jpg,.jpeg,.png,.tif,.tiff,.heic,.webp,.dng,.zip,.txt,.json,.csv,.xml", satellite: ".tif,.tiff,.ntf,.nitf,.jp2,.rpb,.rpc,.xml,.txt,.json,.geojson,.zip" } as const;
+const ACCEPT = { video: ".mp4,.mov,.m4v,.lrv,.ts,.mts,.avi,.mkv,.webm,.zip", photos: ".jpg,.jpeg,.png,.tif,.tiff,.heic,.webp,.dng,.zip,.txt,.json,.csv,.xml", satellite: ".tif,.tiff,.ntf,.nitf,.jp2,.rpb,.rpc,.xml,.txt,.json,.geojson,.zip" } as const;
 const fits = (input: CaptureInput, name: string) => /\.zip$/i.test(name) || SIDECAR.test(name) || { video: VIDEO, photos: PHOTO, satellite: SATELLITE }[input].test(name);
 
 export function CaptureWizard() {

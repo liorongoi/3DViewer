@@ -64,6 +64,8 @@ export interface GpuInfo {
   name: string;
   /** Memory the GPU can use, in GB. On Apple silicon this is the share of unified memory Metal lets one process use. */
   memoryGb: number;
+  /** Memory free when it was read (NVIDIA only): another program may be using the rest. */
+  freeGb?: number;
   driver?: string;
 }
 
@@ -115,7 +117,8 @@ export interface PresetSettings {
 function trainingMemoryGb(m: SplatMethod, hw: ServerHardware): number {
   if (m.needs === "cpu") return hw.ramGb / 4;
   const g = m.needs === "nvidia" ? hw.gpus.filter((x) => x.vendor === "nvidia").sort((a, b) => b.memoryGb - a.memoryGb)[0] : bestGpu(hw);
-  return g?.memoryGb ?? 0;
+  // Another program holding GPU memory leaves less for training: plan for what is free.
+  return g ? Math.min(g.memoryGb, g.freeGb ?? g.memoryGb) : 0;
 }
 
 /**

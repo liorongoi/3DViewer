@@ -98,6 +98,7 @@ export const enSplat = {
     preparing: "Preparing…",
     noOriginal: "The original file is not kept for this model.",
     failed: "The download did not work: {{reason}}",
+    notSurface: "Gaussian splats show how a place looks, not a measured surface. Points picked here may land on the ground behind the splats, and splats do not count as walls or obstacles. Treat results as estimates, not certified measurements.",
   },
   make: {
     title: "Make a splat",
@@ -235,6 +236,7 @@ export const heSplat: Shape<typeof enSplat> = {
     preparing: "מכין…",
     noOriginal: "הקובץ המקורי לא נשמר למודל הזה.",
     failed: "ההורדה לא הצליחה: {{reason}}",
+    notSurface: "ספלאטים גאוסיאניים מראים איך מקום נראה, לא משטח מדוד. נקודות שנבחרות כאן עשויות ליפול על הקרקע שמאחורי הספלאטים, וספלאטים לא נחשבים קירות או מכשולים. יש להתייחס לתוצאות כהערכה, לא כמדידות מאושרות.",
   },
   make: {
     title: "יצירת ספלאט",

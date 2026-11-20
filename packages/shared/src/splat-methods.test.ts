@@ -55,6 +55,11 @@ describe("splat method recommendation", () => {
     expect(recommend(smallNvidia, "video", "scene", all).method).toBe("brush");
   });
 
+  it("plans for the GPU memory that is free, not all of it", () => {
+    const busy: ServerHardware = { ...base, gpus: [{ vendor: "nvidia", name: "NVIDIA RTX 4000 Ada Generation", memoryGb: 20, freeGb: 3 }] };
+    expect(presetSettings(methodById("gsplat")!, "high", busy)).toMatchObject({ maxSplats: 700_000, resolution: 1280 });
+  });
+
   it("fits the preset to the memory and leaves a CPU thread free", () => {
     const hi = presetSettings(methodById("gsplat")!, "high", rtx);
     expect(hi).toMatchObject({ iterations: 30000, maxSplats: 6_000_000, resolution: 2400, threads: 15 });

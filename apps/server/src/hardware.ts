@@ -3,13 +3,13 @@ import os from "node:os";
 import type { GpuInfo, ServerHardware } from "@viewer/shared";
 
 /**
- * What this server can train splats on (docs/GAUSSIAN_SPLATS.md, "Hardware"). Read once from the
+ * What this server can train splats on (docs/GAUSSIAN_SPLATS.md, "Hardware"). Read from the
  * operating system and nvidia-smi; nothing is installed or changed. The answer only chooses the
  * recommended method and the preset limits; a worker still fails cleanly if it cannot run.
  */
 
 /**
- * Parses `nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader,nounits`.
+ * Parses `nvidia-smi --query-gpu=name,memory.total,memory.free,driver_version --format=csv,noheader,nounits`.
  * The product name is the first field; the driver version is kept apart so a driver branch such
  * as "550.54" is never mistaken for the GPU model.
  */
@@ -20,7 +20,10 @@ export function parseNvidiaSmi(out: string): GpuInfo[] {
     if (parts.length < 2 || !parts[0]) continue;
     const mib = Number(parts[1]);
     if (!Number.isFinite(mib) || mib <= 0) continue;
-    gpus.push({ vendor: "nvidia", name: parts[0], memoryGb: Math.round((mib / 1024) * 10) / 10, ...(parts[2] ? { driver: parts[2] } : {}) });
+    const gb = (m: number) => Math.round((m / 1024) * 10) / 10;
+    const free = parts.length >= 4 ? Number(parts[2]) : NaN;
+    const driver = parts.length >= 4 ? parts[3] : parts[2];
+    gpus.push({ vendor: "nvidia", name: parts[0], memoryGb: gb(mib), ...(Number.isFinite(free) && free >= 0 && parts[2] !== "" ? { freeGb: gb(free) } : {}), ...(driver ? { driver } : {}) });
   }
   return gpus;
 }
@@ -44,12 +47,15 @@ export async function probeHardware(opts: { nvidiaSmi?: string; timeoutMs?: numb
   const gpus: GpuInfo[] = [];
   if (process.platform === "darwin" && process.arch === "arm64") gpus.push(appleGpu(cpuModel, ramGb));
   else {
-    const out = await run(opts.nvidiaSmi ?? "nvidia-smi", ["--query-gpu=name,memory.total,driver_version", "--format=csv,noheader,nounits"], opts.timeoutMs ?? 5000);
+    const out = await run(opts.nvidiaSmi ?? "nvidia-smi", ["--query-gpu=name,memory.total,memory.free,driver_version", "--format=csv,noheader,nounits"], opts.timeoutMs ?? 5000);
     if (out) gpus.push(...parseNvidiaSmi(out));
   }
   return { platform: process.platform, arch: process.arch, cpuModel, cpus: os.availableParallelism?.() ?? cpus.length, ramGb, gpus };
 }
 
-let cached: Promise<ServerHardware> | null = null;
-/** Probed once per process: the hardware does not change while the server runs. */
-export const serverHardware = (): Promise<ServerHardware> => (cached ??= probeHardware());
+let cached: { at: number; hw: Promise<ServerHardware> } | null = null;
+/** Probed at most once a minute: the hardware does not change, but free GPU memory does. */
+export const serverHardware = (): Promise<ServerHardware> => {
+  if (!cached || Date.now() - cached.at > 60_000) cached = { at: Date.now(), hw: probeHardware() };
+  return cached.hw;
+};

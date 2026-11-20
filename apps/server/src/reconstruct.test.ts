@@ -22,11 +22,13 @@ const rtx: ServerHardware = { platform: "linux", arch: "x64", cpuModel: "Test CP
 
 describe("hardware", () => {
   it("reads the GPU name and memory from nvidia-smi, never the driver version as the model", () => {
-    const gpus = parseNvidiaSmi("NVIDIA GeForce RTX 4090, 24564, 550.54.14\nNVIDIA RTX A2000, 6138, 550.54.14\n\n");
+    const gpus = parseNvidiaSmi("NVIDIA GeForce RTX 4090, 24564, 20480, 550.54.14\nNVIDIA RTX A2000, 6138, 512, R530\n\n");
     expect(gpus).toEqual([
-      { vendor: "nvidia", name: "NVIDIA GeForce RTX 4090", memoryGb: 24, driver: "550.54.14" },
-      { vendor: "nvidia", name: "NVIDIA RTX A2000", memoryGb: 6, driver: "550.54.14" },
+      { vendor: "nvidia", name: "NVIDIA GeForce RTX 4090", memoryGb: 24, freeGb: 20, driver: "550.54.14" },
+      { vendor: "nvidia", name: "NVIDIA RTX A2000", memoryGb: 6, freeGb: 0.5, driver: "R530" },
     ]);
+    // An older query without the free column still reads.
+    expect(parseNvidiaSmi("NVIDIA L40S, 46068, 535.104.05")).toEqual([{ vendor: "nvidia", name: "NVIDIA L40S", memoryGb: 45, driver: "535.104.05" }]);
     expect(parseNvidiaSmi("NVIDIA-SMI has failed because it couldn't communicate with the NVIDIA driver.")).toEqual([]);
   });
   it("counts three quarters of Apple unified memory as GPU memory", () => {

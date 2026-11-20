@@ -26,7 +26,8 @@ import { problem } from "./errors.ts";
  *   --video-fps N --threads N
  * and a minimal environment (PATH, HOME, LANG, CUDA_VISIBLE_DEVICES). It prints lines
  * "progress <0..1> <stage>" on stdout, writes exactly one of output/splats.ply or
- * output/splats.spz, and may write output/provenance.json ({ tool, version, poses, fixture }).
+ * output/splats.spz, and may write output/provenance.json ({ tool, version, poses, frames,
+ * registeredViews, fixture }); what it leaves out is recorded as unknown, never guessed.
  * Exit 0 is success; exit 2 means the input cannot be reconstructed (not retried); anything else
  * is retried once. One job runs at a time per server, so jobs never compete for the GPU.
  */
@@ -52,11 +53,14 @@ export interface SplatProvenance {
   tool?: string;
   toolVersion?: string;
   poses?: string;
+  /** Frames or images the worker used, and how many got a camera pose, when it says so. */
+  frames?: number;
+  registeredViews?: number;
   startedAt: string;
   finishedAt: string;
 }
 
-const VIDEO = /\.(mp4|mov|m4v|avi|mkv|webm|mts)$/i;
+const VIDEO = /\.(mp4|mov|m4v|lrv|ts|mts|avi|mkv|webm)$/i;
 const PHOTO = /\.(jpe?g|png|tiff?|heic|webp|dng)$/i;
 const SATELLITE = /\.(tiff?|ntf|nitf|jp2|rpb|rpc|xml|txt|json|geojson)$/i;
 const ACCEPT: Record<CaptureInput, RegExp> = { video: VIDEO, photos: PHOTO, satellite: SATELLITE };
@@ -159,13 +163,14 @@ export function runWorker(bin: string, args: string[], cwd: string, timeoutMs: n
 }
 
 /** The worker's provenance.json, reduced to the fields HOLO records; anything else is ignored. */
-async function readProvenance(file: string): Promise<{ tool?: string; toolVersion?: string; poses?: string; fixture: boolean }> {
+async function readProvenance(file: string): Promise<{ tool?: string; toolVersion?: string; poses?: string; frames?: number; registeredViews?: number; fixture: boolean }> {
   const s = await stat(file).catch(() => null);
   if (!s || s.size > 64 * 1024) return { fixture: false };
   try {
     const j = JSON.parse(await readFile(file, "utf8")) as Record<string, unknown>;
     const str = (v: unknown) => (typeof v === "string" ? v.slice(0, 200) : undefined);
-    return { tool: str(j.tool), toolVersion: str(j.version), poses: str(j.poses), fixture: j.fixture === true };
+    const count = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : undefined);
+    return { tool: str(j.tool), toolVersion: str(j.version), poses: str(j.poses), frames: count(j.frames), registeredViews: count(j.registeredViews), fixture: j.fixture === true };
   } catch {
     return { fixture: false };
   }
@@ -272,6 +277,8 @@ export function reconstructHandler(
         ...(prov.tool ? { tool: prov.tool } : {}),
         ...(prov.toolVersion ? { toolVersion: prov.toolVersion } : {}),
         ...(prov.poses ? { poses: prov.poses } : {}),
+        ...(prov.frames !== undefined ? { frames: prov.frames } : {}),
+        ...(prov.registeredViews !== undefined ? { registeredViews: prov.registeredViews } : {}),
         startedAt,
         finishedAt: new Date().toISOString(),
       };
@@ -353,7 +360,7 @@ export async function reconstructStatus(db: Queryable, ingestId: string): Promis
 
 /** GET /api/splat-methods (the registry, what is installed, the hardware) and GET /api/captures/:id (progress). */
 export function registerReconstruct(app: FastifyInstance, db: Db, opts: ReconstructOptions): void {
-  const gpu = closed({ vendor: text, name: text, memoryGb: { type: "number" }, driver: text }, ["vendor", "name", "memoryGb"]);
+  const gpu = closed({ vendor: text, name: text, memoryGb: { type: "number" }, freeGb: { type: "number" }, driver: text }, ["vendor", "name", "memoryGb"]);
   app.get(
     "/api/splat-methods",
     {

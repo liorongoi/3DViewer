@@ -2,14 +2,14 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { splatToSpz, tilesetZip, zipFiles, type PlacementSidecar } from "@viewer/core";
 import type { ModelSummary } from "@viewer/shared";
-import { useEngine } from "../engine";
+import { useEngine, useSignal } from "../engine";
 import { saveBytes, slug } from "../download";
 import { addPlacementVersion, listOriginals } from "../server/api";
 import { errorText } from "../server/error-text";
 import { refreshLibrary } from "../state/library";
 import { useApp } from "../state/store";
 import { useOpenModel } from "../useAppEffects";
-import { Download, Ruler, Sparkles } from "./icons";
+import { AlertTriangle, Download, Ruler, Sparkles } from "./icons";
 import { RealSize, scaleFromKnown, type SizeChoice } from "./RealSize";
 
 /**
@@ -162,5 +162,22 @@ export function SplatPanel({ model }: { model: ModelSummary }) {
       <p className="text-[12px] text-fg3">{floating ? t("splat.props.downloadFloating") : t("splat.props.downloadPlaced")}</p>
       {problem && <p role="alert" className="text-[12px] text-danger">{problem}</p>}
     </section>
+  );
+}
+
+/**
+ * Shown above measurements and analysis while a splat model is open (SRS GS-20): splats are an
+ * appearance, so nothing measured on or through them is a certified surface or obstruction.
+ */
+export function SplatGeometryNote() {
+  const { t } = useTranslation();
+  const engine = useEngine();
+  const model = useSignal(engine?.current, null);
+  if (!model?.source.splats) return null;
+  return (
+    <div role="status" data-testid="splat-geometry-note" className="flex items-start gap-2 rounded-[10px] border border-[var(--status-production)] px-2.5 py-2 text-[12px] text-fg">
+      <AlertTriangle size={14} className="mt-0.5 shrink-0 text-[var(--status-production)]" />
+      {t("splat.props.notSurface")}
+    </div>
   );
 }

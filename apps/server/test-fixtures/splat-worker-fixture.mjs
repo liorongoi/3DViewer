@@ -37,5 +37,5 @@ const body = Buffer.alloc(rows.length * props.length * 4);
 rows.forEach((r, i) => r.forEach((v, k) => body.writeFloatLE(v, (i * props.length + k) * 4)));
 mkdirSync(opt("output"), { recursive: true });
 writeFileSync(path.join(opt("output"), "splats.ply"), Buffer.concat([head, body]));
-writeFileSync(path.join(opt("output"), "provenance.json"), JSON.stringify({ tool: "holo-test-fixture", version: "1", poses: "none (fixture)", fixture: true, args }));
+writeFileSync(path.join(opt("output"), "provenance.json"), JSON.stringify({ tool: "holo-test-fixture", version: "1", poses: "none (fixture)", frames: pictures.length, registeredViews: 0, fixture: true, args }));
 console.log("progress 1 done");
