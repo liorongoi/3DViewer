@@ -1,4 +1,4 @@
-import { enSplat, enSplatChecks, heSplat, heSplatChecks } from "./i18n-splat";
+import { enSplat, enSplatChecks, enSplatErrors, heSplat, heSplatChecks, heSplatErrors } from "./i18n-splat";
 // UI strings. Keys are shared by both languages; a test checks they match.
 
 export const en = {
@@ -701,6 +701,7 @@ export const en = {
     aws: "Terrain Tiles, world",
   },
   serverErrors: {
+    ...enSplatErrors,
     signIn: "Sign in as administrator first.",
     tooManyPasswords: "Too many wrong passwords. Try again in {{seconds}} s.",
     noAdminPassword: "No admin password is set. The person who runs the server sets ADMIN_PASSWORD and restarts it.",
@@ -1671,6 +1672,7 @@ export const he: Shape<typeof en> = {
     aws: "Terrain Tiles, כל העולם",
   },
   serverErrors: {
+    ...heSplatErrors,
     signIn: "יש להתחבר תחילה כמנהל מערכת.",
     tooManyPasswords: "יותר מדי סיסמאות שגויות. אפשר לנסות שוב בעוד {{seconds}} שניות.",
     noAdminPassword: "לא הוגדרה סיסמת מנהל. מי שמפעיל את השרת מגדיר ADMIN_PASSWORD ומפעיל אותו מחדש.",

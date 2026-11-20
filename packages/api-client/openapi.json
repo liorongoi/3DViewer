@@ -1802,6 +1802,227 @@
         }
       }
     },
+    "/api/splat-methods": {
+      "get": {
+        "tags": [
+          "capture"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "hardware": {
+                      "type": "object",
+                      "properties": {
+                        "platform": {
+                          "type": "string"
+                        },
+                        "arch": {
+                          "type": "string"
+                        },
+                        "cpuModel": {
+                          "type": "string"
+                        },
+                        "cpus": {
+                          "type": "integer"
+                        },
+                        "ramGb": {
+                          "type": "number"
+                        },
+                        "gpus": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "vendor": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "memoryGb": {
+                                "type": "number"
+                              },
+                              "driver": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "vendor",
+                              "name",
+                              "memoryGb"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "platform",
+                        "arch",
+                        "cpuModel",
+                        "cpus",
+                        "ramGb",
+                        "gpus"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "installed": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "hardware",
+                    "installed"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/captures/{id}": {
+      "get": {
+        "tags": [
+          "capture"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "enum": [
+                        "working",
+                        "ready",
+                        "failed"
+                      ]
+                    },
+                    "methods": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "method": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "enum": [
+                              "queued",
+                              "training",
+                              "publishing",
+                              "ready",
+                              "failed"
+                            ]
+                          },
+                          "fraction": {
+                            "type": "number",
+                            "nullable": true
+                          },
+                          "stage": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "error": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "modelId": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "version": {
+                            "type": "integer",
+                            "nullable": true
+                          }
+                        },
+                        "required": [
+                          "method",
+                          "state",
+                          "fraction",
+                          "stage",
+                          "error",
+                          "modelId",
+                          "version"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "methods"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/status": {
       "get": {
         "tags": [
@@ -3047,6 +3268,57 @@
                   "note": {
                     "type": "string",
                     "maxLength": 2000
+                  },
+                  "reconstruct": {
+                    "type": "object",
+                    "required": [
+                      "input",
+                      "goal",
+                      "methods",
+                      "preset"
+                    ],
+                    "properties": {
+                      "input": {
+                        "enum": [
+                          "video",
+                          "photos",
+                          "satellite"
+                        ]
+                      },
+                      "goal": {
+                        "enum": [
+                          "scene",
+                          "surface",
+                          "area",
+                          "satellite"
+                        ]
+                      },
+                      "methods": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 3,
+                        "uniqueItems": true,
+                        "items": {
+                          "enum": [
+                            "gsplat",
+                            "gsplat-2dgs",
+                            "brush",
+                            "opensplat",
+                            "citygaussian-v2",
+                            "eogs-plus",
+                            "skyfall-gs"
+                          ]
+                        }
+                      },
+                      "preset": {
+                        "enum": [
+                          "fast",
+                          "balanced",
+                          "high"
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
                   }
                 },
                 "additionalProperties": false

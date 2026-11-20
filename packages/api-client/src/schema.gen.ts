@@ -824,6 +824,74 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/api/captures/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
+                "5XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            methods: {
+                                error: string | null;
+                                fraction: number | null;
+                                method: string;
+                                modelId: string | null;
+                                stage: string | null;
+                                /** @enum {unknown} */
+                                state: "queued" | "training" | "publishing" | "ready" | "failed";
+                                version: number | null;
+                            }[];
+                            /** @enum {unknown} */
+                            state: "working" | "ready" | "failed";
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/classifications": {
         parameters: {
             query?: never;
@@ -1069,6 +1137,15 @@ export type paths = {
                             /** @enum {unknown} */
                             upAxis?: "y" | "z";
                             verticalFactor?: number;
+                        };
+                        reconstruct?: {
+                            /** @enum {unknown} */
+                            goal: "scene" | "surface" | "area" | "satellite";
+                            /** @enum {unknown} */
+                            input: "video" | "photos" | "satellite";
+                            methods: ("gsplat" | "gsplat-2dgs" | "brush" | "opensplat" | "citygaussian-v2" | "eogs-plus" | "skyfall-gs")[];
+                            /** @enum {unknown} */
+                            preset: "fast" | "balanced" | "high";
                         };
                     };
                 };
@@ -1682,6 +1759,74 @@ export type paths = {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/splat-methods": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
+                "5XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            hardware: {
+                                arch: string;
+                                cpuModel: string;
+                                cpus: number;
+                                gpus: {
+                                    driver?: string;
+                                    memoryGb: number;
+                                    name: string;
+                                    vendor: string;
+                                }[];
+                                platform: string;
+                                ramGb: number;
+                            };
+                            installed: string[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;

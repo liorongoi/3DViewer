@@ -21,6 +21,7 @@ import { TILE_IF, optimiseGlbInWorker, splatToTilesInWorker, tileModelInWorker, 
 import type { SplatResult } from "./splat.ts";
 import { validateOfficial } from "./validate.ts";
 import { problem } from "./errors.ts";
+import { queueReconstruct, reconstructProblem, reconstructSchema, type ReconstructOptions, type ReconstructRequest, type SplatProvenance } from "./reconstruct.ts";
 
 /**
  * Uploads and ingest (WP 3.2–3.4, 3.7).
@@ -42,6 +43,12 @@ export interface IngestRequest {
   centre?: { lat: number; lon: number };
   groundFit?: "street" | "surface" | "none";
   note?: string;
+  /** Make Gaussian splats from these files (a video, photos or satellite images) instead of publishing them. */
+  reconstruct?: ReconstructRequest;
+  /** Set by the server on the ingest that publishes splats made from a capture. */
+  parentIngest?: string;
+  method?: string;
+  provenance?: SplatProvenance;
 }
 
 export interface IngestOptions {
@@ -102,6 +109,7 @@ export function registerIngest(
   db: Db,
   storage: Storage,
   who: (req: FastifyRequest) => Promise<{ ip: string; host: string }>,
+  capture?: ReconstructOptions,
 ): void {
   // tus PATCH bodies are streamed to disk, never buffered.
   app.addContentTypeParser("application/offset+octet-stream", (_req, payload, done) => done(null, payload));
@@ -145,6 +153,7 @@ export function registerIngest(
             centre: latlon,
             groundFit: { enum: ["street", "surface", "none"] },
             note: str,
+            reconstruct: reconstructSchema,
           },
           additionalProperties: false,
         },
@@ -169,6 +178,11 @@ export function registerIngest(
         total += f.size;
       }
       if (total > LIMITS.tileset) return reply.status(413).send(problem("uploadTooBig"));
+      if (b.reconstruct) {
+        if (b.modelId) return reply.status(400).send(problem("invalidRequest", { detail: "a capture makes a new model; leave out modelId" }));
+        const bad = await reconstructProblem(b.reconstruct, b.files, capture ?? { workers: {}, hardware: async () => ({ platform: "", arch: "", cpuModel: "", cpus: 0, ramGb: 0, gpus: [] }) });
+        if (bad) return reply.status(400).send(bad);
+      }
       const full = await quotaError(db, total);
       if (full) return reply.status(507).send(full);
 
@@ -247,9 +261,15 @@ export function registerIngest(
     if (missing.length) return reply.status(409).send(problem("filesMissing", undefined, { files: missing.slice(0, 50) }));
     const w = await who(req);
     await db.tx(async (q) => {
-      await q.query("UPDATE ingests SET state = 'queued', updated_at = now() WHERE id = $1", [ing.id]);
-      await enqueue(q, "ingest", { ingestId: ing.id });
-      await audit(q, { ...w, action: "ingest.submit", target: ing.model_id ?? ing.id, detail: { ingest: ing.id } });
+      if (ing.request.reconstruct) {
+        // One job per method, all or none: a comparison is never left half queued.
+        await queueReconstruct(q, ing.id, ing.request.reconstruct);
+        await audit(q, { ...w, action: "reconstruct.submit", target: ing.id, detail: { ingest: ing.id, ...ing.request.reconstruct } });
+      } else {
+        await q.query("UPDATE ingests SET state = 'queued', updated_at = now() WHERE id = $1", [ing.id]);
+        await enqueue(q, "ingest", { ingestId: ing.id });
+        await audit(q, { ...w, action: "ingest.submit", target: ing.model_id ?? ing.id, detail: { ingest: ing.id } });
+      }
     });
     return reply.status(202).send(await ingestStatus(db, storage, ing.id));
   });
@@ -357,6 +377,14 @@ async function scan(bin: string | undefined, dir: string): Promise<CheckItem> {
   throw new Error(`The virus scanner failed: ${r.out.slice(0, 300)}`);
 }
 
+/** Puts one uploaded part into a folder: a zip is unpacked with the zip-bomb guards, anything else placed under its name. */
+export async function unpackUpload(part: string, uploadPath: string, dest: string): Promise<void> {
+  if (/\.zip$/i.test(uploadPath)) return unzipGuarded(part, dest, { files: MAX_FILES, bytes: LIMITS.tileset }, uploadPath);
+  const to = Storage.inside(dest, uploadPath);
+  if (!to) throw new PermanentError(`This file name is not allowed: ${uploadPath}`);
+  await place(part, to);
+}
+
 async function place(src: string, dest: string): Promise<void> {
   await mkdir(path.dirname(dest), { recursive: true });
   await link(src, dest).catch(() => copyFile(src, dest));
@@ -452,6 +480,14 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
         // the splats were read and checked in full by the SPZ/PLY reader instead.
         report.items.push(checkItem("validator", "ok", "splatSelfChecked"));
         if (r.tiles > 1) report.items.push(checkItem("tiling", "ok", "splatTiled", { tiles: r.tiles, levels: r.levels }));
+        // Made here from a capture: say how, and label what is not measured or not real.
+        const pv = ing.request.provenance;
+        if (pv) {
+          report.items.unshift(checkItem("conversion", "ok", "splatMade", { method: pv.methodName, preset: pv.settings.preset, hardware: pv.hardware, iterations: pv.settings.iterations.toLocaleString("en"), maxSplats: pv.settings.maxSplats.toLocaleString("en") }));
+          if (pv.fixture) report.items.unshift(checkItem("conversion", "warning", "splatFixture"));
+          if (pv.generative) report.items.push(checkItem("conversion", "warning", "splatGenerative"));
+          if (pv.licence === "research") report.items.push(checkItem("conversion", "warning", "splatResearchLicence", { method: pv.methodName }));
+        }
       }
 
       // The official validator, on what will be published (the GLB for an FBX).
@@ -525,7 +561,13 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
       if (tiled) placement = { ...(placement ?? { ...centre, height: 0 }), upAxis: undefined, scale: undefined };
 
       await ctx.progress({ step: "publish" });
-      const modelId = ing.model_id ?? `m-${crypto.randomUUID()}`;
+      // Splats from one capture made with several methods: the first creates the model, the rest add versions.
+      let joinModel: string | null = null;
+      if (!ing.model_id && req.parentIngest) {
+        const [sib] = await db.query<{ model_id: string }>("SELECT i.model_id FROM ingests i JOIN models m ON m.id = i.model_id WHERE i.request->>'parentIngest' = $1 AND i.id <> $2 AND m.deleted_at IS NULL ORDER BY i.updated_at LIMIT 1", [req.parentIngest, ingestId]);
+        joinModel = sib?.model_id ?? null;
+      }
+      const modelId = ing.model_id ?? joinModel ?? `m-${crypto.randomUUID()}`;
       // The ingest id keeps the folder unique and never reused, so the files can be cached forever.
       const rel = `${modelId}/${ingestId}`;
       const out = path.join(storage.files, modelId, ingestId);
@@ -551,8 +593,9 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
 
       await db.tx(async (q) => {
         let version: number;
-        if (ing.model_id) {
-          const v = await addVersion(q, ing.model_id, { source, placement, sizeBytes: bytes, note: req.note });
+        const existing = ing.model_id ?? joinModel;
+        if (existing) {
+          const v = await addVersion(q, existing, { source, placement, sizeBytes: bytes, note: req.note });
           if (!v) throw new PermanentError("The model was deleted while the upload was processed.");
           version = v;
           await audit(q, { ...actor, action: "version.create", target: modelId, detail: { version, ingest: ingestId, note: req.note ?? "" } });

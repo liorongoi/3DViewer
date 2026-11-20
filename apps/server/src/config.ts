@@ -1,4 +1,5 @@
 import { accessSync, constants } from "node:fs";
+import { methodById, SPLAT_METHODS } from "@viewer/shared";
 import { MIN_PASSWORD } from "./admin.ts";
 
 /**
@@ -39,6 +40,13 @@ export interface Config {
   writeRateLimit: number;
   /** Longest a single database statement may run, in milliseconds. */
   dbStatementTimeoutMs: number;
+  /**
+   * Programs that make Gaussian splats from a capture, by method id (SPLAT_WORKERS="gsplat=/opt/holo/gsplat-worker,…").
+   * A method with no worker is shown but cannot be chosen (docs/GAUSSIAN_SPLATS.md, worker contract).
+   */
+  splatWorkers: Record<string, string>;
+  /** Longest one splat training may run, in hours. */
+  splatTimeoutHours: number;
 }
 
 export class ConfigError extends Error {
@@ -142,7 +150,23 @@ export function loadConfig(env: Env = process.env): Config {
     auditSyslog,
     writeRateLimit: int("WRITE_RATE_LIMIT", 600, 0, 1_000_000),
     dbStatementTimeoutMs: int("DB_STATEMENT_TIMEOUT_MS", 60_000, 1000, 3_600_000),
+    splatWorkers: {},
+    splatTimeoutHours: int("SPLAT_TIMEOUT_HOURS", 12, 1, 168),
   };
+  for (const pair of (get("SPLAT_WORKERS") ?? "").split(",").map((s) => s.trim()).filter(Boolean)) {
+    const m = /^([a-z0-9-]+)=(\/.+)$/.exec(pair);
+    if (!m) {
+      problems.push(`SPLAT_WORKERS has "${pair}", which is not method=/absolute/path/to/worker.`);
+      continue;
+    }
+    if (!methodById(m[1]!)) problems.push(`SPLAT_WORKERS names "${m[1]}", which is not a known method (${SPLAT_METHODS.map((x) => x.id).join(", ")}).`);
+    try {
+      accessSync(m[2]!, constants.X_OK);
+    } catch {
+      problems.push(`SPLAT_WORKERS: ${m[2]} (for ${m[1]}) is missing or not executable.`);
+    }
+    config.splatWorkers[m[1]!] = m[2]!;
+  }
   const sandbox = get("CONVERT_SANDBOX")?.toLowerCase() ?? "none";
   if (sandbox === "podman") {
     config.convertSandbox = "podman";

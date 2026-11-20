@@ -9,6 +9,8 @@ import { registerAdmin } from "./admin.ts";
 import { audit, auditCsv, verifyAudit, type AuditRow } from "./audit.ts";
 import type { Db } from "./db.ts";
 import { registerIngest } from "./ingest.ts";
+import { serverHardware } from "./hardware.ts";
+import { registerReconstruct, type ReconstructOptions } from "./reconstruct.ts";
 import { enqueue } from "./jobs.ts";
 import { registerFiles, type Storage } from "./storage.ts";
 import { addSchemas, arrayOf, bool, closed, int, ref, text, checkContract } from "./schemas.ts";
@@ -36,6 +38,8 @@ export interface AppOptions {
    * and Retry-After beyond that. Upload chunks (/api/tus/) do not count. 0 or unset: no limit.
    */
   writeRateLimit?: number;
+  /** Workers that make Gaussian splats from captures, and how to read the hardware (reconstruct.ts). */
+  capture?: ReconstructOptions;
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
@@ -357,6 +361,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     },
   );
 
+  const capture = opts.capture ?? { workers: {}, hardware: serverHardware };
+  registerReconstruct(app, db, capture);
   const admin = registerAdmin(app, db, { storage: opts.storage, who, thumbnails: opts.thumbnails });
 
   // The audit log says who opened what, so reading it is for the administrator (admin page, WP 3.9).
@@ -389,7 +395,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
 
   if (opts.storage) {
     registerFiles(app, opts.storage);
-    registerIngest(app, db, opts.storage, who);
+    registerIngest(app, db, opts.storage, who, capture);
   }
 
   app.get("/api/openapi.json", { schema: { hide: true } }, async () => app.swagger());
