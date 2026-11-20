@@ -150,6 +150,33 @@ describe("making splats from a capture", () => {
     expect(audit.map((x) => x.action)).toEqual(expect.arrayContaining(["reconstruct.submit", "reconstruct.done"]));
   });
 
+  it("cancels a capture: queued methods end at once, the running worker is stopped, and its files are removed", async () => {
+    const zip = zipSync({ "slow_1.jpg": new Uint8Array([0xff, 0xd8, 1]) });
+    const ing = (await send([{ path: "photos.zip", data: zip }], { input: "photos", goal: "scene", methods: ["gsplat", "brush"], preset: "fast" })) as { id: string };
+    const running = trainer().runOnce();
+    // Wait until the first method's worker is training.
+    for (let i = 0; i < 100; i++) {
+      const s = (await app.inject(`/api/captures/${ing.id}`)).json();
+      if (s.methods[0].state === "training" && s.methods[0].stage === "train") break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    const t0 = Date.now();
+    const res = await app.inject({ method: "POST", url: `/api/captures/${ing.id}/cancel` });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().methods[1]).toMatchObject({ method: "brush", state: "cancelled" });
+    await running;
+    expect(Date.now() - t0).toBeLessThan(15_000);
+    const status = (await app.inject(`/api/captures/${ing.id}`)).json();
+    expect(status).toMatchObject({ state: "cancelled", methods: [{ method: "gsplat", state: "cancelled" }, { method: "brush", state: "cancelled" }] });
+    expect(await readdir(storage.ingests)).toEqual([]);
+    const [row] = await db.query<{ state: string }>("SELECT state FROM ingests WHERE id = $1", [ing.id]);
+    expect(row!.state).toBe("failed");
+    const audit = await db.query<{ action: string }>("SELECT action FROM audit_events WHERE target = $1 ORDER BY at", [ing.id]);
+    expect(audit.map((x) => x.action)).toContain("reconstruct.cancel");
+    expect(audit.map((x) => x.action)).not.toContain("reconstruct.fail");
+    expect((await app.inject({ method: "POST", url: "/api/captures/i-nothing/cancel" })).statusCode).toBe(404);
+  }, 30_000);
+
   it("ends with the worker's reason when a capture cannot be used, without retrying it", async () => {
     const zip = zipSync({ "unusable_1.jpg": new Uint8Array([0xff, 0xd8, 1]) });
     const ing = (await send([{ path: "photos.zip", data: zip }], { input: "photos", goal: "scene", methods: ["gsplat"], preset: "fast" })) as { id: string };

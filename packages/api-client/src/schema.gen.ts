@@ -874,11 +874,11 @@ export type paths = {
                                 modelId: string | null;
                                 stage: string | null;
                                 /** @enum {unknown} */
-                                state: "queued" | "training" | "publishing" | "ready" | "failed";
+                                state: "queued" | "training" | "publishing" | "ready" | "failed" | "cancelled";
                                 version: number | null;
                             }[];
                             /** @enum {unknown} */
-                            state: "working" | "ready" | "failed";
+                            state: "working" | "ready" | "failed" | "cancelled";
                         };
                     };
                 };
@@ -886,6 +886,74 @@ export type paths = {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/captures/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
+                "5XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            methods: {
+                                error: string | null;
+                                fraction: number | null;
+                                method: string;
+                                modelId: string | null;
+                                stage: string | null;
+                                /** @enum {unknown} */
+                                state: "queued" | "training" | "publishing" | "ready" | "failed" | "cancelled";
+                                version: number | null;
+                            }[];
+                            /** @enum {unknown} */
+                            state: "working" | "ready" | "failed" | "cancelled";
+                        };
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;

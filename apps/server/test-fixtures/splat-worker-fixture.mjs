@@ -27,6 +27,11 @@ if (pictures.some((f) => /^unusable/.test(f))) {
   process.exit(2);
 }
 console.log("progress 0.1 poses");
+// A capture with a picture named slow* trains for two minutes, so a test can cancel it.
+if (pictures.some((f) => /^slow/.test(f))) {
+  console.log("progress 0.2 train");
+  await new Promise((r) => setTimeout(r, 120_000));
+}
 console.log("progress 0.6 train");
 
 const props = ["x", "y", "z", "f_dc_0", "f_dc_1", "f_dc_2", "opacity", "scale_0", "scale_1", "scale_2", "rot_0", "rot_1", "rot_2", "rot_3"];

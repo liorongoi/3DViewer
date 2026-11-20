@@ -14,7 +14,7 @@ import {
   type SplatGoal,
   type SplatPreset,
 } from "@viewer/shared";
-import { getCapture, getSplatSetup, sendCapture, type CaptureStatus, type IngestRequest, type SplatSetup, type UploadProgress } from "../server/api";
+import { cancelCapture, getCapture, getSplatSetup, sendCapture, type CaptureStatus, type IngestRequest, type SplatSetup, type UploadProgress } from "../server/api";
 import { errorText } from "../server/error-text";
 import { refreshLibrary } from "../state/library";
 import { useLevels } from "../state/classification";
@@ -205,7 +205,11 @@ export function CaptureWizard() {
           {!server ? (
             <Notice>{t("splat.make.needsServer")}</Notice>
           ) : captureId ? (
-            <Progress status={status} onOpen={(id) => { set({ captureOpen: false }); reset(); setTimeout(() => openModel(id), 0); }} />
+            <Progress
+              status={status}
+              onOpen={(id) => { set({ captureOpen: false }); reset(); setTimeout(() => openModel(id), 0); }}
+              onStop={server && captureId ? async () => setStatus(await cancelCapture(server, captureId)) : undefined}
+            />
           ) : step === 0 ? (
             <div className="mx-auto grid max-w-2xl gap-4">
               <h3 className="text-[17px] font-semibold">{t("splat.make.have")}</h3>
@@ -402,20 +406,29 @@ function MethodHelp({ id }: { id: string }) {
   );
 }
 
-function Progress({ status, onOpen }: { status: CaptureStatus | null; onOpen: (modelId: string) => void }) {
+function Progress({ status, onOpen, onStop }: { status: CaptureStatus | null; onOpen: (modelId: string) => void; onStop?: () => Promise<void> }) {
   const { t } = useTranslation();
   const done = status && status.state !== "working";
+  const [stopping, setStopping] = useState(false);
+  const stop = async () => {
+    setStopping(true);
+    try {
+      await onStop?.();
+    } catch {
+      setStopping(false);
+    }
+  };
   return (
     <div className="mx-auto grid max-w-xl gap-4" data-testid="capture-progress">
       <div>
-        <h3 className="text-[17px] font-semibold">{done ? (status.state === "ready" ? t("splat.make.allDone") : t("splat.make.noneWorked")) : t("splat.make.progressTitle")}</h3>
+        <h3 className="text-[17px] font-semibold">{done ? (status.state === "ready" ? t("splat.make.allDone") : status.state === "cancelled" ? t("splat.make.stopped") : t("splat.make.noneWorked")) : t("splat.make.progressTitle")}</h3>
         {!done && <p className="text-[12px] text-fg3">{t("splat.make.progressHint")}</p>}
       </div>
       <ul className="grid gap-2">
         {(status?.methods ?? []).map((m) => (
           <li key={m.method} className="grid gap-1.5 rounded-[12px] bg-s2 p-3" data-testid={`capture-run-${m.method}`}>
             <div className="flex items-center gap-2">
-              {m.state === "ready" ? <Check size={16} className="text-[var(--status-current)]" /> : m.state === "failed" ? <XCircle size={16} className="text-[var(--danger,#e5484d)]" /> : <Sparkles size={16} className="animate-pulse text-accent" />}
+              {m.state === "ready" ? <Check size={16} className="text-[var(--status-current)]" /> : m.state === "failed" ? <XCircle size={16} className="text-[var(--danger,#e5484d)]" /> : m.state === "cancelled" ? <XCircle size={16} className="text-fg3" /> : <Sparkles size={16} className="animate-pulse text-accent" />}
               <span className="font-medium">{methodById(m.method)?.name ?? m.method}</span>
               <span className="text-[12px] text-fg3">{t(`splat.make.state_${m.state}`)}</span>
               <span className="flex-1" />
@@ -430,10 +443,17 @@ function Progress({ status, onOpen }: { status: CaptureStatus | null; onOpen: (m
                 <div className="h-full bg-accent transition-[width]" style={{ width: `${Math.round((m.fraction ?? 0.02) * 100)}%` }} />
               </div>
             )}
-            {m.error && <p className="flex items-start gap-1 text-[12px] text-[var(--status-production)]"><AlertTriangle size={14} className="mt-0.5 shrink-0" />{m.error}</p>}
+            {m.error && m.state !== "cancelled" && <p className="flex items-start gap-1 text-[12px] text-[var(--status-production)]"><AlertTriangle size={14} className="mt-0.5 shrink-0" />{m.error}</p>}
           </li>
         ))}
       </ul>
+      {status && !done && onStop && (
+        <div className="flex justify-end">
+          <button type="button" className="btn-ghost" disabled={stopping} onClick={() => void stop()} data-testid="capture-stop">
+            <XCircle size={14} /> {stopping ? t("splat.make.stopping") : t("splat.make.stop")}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

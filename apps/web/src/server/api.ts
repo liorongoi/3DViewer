@@ -218,6 +218,11 @@ export async function getCapture(srv: ServerInfo, id: string): Promise<CaptureSt
   return must(await apiFor(srv).GET("/api/captures/{id}", { params: { path: { id } } }));
 }
 
+/** Stops a capture: methods still waiting end now, and a training method stops within seconds. */
+export async function cancelCapture(srv: ServerInfo, id: string): Promise<CaptureStatus> {
+  return must(await apiFor(srv).POST("/api/captures/{id}/cancel", { params: { path: { id } } }));
+}
+
 export type OriginalFile = { path: string; size: number; url: string };
 /** The files a version was made from, as uploaded, with absolute addresses. */
 export async function listOriginals(srv: ServerInfo, id: string, version?: number): Promise<OriginalFile[]> {

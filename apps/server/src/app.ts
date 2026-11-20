@@ -394,7 +394,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   );
 
   const capture = opts.capture ?? { workers: {}, hardware: serverHardware };
-  registerReconstruct(app, db, capture);
+  registerReconstruct(app, db, capture, opts.storage ? { storage: opts.storage, who } : undefined);
   const admin = registerAdmin(app, db, { storage: opts.storage, who, thumbnails: opts.thumbnails });
 
   // The audit log says who opened what, so reading it is for the administrator (admin page, WP 3.9).

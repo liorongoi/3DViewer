@@ -2019,7 +2019,8 @@
                       "enum": [
                         "working",
                         "ready",
-                        "failed"
+                        "failed",
+                        "cancelled"
                       ]
                     },
                     "methods": {
@@ -2036,7 +2037,124 @@
                               "training",
                               "publishing",
                               "ready",
-                              "failed"
+                              "failed",
+                              "cancelled"
+                            ]
+                          },
+                          "fraction": {
+                            "type": "number",
+                            "nullable": true
+                          },
+                          "stage": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "error": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "modelId": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "version": {
+                            "type": "integer",
+                            "nullable": true
+                          }
+                        },
+                        "required": [
+                          "method",
+                          "state",
+                          "fraction",
+                          "stage",
+                          "error",
+                          "modelId",
+                          "version"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "methods"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/captures/{id}/cancel": {
+      "post": {
+        "tags": [
+          "capture"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "enum": [
+                        "working",
+                        "ready",
+                        "failed",
+                        "cancelled"
+                      ]
+                    },
+                    "methods": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "method": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "enum": [
+                              "queued",
+                              "training",
+                              "publishing",
+                              "ready",
+                              "failed",
+                              "cancelled"
                             ]
                           },
                           "fraction": {
