@@ -1,3 +1,4 @@
+import { enSplatChecks, heSplatChecks } from "./i18n-splat";
 // UI strings. Keys are shared by both languages; a test checks they match.
 
 export const en = {
@@ -204,6 +205,7 @@ export const en = {
     dropHint: "FBX, glTF (folder or ZIP), GLB, or a 3D Tiles folder or ZIP. Up to 2 GB per file and 50 GB per tileset.",
     choose: "Choose files",
     checks: {
+    ...enSplatChecks,
       format: "Format recognised",
       textures: "All referenced textures present",
       size: "Within size limits",
@@ -1166,6 +1168,7 @@ export const he: Shape<typeof en> = {
     dropHint: "FBX,‏ glTF (תיקייה או ZIP),‏ GLB, או תיקייה/ZIP של 3D Tiles. עד 2GB לקובץ ו-50GB ל-tileset.",
     choose: "בחירת קבצים",
     checks: {
+    ...heSplatChecks,
       format: "הפורמט זוהה",
       textures: "כל הטקסטורות קיימות",
       size: "בתוך מגבלות הגודל",

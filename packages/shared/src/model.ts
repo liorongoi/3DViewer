@@ -2,7 +2,8 @@ export type UpdateStatus = "draft" | "inProduction" | "current" | "superseded";
 
 export const UPDATE_STATUSES: UpdateStatus[] = ["draft", "inProduction", "current", "superseded"];
 
-export type ModelFormat = "glb" | "gltf" | "fbx" | "3dtiles";
+/** spz and ply: Gaussian splat models, drawn as 3D Tiles. */
+export type ModelFormat = "glb" | "gltf" | "fbx" | "3dtiles" | "spz" | "ply";
 
 export interface ClassificationLevel {
   id: string;
@@ -28,6 +29,11 @@ export interface ModelSource {
   clipTerrain?: boolean;
   /** The tileset is in local coordinates and is placed by the model's placement, like a GLB. */
   localFrame?: boolean;
+  /**
+   * Gaussian splats (SPZ or a splat PLY, drawn as 3D Tiles). Their placement's scale and up axis are
+   * applied when drawn, not baked into the tiles, and they are not measured as surfaces (SRS GS-20).
+   */
+  splats?: boolean;
   /** A GLB that carries its own Earth position (CESIUM_RTC or an Earth-centred node); it has no placement. */
   georeferenced?: boolean;
   /** Licence and origin, shown in Properties. */

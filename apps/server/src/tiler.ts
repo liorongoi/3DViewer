@@ -1,3 +1,5 @@
+import { PermanentError } from "./permanent.ts";
+import type { SplatResult } from "./splat.ts";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
@@ -599,6 +601,14 @@ export function tileModelInWorker(file: string, outDir: string, opts: TileOption
   return runInWorker({ task: "tile", file, outDir, opts }, onProgress);
 }
 
+/** A Gaussian splat upload as 3D Tiles (splat.ts), on its own thread. */
+export async function splatToTilesInWorker(file: string, outDir: string): Promise<SplatResult> {
+  // From source (tests) a worker thread cannot load the core package's extensionless imports;
+  // the built server bundles them, so only the built server moves this off the main thread.
+  if (import.meta.url.endsWith(".ts")) return (await import("./splat.ts")).splatToTiles(file, outDir);
+  return runInWorker({ task: "splat", file, outDir });
+}
+
 /** optimiseGlb (optimise.ts) on its own thread. */
 export function optimiseGlbInWorker(file: string, outFile: string): Promise<OptimiseResult> {
   return runInWorker({ task: "optimise", file, outFile });
@@ -617,10 +627,10 @@ function runInWorker<T>(job: Record<string, unknown>, onProgress?: (done: number
       fn();
       void worker.terminate();
     };
-    worker.on("message", (m: { type: "progress"; done: number; total: number } | { type: "done"; result: T } | { type: "error"; message: string }) => {
+    worker.on("message", (m: { type: "progress"; done: number; total: number } | { type: "done"; result: T } | { type: "error"; message: string; permanent?: boolean }) => {
       if (m.type === "progress") onProgress?.(m.done, m.total);
       else if (m.type === "done") finish(() => resolve(m.result));
-      else finish(() => reject(new Error(m.message)));
+      else finish(() => reject(m.permanent ? new PermanentError(m.message) : new Error(m.message)));
     });
     worker.on("error", (e) => finish(() => reject(e)));
     worker.on("exit", (code) => finish(() => reject(new Error(`The worker stopped unexpectedly (exit code ${code}).`))));

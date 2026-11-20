@@ -4,6 +4,9 @@ import { ecefToGeodetic } from "../geo/wgs84";
 
 /** glTF extensions CesiumJS 1.146 reads. A required extension outside this list blocks the upload. */
 export const SUPPORTED_GLTF_EXTENSIONS = new Set([
+  // Gaussian splats with SPZ v2 compression (Cesium draws them inside 3D Tiles).
+  "KHR_gaussian_splatting",
+  "KHR_gaussian_splatting_compression_spz_2",
   "KHR_draco_mesh_compression",
   "EXT_meshopt_compression",
   "KHR_mesh_quantization",

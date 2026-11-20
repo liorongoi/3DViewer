@@ -21,6 +21,7 @@ import {
   JulianDate,
   LightingModel,
   Math as CMath,
+  Matrix3,
   Matrix4,
   Model,
   type Ray,
@@ -191,6 +192,8 @@ export class ViewerEngine {
 
   private model: Model | null = null;
   private tileset: Cesium3DTileset | null = null;
+  /** A splat tileset's bounds without floaters, in the tileset's own frame (z up). */
+  private splatFocus: BoundingSphere | null = null;
   private edges: PostProcessStageComposite | PostProcessStage | null = null;
   private pins: Entity[] = [];
   private pivotMarker: Entity | null = null;
@@ -378,7 +381,8 @@ export class ViewerEngine {
           // A tileset in local coordinates: placed like a model, from the upload's Place step.
           this.modelBaseHeight = await this.placementHeight(summary.placement);
           this.groundOffset.set(0);
-          tileset.modelMatrix = placeMatrix(summary.placement, this.modelBaseHeight);
+          tileset.modelMatrix = localTilesetMatrix(summary, summary.placement, this.modelBaseHeight);
+          this.splatFocus = summary.source.splats ? splatFocus(tileset) : null;
         } else {
           // The fit samples the surface by drawing it many times over: let the first view out first.
           void this.firstDrawn(tileset)
@@ -455,6 +459,7 @@ export class ViewerEngine {
     if (this.tileset) this.widget.scene.primitives.remove(this.tileset);
     this.model = null;
     this.tileset = null;
+    this.splatFocus = null;
     this.layers.set([]);
     this.derivedLayers = [];
     this.manifest = null;
@@ -479,6 +484,12 @@ export class ViewerEngine {
   }
 
   boundingSphere(): BoundingSphere | null {
+    if (this.tileset && this.splatFocus) {
+      // Splats: the bounds without the floaters training leaves around a scene (SRS GS-15).
+      const f = this.splatFocus;
+      const c = Matrix4.multiplyByPoint(this.tileset.modelMatrix, f.center, new Cartesian3());
+      return new BoundingSphere(c, f.radius * Matrix4.getMaximumScale(this.tileset.modelMatrix));
+    }
     return this.model?.boundingSphere ?? this.tileset?.boundingSphere ?? null;
   }
 
@@ -988,7 +999,7 @@ export class ViewerEngine {
     const m = this.current.get();
     const placed = this.model ?? (m?.source.localFrame ? this.tileset : null);
     if (placed && m?.placement) {
-      placed.modelMatrix = placeMatrix(m.placement, this.modelBaseHeight + metres);
+      placed.modelMatrix = this.model ? placeMatrix(m.placement, this.modelBaseHeight + metres) : localTilesetMatrix(m, m.placement, this.modelBaseHeight + metres);
       this.widget.scene.requestRender();
       return;
     }
@@ -1622,6 +1633,31 @@ function placeMatrix(p: NonNullable<ModelSummary["placement"]>, height: number):
   const m = Matrix4.fromArray(placementFrame(p, height));
   const k = p.verticalFactor;
   return k && k !== 1 && Number.isFinite(k) ? Matrix4.multiplyByScale(m, new Cartesian3(1, 1, k), m) : m;
+}
+
+/**
+ * A local-frame tileset's model matrix. Our tiler bakes scale and up axis into its tiles; splat
+ * tiles keep the trainer's frame, so their scale (from a known real dimension) and up axis are
+ * applied here, after the placement.
+ */
+function localTilesetMatrix(m: ModelSummary, p: NonNullable<ModelSummary["placement"]>, height: number): Matrix4 {
+  const out = placeMatrix(p, height);
+  if (!m.source.splats) return out;
+  // Splat content is glTF y-up, drawn by Cesium as z-up; a file whose own z is up turns once more.
+  if (p.upAxis === "z") Matrix4.multiply(out, Matrix4.fromRotation(Matrix3.fromRotationX(-CMath.PI_OVER_TWO)), out);
+  const k = p.scale ?? 1;
+  if (k !== 1 && Number.isFinite(k) && k > 0) Matrix4.multiplyByUniformScale(out, k, out);
+  return out;
+}
+
+/** The floater-free bounds the splat packager writes in tileset extras, as a sphere in the tileset frame. */
+function splatFocus(tileset: Cesium3DTileset): BoundingSphere | null {
+  const f = (tileset.extras as { holo?: { focus?: { min: number[]; max: number[] } } } | undefined)?.holo?.focus;
+  if (!f || f.min.length !== 3 || f.max.length !== 3 || ![...f.min, ...f.max].every(Number.isFinite)) return null;
+  // glTF (x, y, z) is the tileset's (x, −z, y).
+  const c = [0, 1, 2].map((a) => (f.min[a]! + f.max[a]!) / 2);
+  const r = Math.hypot(f.max[0]! - f.min[0]!, f.max[1]! - f.min[1]!, f.max[2]! - f.min[2]!) / 2;
+  return new BoundingSphere(new Cartesian3(c[0], -c[2]!, c[1]), Math.max(r, 0.01));
 }
 
 function friendlyReason(err: Error): string {

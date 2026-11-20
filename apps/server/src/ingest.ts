@@ -17,7 +17,8 @@ import { Storage, validRelPath } from "./storage.ts";
 import type { OptimiseResult } from "./optimise.ts";
 import type { Sandbox } from "./sandbox.ts";
 import { convertFbx, needFbx, run } from "./convert.ts";
-import { TILE_IF, optimiseGlbInWorker, tileModelInWorker, type TileResult } from "./tiler.ts";
+import { TILE_IF, optimiseGlbInWorker, splatToTilesInWorker, tileModelInWorker, type TileResult } from "./tiler.ts";
+import type { SplatResult } from "./splat.ts";
 import { validateOfficial } from "./validate.ts";
 import { problem } from "./errors.ts";
 
@@ -433,9 +434,29 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
         publish = [...(converted.files as DiskFile[]), { ...fbx, path: `original/${path.basename(fbx.path)}` }];
       }
 
+      // Gaussian splats (SPZ, splat PLY): drawn as 3D Tiles written beside the upload, which is kept
+      // as it came, with every other file of the upload, under original/ (SRS GS-11, GS-16).
+      const isSplat = report.format === "spz" || report.format === "ply";
+      if (isSplat) {
+        await setState("converting");
+        await ctx.progress({ step: "splat" });
+        const src = (files as DiskFile[]).find((f) => f.path === report.mainFile)!;
+        const dir = path.join(work, "splat");
+        const r = sb
+          ? await sb.run<SplatResult>({ task: "splat", file: src.src, outDir: dir }, work, { timeoutMs: 60 * 60_000 })
+          : await splatToTilesInWorker(src.src, dir);
+        const drawn = await Promise.all(r.files.map(async (f) => diskFile(f, path.join(dir, f), await fileSize(path.join(dir, f)))));
+        publish = [...drawn, ...(files as DiskFile[]).map((f) => ({ ...f, path: `original/${f.path}` }))];
+        report.splat = r.info;
+        // The official 3D Tiles validator does not know the draft Gaussian splat glTF extensions yet;
+        // the splats were read and checked in full by the SPZ/PLY reader instead.
+        report.items.push(checkItem("validator", "ok", "splatSelfChecked"));
+        if (r.tiles > 1) report.items.push(checkItem("tiling", "ok", "splatTiled", { tiles: r.tiles, levels: r.levels }));
+      }
+
       // The official validator, on what will be published (the GLB for an FBX).
       await ctx.progress({ step: "validate" });
-      const main = report.format === "fbx" ? publish[0] : publish.find((f) => f.path === report.mainFile);
+      const main = report.format === "fbx" ? publish[0] : isSplat ? undefined : publish.find((f) => f.path === report.mainFile);
       if (main) {
         const official = await validateOfficial(report.format === "3dtiles" ? "3dtiles" : "gltf", main.src, { strict: opts.strictValidation, timeoutMs: opts.validatorTimeoutMs, sandbox: sb, sandboxWork: work });
         report.items.push(official);
@@ -517,13 +538,14 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
         else (await mkdir(path.dirname(dest), { recursive: true }), await writeFile(dest, await f.bytes()));
         bytes += f.size;
       }
-      const mainPath = tiled ? "tileset.json" : report.format === "fbx" ? publish[0]!.path : report.mainFile!;
-      const isTiles = tiled || report.format === "3dtiles";
+      const mainPath = tiled || isSplat ? "tileset.json" : report.format === "fbx" ? publish[0]!.path : report.mainFile!;
+      const isTiles = tiled || isSplat || report.format === "3dtiles";
       const source: ModelSummary["source"] = {
         kind: isTiles ? "3dtiles" : "glb",
         url: `files/${rel}/${mainPath.split("/").map(encodeURIComponent).join("/")}`,
         ...(report.format === "3dtiles" && req.groundFit ? { groundFit: req.groundFit } : {}),
         ...(isTiles && !georef && placement ? { localFrame: true } : {}),
+        ...(isSplat || report.splatTiles ? { splats: true } : {}),
         ...(!isTiles && georef ? { georeferenced: true } : {}),
       };
 

@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./loaders": "./src/loaders/index.ts"
+    "./loaders": "./src/loaders/index.ts",
+    "./splat": "./src/splat/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p .",

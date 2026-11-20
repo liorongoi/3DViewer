@@ -1330,10 +1330,11 @@ export type paths = {
                             /** @enum {unknown} */
                             kind: "glb" | "3dtiles";
                             localFrame?: boolean;
+                            splats?: boolean;
                             url: string;
                         };
                         /** @enum {unknown} */
-                        sourceFormat: "glb" | "gltf" | "fbx" | "3dtiles";
+                        sourceFormat: "glb" | "gltf" | "fbx" | "3dtiles" | "spz" | "ply";
                         /** @enum {unknown} */
                         status: "draft" | "inProduction" | "current" | "superseded";
                     };
@@ -1645,6 +1646,7 @@ export type paths = {
                             /** @enum {unknown} */
                             kind: "glb" | "3dtiles";
                             localFrame?: boolean;
+                            splats?: boolean;
                             url: string;
                         };
                     };
@@ -1850,7 +1852,7 @@ export type components = {
             sizeBytes: number;
             source: components["schemas"]["ModelSource"];
             /** @enum {unknown} */
-            sourceFormat: "glb" | "gltf" | "fbx" | "3dtiles";
+            sourceFormat: "glb" | "gltf" | "fbx" | "3dtiles" | "spz" | "ply";
             /** @enum {unknown} */
             status: "draft" | "inProduction" | "current" | "superseded";
             statusChangedAt: string;
@@ -1867,6 +1869,7 @@ export type components = {
             /** @enum {unknown} */
             kind: "glb" | "3dtiles";
             localFrame?: boolean;
+            splats?: boolean;
             url: string;
         };
         ModelSummary: {
@@ -1885,7 +1888,7 @@ export type components = {
             sizeBytes: number;
             source: components["schemas"]["ModelSource"];
             /** @enum {unknown} */
-            sourceFormat: "glb" | "gltf" | "fbx" | "3dtiles";
+            sourceFormat: "glb" | "gltf" | "fbx" | "3dtiles" | "spz" | "ply";
             /** @enum {unknown} */
             status: "draft" | "inProduction" | "current" | "superseded";
             statusChangedAt: string;

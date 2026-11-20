@@ -10,6 +10,7 @@ import { convertFbx } from "./convert.ts";
 import { optimiseGlb } from "./optimise.ts";
 import { tileModel } from "./tiler.ts";
 import { runValidator } from "./validate.ts";
+import { splatToTiles } from "./splat.ts";
 import type { Step } from "./sandbox.ts";
 
 const say = (m: Record<string, unknown>) => new Promise<void>((r) => process.stdout.write(JSON.stringify(m) + "\n", () => r()));
@@ -38,6 +39,8 @@ async function run(step: Step) {
       return tileModel(step.file, step.outDir, step.opts, (done, total) => void say({ type: "progress", done, total }));
     case "optimise":
       return optimiseGlb(step.file, step.outFile);
+    case "splat":
+      return splatToTiles(step.file, step.outDir);
     case "probe":
       return probe(step.work);
   }

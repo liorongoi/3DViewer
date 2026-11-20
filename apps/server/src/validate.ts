@@ -132,9 +132,12 @@ export async function validateOfficial(format: "3dtiles" | "gltf" | "glb", file:
   const kind = format === "3dtiles" ? "3dtiles" : "gltf";
   const name = kind === "3dtiles" ? "3D Tiles" : "glTF";
   const timeoutMs = opts.timeoutMs ?? 15 * 60_000;
-  const r = opts.sandbox ? await opts.sandbox.run<ValidatorRun>({ task: "validate", kind, file, timeoutMs }, opts.sandboxWork ?? path.dirname(file), { timeoutMs: timeoutMs + 60_000 }) : await runValidator(kind, file, timeoutMs);
+  let r = opts.sandbox ? await opts.sandbox.run<ValidatorRun>({ task: "validate", kind, file, timeoutMs }, opts.sandboxWork ?? path.dirname(file), { timeoutMs: timeoutMs + 60_000 }) : await runValidator(kind, file, timeoutMs);
   if (r === "timeout") return checkItem("validator", "warning", "validatorTimeout", { format: name, minutes: Math.round(timeoutMs / 60_000) });
   if (!Array.isArray(r)) return checkItem("validator", "warning", "validatorFailed", { format: name }, r.failed);
+  // The validators predate the draft Gaussian splat glTF extension (KHR_gaussian_splatting) and call
+  // its attribute names invalid. That is not a fault in the file; anything else still counts.
+  r = r.filter((i) => !(i.severity === "ERROR" && /attributes\/KHR_gaussian_splatting:/.test(i.path) && /attribute name/i.test(i.message)));
   const errors = r.filter((i) => i.severity === "ERROR").length;
   const warnings = r.filter((i) => i.severity === "WARNING").length;
   if (errors) {

@@ -72,13 +72,13 @@ export function writeLimiter(limit: number, now: () => number = Date.now) {
   };
 }
 
-const FORMATS = ["glb", "gltf", "fbx", "3dtiles"];
+const FORMATS = ["glb", "gltf", "fbx", "3dtiles", "spz", "ply"];
 const str = { type: "string", maxLength: 2000 } as const;
 const centre = { type: "object", required: ["lat", "lon"], properties: { lat: { type: "number", minimum: -90, maximum: 90 }, lon: { type: "number", minimum: -180, maximum: 180 } } } as const;
 const source = {
   type: "object",
   required: ["kind", "url"],
-  properties: { kind: { enum: ["glb", "3dtiles"] }, url: { type: "string", maxLength: 4000 }, groundFit: { enum: ["street", "surface", "none"] }, clipTerrain: { type: "boolean" }, localFrame: { type: "boolean" }, georeferenced: { type: "boolean" }, attribution: str },
+  properties: { kind: { enum: ["glb", "3dtiles"] }, url: { type: "string", maxLength: 4000 }, groundFit: { enum: ["street", "surface", "none"] }, clipTerrain: { type: "boolean" }, localFrame: { type: "boolean" }, splats: { type: "boolean" }, georeferenced: { type: "boolean" }, attribution: str },
   additionalProperties: false,
 } as const;
 const placement = {
