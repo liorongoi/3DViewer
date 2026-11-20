@@ -58,6 +58,8 @@ export {
   Map,
   Command,
   Sparkles,
+  Building2,
+  Satellite,
   StopCircle,
   Video,
   Wand2,

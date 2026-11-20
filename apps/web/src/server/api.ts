@@ -192,3 +192,28 @@ export async function uploadAndIngest(srv: ServerInfo, files: LocalFile[], req: 
     status = asStatus(must(await api.GET("/api/ingests/{id}", { params: { path: { id: created.id } }, signal })));
   }
 }
+
+export type SplatSetup = paths["/api/splat-methods"]["get"]["responses"]["200"]["content"]["application/json"];
+export type CaptureStatus = paths["/api/captures/{id}"]["get"]["responses"]["200"]["content"]["application/json"];
+
+/** The methods installed on the server and the hardware they would run on. */
+export async function getSplatSetup(srv: ServerInfo): Promise<SplatSetup> {
+  return must(await apiFor(srv).GET("/api/splat-methods"));
+}
+
+/** Uploads a capture (a video, photos or satellite images) and queues the training; returns the capture id. */
+export async function sendCapture(srv: ServerInfo, files: LocalFile[], req: IngestRequest, onProgress: (p: UploadProgress) => void, signal?: AbortSignal): Promise<string> {
+  const total = files.reduce((s, f) => s + f.size, 0);
+  const api = apiFor(srv);
+  const created = must(await api.POST("/api/ingests", { body: { ...req, files: files.map((f) => ({ path: f.path, size: f.size })) }, signal }));
+  let sent = 0;
+  onProgress({ sent, total, step: "upload" });
+  const byPath = new Map(files.map((f) => [f.path, f]));
+  for (const u of created.uploads) await sendFile(srv, u.url, byPath.get(u.path)!, (n) => onProgress({ sent: (sent += n), total, step: "upload" }), signal);
+  must(await api.POST("/api/ingests/{id}/submit", { params: { path: { id: created.id } }, signal }));
+  return created.id;
+}
+
+export async function getCapture(srv: ServerInfo, id: string): Promise<CaptureStatus> {
+  return must(await apiFor(srv).GET("/api/captures/{id}", { params: { path: { id } } }));
+}
