@@ -206,7 +206,6 @@ export const en = {
     dropHint: "FBX, glTF (folder or ZIP), GLB, or a 3D Tiles folder or ZIP. Up to 2 GB per file and 50 GB per tileset.",
     choose: "Choose files",
     checks: {
-    ...enSplatChecks,
       format: "Format recognised",
       textures: "All referenced textures present",
       size: "Within size limits",
@@ -752,6 +751,7 @@ export const en = {
     sight: "Line of sight {{n}}",
   },
   checks: {
+    ...enSplatChecks,
     fbxDamaged: {
       title: "The FBX header is damaged",
       detail: "It names FBX version {{version}}, which does not exist.",
@@ -1171,7 +1171,6 @@ export const he: Shape<typeof en> = {
     dropHint: "FBX,‏ glTF (תיקייה או ZIP),‏ GLB, או תיקייה/ZIP של 3D Tiles. עד 2GB לקובץ ו-50GB ל-tileset.",
     choose: "בחירת קבצים",
     checks: {
-    ...heSplatChecks,
       format: "הפורמט זוהה",
       textures: "כל הטקסטורות קיימות",
       size: "בתוך מגבלות הגודל",
@@ -1723,6 +1722,7 @@ export const he: Shape<typeof en> = {
     sight: "קו ראייה {{n}}",
   },
   checks: {
+    ...heSplatChecks,
     fbxDamaged: {
       title: "כותרת ה-FBX פגומה",
       detail: "היא מציינת גרסת FBX {{version}}, שאינה קיימת.",

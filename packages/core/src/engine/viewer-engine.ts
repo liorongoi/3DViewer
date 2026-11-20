@@ -460,6 +460,7 @@ export class ViewerEngine {
     this.model = null;
     this.tileset = null;
     this.splatFocus = null;
+    this.splatFrames = 0;
     this.layers.set([]);
     this.derivedLayers = [];
     this.manifest = null;
@@ -481,6 +482,15 @@ export class ViewerEngine {
       this.cut = null;
       this.applyTerrain();
     }
+  }
+
+  /** Frames still to draw so the last splat sort is shown (see splatsBusy). */
+  private splatFrames = 0;
+  private splatsSettling(): boolean {
+    // A sort commits during a frame and is drawn by the frames after it: a few more, counted in frames
+    // not milliseconds, because a slow GPU can take longer than any fixed time per frame.
+    if (this.tileset && splatsBusy(this.tileset)) this.splatFrames = 4;
+    return this.splatFrames > 0;
   }
 
   boundingSphere(): BoundingSphere | null {
@@ -1431,6 +1441,7 @@ export class ViewerEngine {
       this.loading.get() ||
       (!!this.model && !this.model.ready) ||
       (!!this.tileset && !this.tileset.tilesLoaded) ||
+      this.splatsSettling() ||
       (scene.globe.show && !scene.globe.tilesLoaded) ||
       !(this.widget as unknown as { dataSourceDisplay: { ready: boolean } }).dataSourceDisplay.ready;
     const more = () => performance.now() < this.drawUntil || loading();
@@ -1439,6 +1450,7 @@ export class ViewerEngine {
       if (more()) request();
     });
     scene.postRender.addEventListener(() => {
+      if (this.splatFrames > 0) this.splatFrames--;
       const next = more();
       if (!next && this.drawing) {
         // Still: no frame rate to show until it draws again.
@@ -1469,7 +1481,7 @@ export class ViewerEngine {
         });
       }
     };
-    commands(this, ["afterFrame", "updatePerf", "keepDrawing", "drawOnDemand", "destroy"]);
+    commands(this, ["afterFrame", "updatePerf", "keepDrawing", "drawOnDemand", "destroy", "splatsSettling"]);
     for (const tool of [this.measure, this.sight, this.viewshed, this.userLayers, this.lod]) commands(tool, ["destroy"]);
     // And every input on the page: the interface changes what is drawn.
     const wake = () => this.keepDrawing();
@@ -1648,6 +1660,18 @@ function localTilesetMatrix(m: ModelSummary, p: NonNullable<ModelSummary["placem
   const k = p.scale ?? 1;
   if (k !== 1 && Number.isFinite(k) && k > 0) Matrix4.multiplyByUniformScale(out, k, out);
   return out;
+}
+
+/**
+ * Gaussian splats are decoded and depth-sorted off the main thread, and Cesium shows them only
+ * once a sort has been committed in a later frame. Drawn on demand, that frame would never come
+ * once the tiles had loaded (SRS GS-15: the scene stays visible after asynchronous decoding and
+ * sorting), so the engine keeps drawing while a splat primitive has work in flight.
+ */
+function splatsBusy(tileset: Cesium3DTileset): boolean {
+  const p = (tileset as unknown as { gaussianSplatPrimitive?: { _sorterState?: number; _dirty?: boolean; _gaussianSplatTexturePending?: boolean; _pendingSnapshot?: unknown; _needsSnapshotRebuild?: boolean; _hasGaussianSplatTexture?: boolean; _numSplats?: number } }).gaussianSplatPrimitive;
+  if (!p) return false;
+  return !!(p._sorterState || p._dirty || p._gaussianSplatTexturePending || p._pendingSnapshot || p._needsSnapshotRebuild || (p._numSplats && !p._hasGaussianSplatTexture));
 }
 
 /** The floater-free bounds the splat packager writes in tileset extras, as a sphere in the tileset frame. */
