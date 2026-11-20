@@ -1,3 +1,4 @@
+import { scaledCloud, splatToSpz, tilesetZip } from "./export";
 import { describe, expect, it } from "vitest";
 import { gunzipSync, gzipSync } from "fflate";
 import { decodePly, decodeSpz, encodeSpzV2, packRotationV3, splatFileToTiles, splatTiles, SPZ_MAGIC, unpackRotation, unpackSh, unpackScale, unpackColor, type SplatCloud } from ".";
@@ -227,5 +228,51 @@ describe("the upload check", () => {
     const { report } = await checkFiles([fromBytes("mesh.ply", new TextEncoder().encode("ply\nformat binary_little_endian 1.0\nelement vertex 0\nproperty float x\nelement face 0\nproperty list uchar int vertex_indices\nend_header\n"))]);
     expect(report.ok).toBe(false);
     expect(report.items[0]!.detail).toMatch(/mesh/);
+  });
+});
+
+describe("splat export", () => {
+  it("returns an unscaled SPZ version 2 byte for byte, and scales positions and sizes together", () => {
+    const c = cloudOf(500, 4);
+    const spz = encodeSpzV2(c);
+    expect(splatToSpz("a.spz", spz)).toBe(spz);
+    const big = decodeSpz(splatToSpz("a.spz", spz, 2.5)).cloud;
+    const orig = decodeSpz(spz).cloud;
+    for (let i = 0; i < 30; i++) expect(big.pos[i]!).toBeCloseTo(orig.pos[i]! * 2.5, 2);
+    // ln(2.5)·16 ≈ 14.7 steps of the stored log size.
+    for (let i = 0; i < 30; i++) expect(Math.abs(big.scales[i]! - orig.scales[i]! - 14.66)).toBeLessThanOrEqual(1);
+    expect(() => scaledCloud(c, 0)).toThrow();
+  });
+});
+
+describe("3D Tiles download", () => {
+  it("zips the tileset and its tiles, renames object-URL tiles, and places the root only when asked", async () => {
+    const { unzipSync } = await import("fflate");
+    const made = splatTiles(cloudOf(3000, 20), { singleMax: 1000, leafMax: 800 });
+    const tiles = { ...made, files: Object.fromEntries(made.files.map((f) => [f.path, f.data])) as Record<string, Uint8Array> };
+    const base = "https://holo.test/files/m/i/";
+    // One tile as a model opened on this computer has it: an object URL.
+    const ts = JSON.parse(new TextDecoder().decode(tiles.files["tileset.json"]!));
+    const firstLeaf = (t: { content?: { uri: string }; children?: unknown[] }): { content?: { uri: string } } => (t.children?.length ? firstLeaf(t.children[0] as never) : t);
+    const leaf = firstLeaf(ts.root);
+    const leafName = leaf.content!.uri;
+    leaf.content!.uri = "blob:https://holo.test/1234";
+    const get = async (url: string) => (url === `${base}tileset.json` ? new TextEncoder().encode(JSON.stringify(ts)) : url.startsWith("blob:") ? tiles.files[leafName]! : tiles.files[url.slice(base.length)]!);
+    const floating = unzipSync(await tilesetZip(`${base}tileset.json`, get));
+    const fts = JSON.parse(new TextDecoder().decode(floating["tileset.json"]!));
+    // Floating: the tiles keep their own frame.
+    expect(fts.root.transform).toEqual(ts.root.transform);
+    expect(floating["holo-placement.json"]).toBeUndefined();
+    expect(Object.keys(floating).filter((k) => k.endsWith(".glb"))).toHaveLength(tiles.tiles);
+    expect(floating["local/0.glb"]).toEqual(tiles.files[leafName]);
+    const m = [2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, 100, 200, 300, 1];
+    const sidecar = { format: "holo-placement/1", crs: "EPSG:4979", lat: 32, lon: 34, height: 0, headingDeg: 0, metresPerUnit: 1, upAxis: "y", note: "" } as const;
+    const placed = unzipSync(await tilesetZip(`${base}tileset.json`, get, { placeMatrix: m, sidecar }));
+    // Placed: the viewer's matrix on top of the root's own (here a 2× scale and a move).
+    const pt = JSON.parse(new TextDecoder().decode(placed["tileset.json"]!)).root.transform as number[];
+    const own = (ts.root.transform ?? [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]) as number[];
+    expect(pt.slice(0, 12)).toEqual(own.slice(0, 12).map((v) => v * 2));
+    expect(pt.slice(12, 15)).toEqual([0, 1, 2].map((i) => 2 * own[12 + i]! + m[12 + i]!));
+    expect(JSON.parse(new TextDecoder().decode(placed["holo-placement.json"]!)).lat).toBe(32);
   });
 });

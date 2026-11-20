@@ -217,3 +217,17 @@ export async function sendCapture(srv: ServerInfo, files: LocalFile[], req: Inge
 export async function getCapture(srv: ServerInfo, id: string): Promise<CaptureStatus> {
   return must(await apiFor(srv).GET("/api/captures/{id}", { params: { path: { id } } }));
 }
+
+export type OriginalFile = { path: string; size: number; url: string };
+/** The files a version was made from, as uploaded, with absolute addresses. */
+export async function listOriginals(srv: ServerInfo, id: string, version?: number): Promise<OriginalFile[]> {
+  const list = must(await apiFor(srv).GET("/api/models/{id}/originals", { params: { path: { id }, query: version ? { version } : {} } }));
+  return list.map((f) => ({ ...f, url: `${srv.base}/${f.url}` }));
+}
+
+/** A new version of a model with the same files and a new placement (a new real size, or floating). */
+export async function addPlacementVersion(srv: ServerInfo, m: ModelSummary, placement: NonNullable<ModelSummary["placement"]>, note: string): Promise<ModelSummary> {
+  const prefix = `${srv.base}/`;
+  const source = { ...m.source, url: m.source.url.startsWith(prefix) ? m.source.url.slice(prefix.length) : m.source.url };
+  return must(await apiFor(srv).POST("/api/models/{id}/versions", { params: { path: { id: m.id } }, body: { source, placement, sizeBytes: m.sizeBytes, note } })) as ModelSummary;
+}

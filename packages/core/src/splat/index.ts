@@ -6,6 +6,7 @@ import { splatTiles, type SplatTiles, type SplatTilesOptions } from "./tiles";
 export * from "./cloud";
 export { decodeSpz, encodeSpzV2, packRotationV3, sniffSpz, MAX_SPLATS, SPZ_MAGIC } from "./spz";
 export { decodePly, readPlyHeader, plyInfo } from "./ply";
+export { scaledCloud, splatToSpz, tilesetZip, zipFiles, type PlacementSidecar } from "./export";
 export { splatGlb, splatTiles, GS_EXTENSIONS, type SplatTiles, type SplatTilesOptions } from "./tiles";
 
 export type SplatFormat = "spz" | "ply";

@@ -535,6 +535,9 @@ describe("Gaussian splat models (docs/GAUSSIAN_SPLATS.md)", () => {
     expect(orig.statusCode).toBe(200);
     expect(Buffer.compare(orig.rawPayload, Buffer.from(data))).toBe(0);
     expect((await app.inject(`/files/${done.modelId}/${ing.id}/original/cameras.json`)).body).toBe("[]");
+    // "Download original" lists every uploaded file with its address.
+    const originals = (await app.inject(`/api/models/${done.modelId}/originals`)).json();
+    expect(originals).toEqual(expect.arrayContaining([{ path: "point_cloud.ply", size: data.length, url: `files/${done.modelId}/${ing.id}/original/point_cloud.ply` }, { path: "cameras.json", size: 2, url: `files/${done.modelId}/${ing.id}/original/cameras.json` }]));
   });
 
   it("refuses a damaged SPZ with the reason and publishes nothing", async () => {

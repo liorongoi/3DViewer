@@ -1,5 +1,5 @@
 import { promises as dns } from "node:dns";
-import { rm, writeFile } from "node:fs/promises";
+import { readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import swagger from "@fastify/swagger";
@@ -12,7 +12,7 @@ import { registerIngest } from "./ingest.ts";
 import { serverHardware } from "./hardware.ts";
 import { registerReconstruct, type ReconstructOptions } from "./reconstruct.ts";
 import { enqueue } from "./jobs.ts";
-import { registerFiles, type Storage } from "./storage.ts";
+import { registerFiles, Storage } from "./storage.ts";
 import { addSchemas, arrayOf, bool, closed, int, ref, text, checkContract } from "./schemas.ts";
 import { addVersion, createModel, getManifest, getModel, manifestProblem, setManifest, listModels, listVersions, updateModel, type LibraryFilter, type ModelPatch, type NewModel } from "./library.ts";
 import { problem } from "./errors.ts";
@@ -223,6 +223,38 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       if (!m) return reply.status(404).send(req.query.version && (await getModel(db, req.params.id)) ? problem("noVersion", { version: req.query.version }) : problem("noModel"));
       await audit(db, { ...(await who(req)), action: "model.view", target: m.id, detail: { version: m.version } });
       return { ...m, history: await listVersions(db, m.id) };
+    },
+  );
+
+  // The files a version was made from, as uploaded (kept under original/ when the server converted
+  // or tiled them), for "Download original" (docs/GAUSSIAN_SPLATS.md, export).
+  app.get<{ Params: { id: string }; Querystring: { version?: number } }>(
+    "/api/models/:id/originals",
+    {
+      schema: {
+        tags: ["library"],
+        params: idParam,
+        querystring: { type: "object", properties: { version: { type: "integer", minimum: 1 } }, additionalProperties: false },
+        response: { 200: { type: "array", items: closed({ path: text, size: int, url: text }, ["path", "size", "url"]) } },
+      },
+    },
+    async (req, reply) => {
+      const m = await getModel(db, req.params.id, req.query.version);
+      if (!m) return reply.status(404).send(problem("noModel"));
+      const rel = /^files\/(.+)\/[^/]+$/.exec(m.source.url)?.[1];
+      const root = rel && opts.storage ? Storage.inside(opts.storage.files, path.posix.join(decodeURIComponent(rel), "original")) : null;
+      if (!root) return [];
+      const out: { path: string; size: number; url: string }[] = [];
+      const walk = async (dir: string, pre: string): Promise<void> => {
+        for (const e of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
+          if (out.length >= 1000) return;
+          const p = pre ? `${pre}/${e.name}` : e.name;
+          if (e.isDirectory()) await walk(path.join(dir, e.name), p);
+          else if (e.isFile()) out.push({ path: p, size: (await stat(path.join(dir, e.name))).size, url: `files/${rel}/original/${p.split("/").map(encodeURIComponent).join("/")}` });
+        }
+      };
+      await walk(root, "");
+      return out;
     },
   );
 

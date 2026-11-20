@@ -493,6 +493,18 @@ export class ViewerEngine {
     return this.splatFrames > 0;
   }
 
+  /**
+   * For splat models (docs/GAUSSIAN_SPLATS.md): the size of the splats without floaters, in file
+   * units as width, height, depth along the file's x, y, z (glTF frame), and the matrix that places
+   * the tileset on the globe (column-major), for "Set real size" and the 3D Tiles download.
+   */
+  splatInfo(): { size: [number, number, number] | null; modelMatrix: number[] } | null {
+    if (!this.tileset || !this.current.get()?.source.splats) return null;
+    const f = (this.tileset.extras as { holo?: { focus?: { min: number[]; max: number[] } } } | undefined)?.holo?.focus;
+    const size = f && f.min.length === 3 && f.max.length === 3 ? ([0, 1, 2].map((a) => f.max[a]! - f.min[a]!) as [number, number, number]) : null;
+    return { size: size && size.every((v) => Number.isFinite(v) && v >= 0) ? size : null, modelMatrix: Matrix4.toArray(this.tileset.modelMatrix) };
+  }
+
   boundingSphere(): BoundingSphere | null {
     if (this.tileset && this.splatFocus) {
       // Splats: the bounds without the floaters training leaves around a scene (SRS GS-15).

@@ -71,6 +71,34 @@ const check = (ok, what) => {
   const m = await page.evaluate(() => window.viewerEngine.current.get());
   check(m.name === "Courtyard test" && m.placement.modelUnit === 1, `opens as a floating splat model (${m.name}, modelUnit ${m.placement.modelUnit})`);
   await page.screenshot({ path: path.join(out, "6-open.png") });
+
+  // Give it a real size afterwards: a new version with the same files.
+  const props = page.getByRole("tab", { name: "Properties" });
+  if (!(await props.isVisible())) await page.keyboard.press(".");
+  await page.getByRole("tab", { name: "Properties" }).click();
+  const panel = page.getByTestId("splat-panel");
+  await panel.waitFor();
+  check(/Floating/.test(await panel.getByTestId("splat-size").innerText()), "Properties say the model is floating");
+  for (const [id, ext] of [["splat-dl-tiles", ".zip"], ["splat-dl-spz", ".spz"], ["splat-dl-original", ".ply"]]) {
+    const [dl] = await Promise.all([page.waitForEvent("download", { timeout: 60000 }), panel.getByTestId(id).click()]);
+    const file = path.join(out, `floating-${dl.suggestedFilename()}`);
+    await dl.saveAs(file);
+    check(dl.suggestedFilename().endsWith(ext) && fs.statSync(file).size > 100, `floating download ${dl.suggestedFilename()} (${fs.statSync(file).size} bytes)`);
+  }
+  await panel.getByTestId("splat-set-size").click();
+  await panel.getByTestId("known-side").selectOption("w");
+  await panel.getByTestId("known-metres").fill("5");
+  await page.screenshot({ path: path.join(out, "7-set-size.png") });
+  await panel.getByTestId("splat-size-save").click();
+  await page.waitForFunction(() => window.viewerEngine.current.get()?.version === 2 && !window.viewerEngine.loading.get(), null, { timeout: 120000 });
+  const m2 = await page.evaluate(() => window.viewerEngine.current.get());
+  check(m2.placement.modelUnit === undefined && Math.abs(m2.placement.scale - 5) < 0.3, `the new version has a real size (scale ${m2.placement.scale.toFixed(3)} m per unit)`);
+  await page.getByTestId("splat-panel").waitFor();
+  const [dl2] = await Promise.all([page.waitForEvent("download", { timeout: 60000 }), page.getByTestId("splat-panel").getByTestId("splat-dl-spz").click()]);
+  check(dl2.suggestedFilename().endsWith("-spz.zip"), `a sized SPZ comes with its position (${dl2.suggestedFilename()})`);
+  await dl2.saveAs(path.join(out, `sized-${dl2.suggestedFilename()}`));
+  await page.waitForTimeout(2000);
+  await page.screenshot({ path: path.join(out, "8-sized.png") });
   check(errors.length === 0, `no page errors ${errors.slice(0, 3).join(" | ")}`);
   await browser.close();
   console.log(`Screenshots in ${out}`);
