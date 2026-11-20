@@ -1926,6 +1926,9 @@
                               "memoryGb": {
                                 "type": "number"
                               },
+                              "freeGb": {
+                                "type": "number"
+                              },
                               "driver": {
                                 "type": "string"
                               }

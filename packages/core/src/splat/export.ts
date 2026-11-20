@@ -76,6 +76,8 @@ export async function tilesetZip(tilesetUrl: string, get: (url: string) => Promi
     if (c && uri) {
       const plain = !/^[a-z][a-z0-9+.-]*:/i.test(uri) && !uri.startsWith("/") && !uri.split("/").includes("..");
       let name = plain ? decodeURIComponent(uri.split(/[?#]/)[0]!) : "";
+      // A decoded name must still be a plain relative path, so the zip never holds "../" entries.
+      if (name.split(/[\\/]/).some((p) => p === ".." || p === "") || /^[a-z]:/i.test(name)) name = "";
       while (!name || files[name]) name = `local/${n++}.glb`;
       if (/\.json$/i.test(name)) throw new Error("External tilesets inside a tileset are not downloaded.");
       files[name] = await get(new URL(uri, tilesetUrl).href);

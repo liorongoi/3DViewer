@@ -1873,6 +1873,7 @@ export type paths = {
                                 cpus: number;
                                 gpus: {
                                     driver?: string;
+                                    freeGb?: number;
                                     memoryGb: number;
                                     name: string;
                                     vendor: string;

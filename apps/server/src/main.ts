@@ -5,7 +5,7 @@ import { ConfigError, loadConfig, type Config } from "./config.ts";
 import { buildApp } from "./app.ts";
 import { AuditForwarder } from "./audit-forward.ts";
 import { migrate, openPglite, openPostgres } from "./db.ts";
-import { ingestHandler, unpackUpload } from "./ingest.ts";
+import { ingestHandler, scan, unpackUpload } from "./ingest.ts";
 import { serverHardware } from "./hardware.ts";
 import { reconstructHandler } from "./reconstruct.ts";
 import { Worker, type Handler } from "./jobs.ts";
@@ -69,7 +69,7 @@ const corsOrigins = config.corsOrigins;
 // THUMBNAIL_WEB_URL: where the web app is served, on the same origin as /files (WP 3.5).
 const renderer = config.thumbnailWebUrl ? chromiumRenderer({ webUrl: config.thumbnailWebUrl, executablePath: config.chromium }) : null;
 const thumbnails = !!renderer;
-const capture = { workers: config.splatWorkers, hardware: serverHardware, timeoutHours: config.splatTimeoutHours };
+const capture = { workers: config.splatWorkers, hardware: serverHardware, timeoutHours: config.splatTimeoutHours, ...(config.clamdscan ? { scan: (dir: string) => scan(config.clamdscan, dir) } : {}) };
 const app = await buildApp({ db, storage, corsOrigins, thumbnails, reverseDns: true, logger: true, writeRateLimit: config.writeRateLimit, capture });
 app.log.info({ db: db.kind, migrations: applied, seeded, storage: storage.root, production: config.production }, "database ready");
 if (!config.databaseUrl && config.production) app.log.warn("EMBEDDED_DB=1: the embedded database is for a single workstation, not a shared server");

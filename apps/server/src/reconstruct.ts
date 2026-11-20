@@ -87,6 +87,8 @@ export interface ReconstructOptions {
   workers: Record<string, string>;
   hardware: () => Promise<ServerHardware>;
   timeoutHours?: number;
+  /** Scans the capture for viruses before a worker reads it (CLAMDSCAN); unset: not scanned. */
+  scan?: (dir: string) => Promise<{ severity: string; title: string }>;
 }
 
 /** Why a reconstruct request cannot run here, or null. Checked when the upload is created, before any byte is sent. */
@@ -228,6 +230,11 @@ export function reconstructHandler(
       for (const u of ups) await unpack(storage.uploadPart(u.id), u.path, input);
       const pictures = (await listFiles(input)).filter((f) => ACCEPT[r.input].test(f) && !SIDECAR.test(f));
       if (!pictures.length) throw new PermanentError(`The upload has no ${r.input === "video" ? "video" : "images"} to make splats from.`);
+      // The capture is scanned before a worker opens it; the splats it makes are scanned again when published.
+      if (opts.scan) {
+        const scanned = await opts.scan(input);
+        if (scanned.severity === "error") throw new PermanentError(scanned.title);
+      }
 
       const hw = await opts.hardware();
       const settings = presetSettings(method, r.preset, hw);

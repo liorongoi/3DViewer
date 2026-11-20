@@ -369,7 +369,7 @@ export async function unzipGuarded(zipPath: string, dest: string, budget: { file
 }
 
 /** ClamAV hook. clamdscan exits 0 for clean, 1 for a virus, 2 for an error. */
-async function scan(bin: string | undefined, dir: string): Promise<CheckItem> {
+export async function scan(bin: string | undefined, dir: string): Promise<CheckItem> {
   if (!bin) return checkItem("scan", "warning", "notScanned");
   const r = await run(bin, ["--no-summary", "--infected", "--fdpass", dir], 30 * 60_000);
   if (r.code === 0) return checkItem("scan", "ok", "clean");
