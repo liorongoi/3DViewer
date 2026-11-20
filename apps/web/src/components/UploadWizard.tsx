@@ -15,6 +15,7 @@ import { useLevels } from "../state/classification";
 import { arrangeWhenOpen } from "../layers-standard";
 import { errorText } from "../server/error-text";
 import { desktop, fromDesktop, fromDesktopList } from "../desktop";
+import { RealSize, scaleFromKnown, type SizeChoice } from "./RealSize";
 
 const STEPS = ["drop", "check", "place", "layers", "details"] as const;
 
@@ -57,7 +58,7 @@ const CRS = [
 /** The list, plus the system a sidecar file names when it is another one. */
 const crsList = (extra?: number) => (extra && !CRS.some((c) => c.code === extra) ? [...CRS, { code: extra, label: `EPSG:${extra}`, x: "wizard.easting", y: "wizard.northing" }] : CRS);
 
-const NEW_PLACE: Place = { fromFile: true, fitGround: true, crs: 4326, x: "", y: "", onTerrain: true, height: "0", heading: "0", scale: "1", upAxis: "y", unit: 1 };
+const NEW_PLACE: Place = { fromFile: true, fitGround: true, crs: 4326, x: "", y: "", onTerrain: true, height: "0", heading: "0", scale: "1", upAxis: "y", unit: 1, size: { mode: "units", side: "w", metres: "" } };
 
 interface Place {
   fromFile: boolean;
@@ -74,6 +75,21 @@ interface Place {
   upAxis: "y" | "z";
   /** Metres per file unit. */
   unit: number;
+  /** How big it is: its units are right, one real measurement is known, or nobody knows (floating). */
+  size: SizeChoice;
+}
+
+const isSplat = (r: CheckReport | null | undefined) => r?.format === "spz" || r?.format === "ply" || !!r?.splatTiles;
+
+/** The scale and unit the Place step means: from the units, from one known measurement, or floating. */
+function effectiveSize(place: Place, r: CheckReport): { scale: number; unit: number } {
+  if (place.size.mode === "known") {
+    const k = scaleFromKnown(r.stats.size, place.upAxis, place.size);
+    // An empty or unusable measurement leaves the model floating rather than guessing.
+    return k ? { scale: k, unit: 1 } : { scale: 1, unit: 0 };
+  }
+  if (place.size.mode === "floating") return { scale: 1, unit: 0 };
+  return { scale: parseFloat(place.scale) || 1, unit: place.unit };
 }
 
 /**
@@ -139,6 +155,8 @@ export function UploadWizard() {
         const fp = r.report.filePosition;
         if (fp) setPlace((p) => ({ ...p, fromFile: false, crs: fp.epsg, x: fp.x.toFixed(fp.epsg === 4326 ? 7 : 3), y: fp.y.toFixed(fp.epsg === 4326 ? 7 : 3), height: String(fp.height), onTerrain: false }));
         else setPlace((p) => ({ ...p, fromFile: !!r.report.georef, crs: 4326, x: c ? c.lon.toFixed(6) : "35.2137", y: c ? c.lat.toFixed(6) : "31.7683" }));
+        // A splat model's units come from training, not from a survey: ask for a real size, else keep it floating.
+        if (isSplat(r.report)) setPlace((p) => ({ ...p, size: { ...p.size, mode: "floating" } }));
       });
     return () => {
       live = false;
@@ -187,6 +205,7 @@ export function UploadWizard() {
   const position = (r: CheckReport) => {
     const useFile = !!(place.fromFile && r.georef);
     if (useFile) return { useFile, lat: r.georef!.lat, lon: r.georef!.lon, placement: undefined };
+    const size = effectiveSize(place, r);
     const placement = placementFromGrid({
       epsg: place.crs,
       x: parseFloat(place.x),
@@ -194,11 +213,11 @@ export function UploadWizard() {
       height: parseFloat(place.height) || 0,
       aboveGround: place.onTerrain ? 0 : undefined,
       headingDeg: parseFloat(place.heading) || 0,
-      scale: (parseFloat(place.scale) || 1) * (place.unit || 1),
+      scale: size.scale * (size.unit || 1),
       upAxis: place.upAxis,
     });
     // One file unit is drawn placement.scale metres long: measurements divide by it.
-    if (!place.unit) placement.modelUnit = placement.scale;
+    if (!size.unit) placement.modelUnit = placement.scale;
     return { useFile, lat: placement.lat, lon: placement.lon, placement };
   };
 
@@ -264,6 +283,7 @@ export function UploadWizard() {
           url: prepared.url,
           groundFit: isTiles && useFile ? (place.fitGround ? "street" : "none") : undefined,
           localFrame: isTiles && !useFile ? true : undefined,
+          splats: isSplat(report) ? true : undefined,
           georeferenced: !isTiles && useFile ? true : undefined,
           attribution: prepared.url.startsWith("viewer-file:") ? "Opened from this computer" : "Uploaded in this session",
         },
@@ -348,7 +368,7 @@ export function UploadWizard() {
               <div className="mt-2 flex gap-2">
                 <label className="btn-secondary cursor-pointer">
                   {t("upload.choose")}
-                  <input type="file" multiple className="hidden" accept=".glb,.gltf,.bin,.png,.jpg,.jpeg,.webp,.ktx2,.zip,.json,.b3dm,.i3dm,.pnts,.cmpt,.fbx" onChange={(e) => setFiles(fromInput(e.target.files))} />
+                  <input type="file" multiple className="hidden" accept=".glb,.gltf,.bin,.png,.jpg,.jpeg,.webp,.ktx2,.zip,.json,.b3dm,.i3dm,.pnts,.cmpt,.fbx,.spz,.ply" onChange={(e) => setFiles(fromInput(e.target.files))} />
                 </label>
                 <button type="button" className="btn-secondary" onClick={() => folderInput.current?.click()}>
                   <FolderOpen size={14} /> {t("shell.chooseFolder")}
@@ -372,6 +392,7 @@ export function UploadWizard() {
               <p className="text-fg3">
                 {report.mainFile ?? t("wizard.noModelFile")} · {t("wizard.files", { count: report.stats.files })}
                 {report.stats.triangles !== undefined && ` · ${t("wizard.triangles", { n: report.stats.triangles.toLocaleString() })}`}
+                {report.stats.splats !== undefined && ` · ${t("splat.count", { n: report.stats.splats.toLocaleString() })}`}
                 {report.stats.textures !== undefined && ` · ${t("wizard.textures", { n: report.stats.textures })}`}
                 {report.stats.tiles !== undefined && ` · ${t("wizard.tiles", { n: report.stats.tiles.toLocaleString() })}`}
               </p>
@@ -463,27 +484,29 @@ export function UploadWizard() {
                   <div className="grid grid-cols-3 gap-3">
                     <Field label={place.onTerrain ? t("wizard.heightNoTerrain") : t("wizard.heightEllipsoid")}><input className="input num" value={place.height} onChange={(e) => setPlace({ ...place, height: e.target.value })} dir="ltr" /></Field>
                     <Field label={place.crs === 4326 ? t("wizard.headingNorth") : t("wizard.headingGrid")}><input className="input num" value={place.heading} onChange={(e) => setPlace({ ...place, heading: e.target.value })} dir="ltr" /></Field>
-                    <Field label={t("wizard.scale")}><input className="input num" value={place.scale} onChange={(e) => setPlace({ ...place, scale: e.target.value })} dir="ltr" /></Field>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
                     <Field label={t("wizard.upAxis")}>
                       <select className="input" data-testid="up-axis" value={place.upAxis} onChange={(e) => setPlace({ ...place, upAxis: e.target.value as "y" | "z" })}>
                         <option value="y">{t("wizard.yUp")}</option>
                         <option value="z">{t("wizard.zUp")}</option>
                       </select>
                     </Field>
-                    <Field label={t("wizard.units")}>
-                      <select className="input" data-testid="file-units" value={place.unit} onChange={(e) => setPlace({ ...place, unit: Number(e.target.value) })}>
-                        {UNITS.map(([label, f]) => (
-                          <option key={label} value={f}>
-                            {t(label)}
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
                   </div>
-                  <SizeReadout size={report?.stats.size} place={place} fbx={report?.format === "fbx"} />
-                  {!place.unit && <p className="text-[12px] text-[var(--status-production)]" data-testid="units-unknown">{t("wizard.unitsUnknownHint")}</p>}
+                  <RealSize size={report.stats.size} upAxis={place.upAxis} splats={isSplat(report)} value={place.size} onChange={(size) => setPlace({ ...place, size })}>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label={t("wizard.units")}>
+                        <select className="input" data-testid="file-units" value={place.unit} onChange={(e) => setPlace({ ...place, unit: Number(e.target.value) })}>
+                          {UNITS.map(([label, f]) => (
+                            <option key={label} value={f}>
+                              {t(label)}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                      <Field label={t("wizard.scale")}><input className="input num" value={place.scale} onChange={(e) => setPlace({ ...place, scale: e.target.value })} dir="ltr" /></Field>
+                    </div>
+                  </RealSize>
+                  <SizeReadout size={report?.stats.size} place={place} r={report} fbx={report?.format === "fbx"} />
+                  {!effectiveSize(place, report).unit && <p className="text-[12px] text-[var(--status-production)]" data-testid="units-unknown">{t("wizard.unitsUnknownHint")}</p>}
                 </>
               )}
               <p className="text-[12px] text-fg3">{t("wizard.adjustLater")}</p>
@@ -616,10 +639,11 @@ const UNITS = [
 ] as const;
 
 /** The model's size as it will stand on the ground, so a wrong unit or up axis shows before publishing. */
-function SizeReadout({ size, place, fbx }: { size?: [number, number, number]; place: Place; fbx: boolean }) {
+function SizeReadout({ size, place, r, fbx }: { size?: [number, number, number]; place: Place; r: CheckReport; fbx: boolean }) {
   const { t } = useTranslation();
   if (!size) return <p className="text-[12px] text-fg3">{fbx ? t("wizard.sizeAfterFbx") : t("wizard.noSize")}</p>;
-  const k = (parseFloat(place.scale) || 1) * (place.unit || 1);
+  const e = effectiveSize(place, r);
+  const k = e.scale * (e.unit || 1);
   // glTF y-up: x east-west, z north-south, y height. Z-up files: y north-south, z height.
   const [w, d, h] = place.upAxis === "z" ? [size[0], size[1], size[2]] : [size[0], size[2], size[1]];
   const f = (v: number) => (v * k >= 100 ? (v * k).toFixed(0) : (v * k).toPrecision(3));
@@ -633,7 +657,7 @@ function SizeReadout({ size, place, fbx }: { size?: [number, number, number]; pl
 }
 
 /** Server job steps with their own text (wizard.step.*). */
-const STEP_KEYS = ["queued", "unpack", "check", "scan", "convert", "validate", "tile", "optimise", "publish"] as const;
+const STEP_KEYS = ["queued", "unpack", "check", "scan", "convert", "splat", "validate", "tile", "optimise", "publish"] as const;
 const isStepKey = (s: string): s is (typeof STEP_KEYS)[number] => (STEP_KEYS as readonly string[]).includes(s);
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

@@ -1,7 +1,8 @@
-import { enSplatChecks, heSplatChecks } from "./i18n-splat";
+import { enSplat, enSplatChecks, heSplat, heSplatChecks } from "./i18n-splat";
 // UI strings. Keys are shared by both languages; a test checks they match.
 
 export const en = {
+  splat: enSplat,
   app: { name: "HOLO", tagline: "3D Intelligence Model Viewer" },
   common: {
     search: "Search",
@@ -554,6 +555,7 @@ export const en = {
       convert: "Converting FBX to glTF…",
       validate: "Validating…",
       tile: "Tiling for streaming…",
+      splat: "Preparing the splats for viewing…",
       optimise: "Compressing…",
       publish: "Publishing…",
     },
@@ -960,6 +962,7 @@ type TwoForms<T> = { [K in keyof T as K extends `${infer B}_other` ? `${B}_two` 
 type Shape<T> = { [K in keyof T]: T[K] extends string ? string : Shape<T[K]> } & TwoForms<T>;
 
 export const he: Shape<typeof en> = {
+  splat: heSplat,
   app: { name: "הולו", tagline: "מציג מודלים תלת-ממדיים מודיעיניים" },
   common: {
     search: "חיפוש",
@@ -1519,6 +1522,7 @@ export const he: Shape<typeof en> = {
       convert: "ממיר FBX ל-glTF…",
       validate: "מאמת…",
       tile: "מחלק לאריחים להזרמה…",
+      splat: "מכין את הספלאטים לצפייה…",
       optimise: "דוחס…",
       publish: "מפרסם…",
     },

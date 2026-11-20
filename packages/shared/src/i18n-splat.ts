@@ -30,3 +30,49 @@ export const heSplatChecks: { [K in keyof typeof enSplatChecks]: { [P in keyof (
   splatSelfChecked: { title: "כל הספלאטים נקראו ונבדקו", detail: "הבודק הרשמי של 3D Tiles עדיין לא מכיר את הרחבות הספלאטים הגאוסיאניים, ולכן קורא ה-SPZ וה-PLY של הולו בדק את הקובץ במלואו." },
   splatTiled: { title: "חולק ל-{{tiles}} אריחים ב-{{levels}} רמות", detail: "מבט מרחוק מציג מדגם קל יותר, ומבט מקרוב את כל הספלאטים." },
 };
+
+export const enSplat = {
+  count: "{{n}} splats",
+  size: {
+    question: "How big is it really?",
+    unitsTitle: "Its units are right",
+    unitsHint: "The file is in metres, centimetres, feet… and I can say which.",
+    knownTitle: "I know one real measurement",
+    knownHint: "Type one length you know, and the whole model is scaled to match.",
+    floatingTitle: "I don't know: keep it floating",
+    floatingHint: "Shown and exported in its own units, without a real scale.",
+    side: "The side I know",
+    side_w: "Its width (east–west)",
+    side_d: "Its depth (north–south)",
+    side_h: "Its height",
+    realLength: "Real length",
+    nowUnits: "That side is {{n}} units in the file.",
+    result: "Great: it will stand {{w}} × {{d}} × {{h}} m (width × depth × height).",
+    emptyIsFloating: "Until you type a length, the model stays floating. You can set its size later from the model's Properties.",
+    floatingMore: "No problem. The model opens where you place it, in its own units: measurements read as model units, and downloads keep it unscaled with no position. You can give it a real size at any time.",
+  },
+};
+
+export const heSplat: Shape<typeof enSplat> = {
+  count: "{{n}} ספלאטים",
+  size: {
+    question: "מה הגודל האמיתי שלו?",
+    unitsTitle: "היחידות שלו נכונות",
+    unitsHint: "הקובץ במטרים, סנטימטרים, רגל… ואני יודע באילו.",
+    knownTitle: "אני יודע מידה אמיתית אחת",
+    knownHint: "מקלידים אורך אחד ידוע, וכל המודל מותאם אליו.",
+    floatingTitle: "לא ידוע: להשאיר צף",
+    floatingHint: "מוצג ומיוצא ביחידות שלו, ללא קנה מידה אמיתי.",
+    side: "הצד שאני יודע",
+    side_w: "הרוחב (מזרח–מערב)",
+    side_d: "העומק (צפון–דרום)",
+    side_h: "הגובה",
+    realLength: "אורך אמיתי",
+    nowUnits: "הצד הזה הוא {{n}} יחידות בקובץ.",
+    result: "מצוין: הוא יעמוד בגודל {{w}} × {{d}} × {{h}} מ' (רוחב × עומק × גובה).",
+    emptyIsFloating: "עד שתקליד אורך, המודל נשאר צף. אפשר לקבוע את גודלו מאוחר יותר במאפייני המודל.",
+    floatingMore: "אין בעיה. המודל נפתח במקום שבו תמקם אותו, ביחידות שלו: מדידות מוצגות ביחידות מודל, והורדות שומרות אותו ללא קנה מידה וללא מיקום. אפשר לתת לו גודל אמיתי בכל עת.",
+  },
+};
+
+type Shape<T> = { [K in keyof T]: T[K] extends string ? string : Shape<T[K]> };
