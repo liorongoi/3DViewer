@@ -45,7 +45,7 @@ const CSP = [
 
 // Files the app was started with (Explorer's "Open with", a file association), or that a second
 // start passed on, wait here until the page asks for them.
-const MODEL_FILE = /\.(glb|gltf|fbx|zip|json)$/i;
+const MODEL_FILE = /\.(glb|gltf|fbx|spz|ply|zip|json)$/i;
 const pendingPaths: string[] = [];
 const fromArgv = (argv: string[]) => argv.slice(app.isPackaged ? 1 : 2).filter((a) => !a.startsWith("-") && MODEL_FILE.test(a) && fs.existsSync(a));
 
