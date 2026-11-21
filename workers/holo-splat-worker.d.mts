@@ -28,3 +28,6 @@ export function parseFrameScores(text: string): { blur: Map<number, number>; tim
 export function loadConfig(file?: string): Record<string, unknown>;
 export function videoFrames(cfg: Record<string, unknown>, video: string, dir: string, o: { resolution: number; videoFps: number }): Promise<{ name: string; time: number }[]>;
 export function jpegSplitter(onImage: (jpg: Buffer, n: number) => void): (chunk: Buffer) => void;
+
+/** The least turn (and shift to the cameras' middle) that makes up the viewer's up, for a model with no placement. */
+export function levelTransform(cams: { q: number[]; centre: V3 }[]): { T: Sim; tiltDeg: number; reason?: undefined } | { reason: string; T?: undefined };

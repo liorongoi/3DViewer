@@ -101,7 +101,7 @@ What the worker does:
 
 - It prints `progress <0..1> <stage>` lines on stdout.
 - It writes exactly one of `output/splats.ply` or `output/splats.spz`.
-- It may write `output/provenance.json` with `{ tool, version, poses, frames, registeredViews, fixture, georefNote }`. Anything it leaves out is recorded as unknown, never guessed.
+- It may write `output/provenance.json` with `{ tool, version, poses, frames, registeredViews, fixture, georefNote, levelled }`. Anything it leaves out is recorded as unknown, never guessed.
 - It may write `output/georef.json` when it placed the splats from measured camera positions: `{ source, origin: {lat, lon, height}, horizontalCrs, verticalDatum, metresPerModelUnit, controls: {count, horizontalRms, verticalRms, max}, checks: {...} | null }`. The splats are then in metres east, north and up of `origin`. HOLO places the model there and shows the control and check residuals in the report; anything out of range means the model stays floating.
 - `--check --method <id>` prints one JSON line `{ ok, tool, version, revision, problems, fixture }` and exits. HOLO asks at most every ten minutes and shows the answer under "Set up" in Make a splat.
 
@@ -266,4 +266,5 @@ Status: **Built** (code and tests named), **Partly** (what is missing is named),
 - No real GPU training has run yet: this environment has no GPU. The worker was run on a real 1080p phone video up to the poses (159 of 256 frames posed with pycolmap); the trainer step needs a CUDA machine or Brush on a Mac.
 - EOGS++ has not trained here (no GPU): its data step, source changes and output conversion were run against the real EOGS++ code at cdd21aeb, with training stood in. Absolute placement of satellite results follows the RPCs; ground control is not used.
 - Placement uses camera GNSS only; ground control points measured on the ground are not used yet.
+- A capture with no positions is levelled before training (`levelTransform` in the worker): pose software leaves the scene turned any way, and the view then rolls as you orbit. People hold a camera with its picture level, so up is the direction most nearly at right angles to every camera's right-hand axis (as COLMAP's orientation aligner assumes); its sign comes from the pictures' up, or from the view direction for a straight-down drone survey. The model is turned by the least angle that makes that the viewer's up, and centred on the cameras; `provenance.json` records the angle. When the cameras were turned too many ways to tell, the model is left as it is and the log says so. On the owner's two real captures the scenes were tilted 37° (garage walk) and 15° (car drive). Tests: `splat-worker.test.ts` (a 37° tilted walk comes back level within 1°; a drone survey; a model left alone).
 - Checks on the target machines (RTX A4000, RTX 4000 Ada, L40S, Apple silicon) are run by the owner on those machines, not tracked here.
