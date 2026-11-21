@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readdirSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -298,5 +298,80 @@ describe("training commands", () => {
   it("fills placeholders into whole arguments, never splitting or interpreting them", () => {
     const argv = fill(DEFAULTS.methods.opensplat!.train, { program: "/opt/opensplat/opensplat", data: "/srv/w/my data; rm -rf /", iterations: 7000, shDegree: 1, train: "/srv/w/train" });
     expect(argv).toEqual(["/opt/opensplat/opensplat", "/srv/w/my data; rm -rf /", "-n", "7000", "--sh-degree", "1", "-o", "/srv/w/train/splats.ply"]);
+  });
+});
+
+describe("satellite views through EOGS++", () => {
+  const python = spawnSync("python3", ["--version"]).status === 0 ? "python3" : null;
+  const bridge = path.resolve(__dirname, "../../../workers/eogs/holo_eogs.py");
+
+  it("runs the bridge with its default command and hands over the splats, georef.json and the view count", async () => {
+    // A copy of the worker with its own holo-worker.json; a stand-in bridge (Node) plays EOGS++.
+    const dir = await mkdtemp(path.join(tmpdir(), "holo-eogs-"));
+    try {
+      const worker = path.join(dir, "holo-splat-worker.mjs");
+      await writeFile(worker, await readFile(path.resolve(__dirname, "../../../workers/holo-splat-worker.mjs")));
+      await writeFile(path.join(dir, "holo-worker.json"), JSON.stringify({ methods: { "eogs-plus": { python: process.execPath, repo: dir } } }));
+      await mkdir(path.join(dir, "eogs"));
+      await writeFile(
+        path.join(dir, "eogs", "holo_eogs.py"),
+        `const fs = require("node:fs"), p = require("node:path");
+const a = process.argv.slice(2), get = (k) => a[a.indexOf(k) + 1];
+if (a[0] === "check") { console.log("EOGS++ test"); process.exit(0); }
+const train = get("--train");
+fs.writeFileSync(p.join(train, "args.json"), JSON.stringify(a));
+console.log("Training progress: 50%| " + (Number(get("--iterations")) / 2) + "/" + get("--iterations"));
+fs.writeFileSync(p.join(train, "splats.ply"), "ply\\n");
+fs.writeFileSync(p.join(train, "georef.json"), JSON.stringify({ frame: "enu", origin: { lat: 32, lon: 34, height: 40 } }));
+fs.writeFileSync(p.join(train, "holo-eogs.json"), JSON.stringify({ views: 3 }));
+`,
+      );
+      const input = path.join(dir, "capture");
+      await mkdir(input);
+      for (const n of ["a.tif", "b.tif", "c.tif", "d.ntf"]) await writeFile(path.join(input, n), "x");
+      const output = path.join(dir, "job", "out");
+      const r = spawnSync(process.execPath, [worker, "--method", "eogs-plus", "--input", input, "--input-kind", "satellite", "--goal", "satellite", "--output", output, "--iterations", "7000", "--max-splats", "1000000", "--resolution", "1280", "--sh-degree", "0", "--video-fps", "2", "--threads", "4"], { encoding: "utf8" });
+      expect(r.status, r.stderr).toBe(0);
+      expect(r.stdout).toContain("progress 0.475 train");
+      const args = JSON.parse(await readFile(path.join(dir, "job", "work", "train", "args.json"), "utf8"));
+      expect(args).toEqual(["run", "--eogs", dir, "--data", input, "--train", path.join(dir, "job", "work", "train"), "--iterations", "7000", "--max-size", "1280"]);
+      expect(readdirSync(output).sort()).toEqual(["georef.json", "provenance.json", "splats.ply"]);
+      const prov = JSON.parse(await readFile(path.join(output, "provenance.json"), "utf8"));
+      expect(prov).toMatchObject({ tool: "eogs-plus", version: "EOGS++ test", frames: 4, registeredViews: 3 });
+      expect(prov.georefNote).toBeUndefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(!python)("changes EOGS++ only where its text is exactly as expected, once, and can undo it", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "holo-eogs-repo-"));
+    try {
+      const patches = JSON.parse(spawnSync(python!, ["-c", `import sys, json; sys.path.insert(0, ${JSON.stringify(path.dirname(bridge))}); import holo_eogs as h; print(json.dumps(h.PATCHES))`], { encoding: "utf8" }).stdout) as [string, string, string][];
+      const files = new Map<string, string>();
+      for (const [rel, old] of patches) files.set(rel, `${files.get(rel) ?? "# upstream\n"}${old}# more\n`);
+      for (const [rel, text] of files) {
+        await mkdir(path.dirname(path.join(dir, rel)), { recursive: true });
+        await writeFile(path.join(dir, rel), text);
+      }
+      const patch = (...extra: string[]) => spawnSync(python!, [bridge, "patch", "--eogs", dir, ...extra], { encoding: "utf8" });
+      expect(patch().status).toBe(0);
+      const once = new Map<string, string>();
+      for (const rel of files.keys()) once.set(rel, await readFile(path.join(dir, rel), "utf8"));
+      for (const [rel, , now] of patches) expect(once.get(rel)).toContain(now);
+      expect(patch().status).toBe(0);
+      for (const rel of files.keys()) expect(await readFile(path.join(dir, rel), "utf8")).toBe(once.get(rel));
+      expect(patch("--undo").status).toBe(0);
+      for (const [rel, text] of files) expect(await readFile(path.join(dir, rel), "utf8")).toBe(text);
+      // Another release: one file differs, so nothing at all is changed.
+      const [firstRel] = files.keys();
+      await writeFile(path.join(dir, firstRel!), "# someone else's version\n");
+      const refused = patch();
+      expect(refused.status).not.toBe(0);
+      expect(refused.stderr).toContain("nothing was changed");
+      for (const [rel, text] of files) if (rel !== firstRel) expect(await readFile(path.join(dir, rel), "utf8")).toBe(text);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -65,10 +65,16 @@ export const DEFAULTS = {
       train: ["{program}", "{data}", "--total-steps", "{iterations}", "--max-splats", "{maxSplats}", "--sh-degree", "{shDegree}", "--max-resolution", "{resolution}", "--export-every", "{iterations}", "--export-path", "{train}", "--export-name", "splats.ply"],
       check: ["{program}", "--version"],
     },
-    // EOGS++ for satellite views: its command depends on the release installed, so the operator sets
-    // "train" (and "check") in holo-worker.json. {data} is the capture folder with the images and
-    // their RPC files, already checked by HOLO (apps/server/src/satellite.ts).
-    "eogs-plus": { repo: "", revision: "", train: null, check: null },
+    // EOGS++ for satellite views, through workers/eogs/holo_eogs.py: it cuts the views to the area
+    // they share, runs EOGS++ and moves the splats to metres east-north-up with georef.json. {data}
+    // is the capture folder with the images and their RPC files, already checked by HOLO
+    // (apps/server/src/satellite.ts). "python" here is the EOGS++ environment's Python.
+    "eogs-plus": {
+      repo: "",
+      revision: "",
+      train: ["{python}", "{here}/eogs/holo_eogs.py", "run", "--eogs", "{repo}", "--data", "{data}", "--train", "{train}", "--iterations", "{iterations}", "--max-size", "{resolution}"],
+      check: ["{python}", "{here}/eogs/holo_eogs.py", "check", "--eogs", "{repo}"],
+    },
     opensplat: {
       program: "opensplat",
       revision: "",
@@ -85,8 +91,8 @@ export function loadConfig(file = path.join(HERE, "holo-worker.json")) {
   return { ...DEFAULTS, ...user, methods };
 }
 
-/** Fills {name} in each argument; an argument is never split or passed to a shell. */
-export const fill = (argv, values) => argv.map((a) => a.replace(/\{(\w+)\}/g, (m, k) => (values[k] !== undefined ? String(values[k]) : m)));
+/** Fills {name} in each argument ({here} is this program's folder); an argument is never split or passed to a shell. */
+export const fill = (argv, values) => argv.map((a) => a.replace(/\{(\w+)\}/g, (m, k) => (k === "here" && values.here === undefined ? HERE : values[k] !== undefined ? String(values[k]) : m)));
 
 // ---------------------------------------------------------------------------------------------
 // Geometry: WGS 84, local east-north-up, and a similarity fit (Horn's quaternion method)
@@ -680,18 +686,40 @@ async function sfm(cfg, images, work, o, video) {
   return { data: undist, model: zero, total: count };
 }
 
-/** Satellite views go to the trainer as they are: it reads the RPC cameras itself, so there is no pose step. */
+/**
+ * Satellite views go to the trainer as they are: it reads the RPC cameras itself, so there is no
+ * pose step. EOGS++ (holo_eogs.py) leaves splats.ply, georef.json and holo-eogs.json in {train}.
+ */
 async function satellite(cfg, m, o, work) {
   const train = path.join(work, "train");
   mkdirSync(train, { recursive: true });
   progress(0.05, "train");
-  await run(fill(m.train, { ...cfg, ...m, data: o.input, train, iterations: o.iterations, maxSplats: o.maxSplats, resolution: o.resolution, shDegree: o.shDegree, threads: o.threads }), { cwd: m.repo || work, inputErrors: true });
-  const plys = listFiles(train).filter((f) => f.endsWith(".ply")).sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
+  await run(fill(m.train, { ...cfg, ...m, data: o.input, train, iterations: o.iterations, maxSplats: o.maxSplats, resolution: o.resolution, shDegree: o.shDegree, threads: o.threads }), {
+    cwd: m.repo || work,
+    inputErrors: true,
+    onLine: (line) => {
+      const hit = /(\d+)\s*\/\s*(\d+)/.exec(line);
+      if (hit && Number(hit[2]) === o.iterations && Number(hit[1]) <= o.iterations) progress(0.05 + 0.85 * (Number(hit[1]) / o.iterations), "train");
+    },
+  });
+  const direct = path.join(train, "splats.ply");
+  const plys = existsSync(direct) ? [direct] : listFiles(train).filter((f) => f.endsWith(".ply")).sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
   if (!plys.length) throw new Error(`${o.method} finished without writing a PLY in ${train}.`);
   mkdirSync(o.output, { recursive: true });
   copyFileSync(plys[0], path.join(o.output, "splats.ply"));
+  if (existsSync(path.join(train, "georef.json"))) copyFileSync(path.join(train, "georef.json"), path.join(o.output, "georef.json"));
+  let used = null;
+  try {
+    used = JSON.parse(readFileSync(path.join(train, "holo-eogs.json"), "utf8"));
+  } catch {
+    used = null;
+  }
   const views = listFiles(o.input).filter((f) => /\.(tiff?|ntf|nitf|jp2)$/i.test(f)).length;
-  writeFileSync(path.join(o.output, "provenance.json"), JSON.stringify({ tool: o.method, version: check(cfg, o.method).version, poses: "RPC camera models", frames: views, registeredViews: views }));
+  const georefNote = existsSync(path.join(o.output, "georef.json")) ? undefined : "The trainer did not say where the splats are on the ground.";
+  writeFileSync(
+    path.join(o.output, "provenance.json"),
+    JSON.stringify({ tool: o.method, version: check(cfg, o.method).version, poses: "RPC camera models, refined by the trainer", frames: views, registeredViews: Number.isInteger(used?.views) ? used.views : views, georefNote }),
+  );
   progress(1, "done");
 }
 

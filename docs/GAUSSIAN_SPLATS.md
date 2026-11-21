@@ -122,13 +122,58 @@ HOLO then puts the splats through a normal ingest: checked, scanned, tiled and p
 HOLO installs nothing: GPU libraries stay out of the application. `workers/holo-splat-worker.mjs` is one worker program for every ground-capture method (Node only, no packages). It takes frames from a video by how far the view has moved, not on a fixed clock (a frame each time the image has shifted 3% of its width, `frameStep` in holo-worker.json, and at least `--video-fps` a second; of the frames around each point the sharpest), so a car at 40 km/h gets nearly every frame and a slow walk a few a second, recovers camera poses with COLMAP, GLOMAP or pycolmap (`workers/sfm_pycolmap.py`), places the result when the capture carries camera positions, and runs the method's trainer.
 
 1. Install the trainer of each method you want (gsplat with PyTorch and CUDA, Brush, OpenSplat), ffmpeg, and COLMAP (with GLOMAP, or pycolmap in the same Python).
-2. Copy `workers/holo-worker.example.json` to `workers/holo-worker.json` and set the paths of this machine. EOGS++ has no fixed command: set its `train` (and `check`) from the release you install.
+2. Copy `workers/holo-worker.example.json` to `workers/holo-worker.json` and set the paths of this machine. For EOGS++ see "Satellite images with EOGS++" below.
 3. Point HOLO at the worker, one entry per method: `SPLAT_WORKERS=gsplat=/opt/viewer/workers/holo-splat-worker.mjs,brush=/opt/viewer/workers/holo-splat-worker.mjs`.
 4. Open Make a splat, then "Set up". Each method shows four states, each from its own evidence: **source** (the revision the worker reports), **environment** (its own check passed), **configured** (named in `SPLAT_WORKERS`) and **trained** (a training with it finished on this server; test-fixture runs are labelled). A method whose check fails cannot be chosen, and the problems it reported are shown.
 
 Camera positions it uses, in this order: GPS in the photos' EXIF, a drone `.SRT` beside the video, or `camera-gnss.csv` (`time,lat,lon,height` in seconds from the start of the video). Every fifth camera is held back and reported as an independent check. Heights are ellipsoidal (WGS 84) as the camera reports them; ground control points measured on the ground are not used yet.
 
 Satellite captures are checked before training (`apps/server/src/satellite.ts`): every image needs an RPC model (`.RPB`, `_RPC.TXT` or inside the TIFF), at least two views are needed, and when the metadata gives the view angles they must be at least 5° apart. A satellite video alone is refused: its frames are needed as images, each with its RPC.
+
+## Satellite images with EOGS++
+
+EOGS++ ([code](https://github.com/gardiens/EOGS2), [paper](https://arxiv.org/abs/2511.16542)) trains splats straight from satellite views and their RPC camera models, and refines those cameras itself while it trains. It is written for its benchmark scenes, so HOLO runs it through `workers/eogs/holo_eogs.py`, which:
+
+1. **Prepares the capture** in the worker's own work folder; the capture itself is never changed:
+   - It reads every image's RPC model: inside a GeoTIFF or NITF, or from a `.RPB` or `_RPC.TXT` file with the same name.
+   - When a capture mixes panchromatic and multispectral views, it uses the panchromatic ones.
+   - It cuts every view to the ground all views see, at most the preset's resolution on a side (1280, 1600 or 2400 pixels). It moves each RPC with its cut.
+   - It puts all views on one grey scale from 0 to 255.
+   - It writes EOGS++'s folders: images, RPC JSON and train/test split. With eight views or more, one is held back as a check.
+   - Sun angles come from the `.IMD` or `.XML` with the same name. When only the acquisition time is there, it works them out from that time.
+   - Ground heights: 100 m below to 150 m above the RPCs' height offset, unless `--alt-range MIN,MAX` says otherwise.
+2. **Runs EOGS++** in two steps: its affine camera step (`to_affine`), then `full_eval_pan.py`, which does training, rendering, DSM and TSDF.
+   - Settings: `experiments=eogsplus mode=3PAN rpc_type=rpc_raw`, with the iterations from HOLO's preset.
+   - The DSM and TSDF grid use the views' own ground sample distance.
+3. **Places the result.** EOGS++ trains in UTM divided by a scene scale. The bridge moves every splat to metres east, north and up of the scene centre on the WGS 84 ellipsoid: positions exactly, and shapes turned by the UTM grid's convergence and scaled by its scale factor. It then writes `georef.json`, and HOLO places the model on the globe.
+   - Source shown: "satellite RPC camera models (no ground control)". Without ground control, the absolute position is only as good as the RPCs, often a few metres.
+   - The controls in the report measure how far EOGS++'s affine cameras are from the RPCs. They are not a survey.
+4. **Keeps the DSM** as a GeoTIFF in UTM, when `--keep-dsm DIR` is in the training command (see the example settings). HOLO does not publish it.
+
+**Licence: research and evaluation only.** EOGS++ builds on Inria's Gaussian splatting code, which does not allow commercial use. HOLO labels it that way in the method list. Check this before using it for work.
+
+**Install on an NVIDIA Linux machine** (tested upstream with CUDA 11.8 and 12.1, and 24 GB of GPU memory):
+
+```bash
+git clone https://github.com/gardiens/EOGS2 /opt/holo/eogs-plus && cd /opt/holo/eogs-plus
+git checkout cdd21aeb            # the revision holo_eogs.py was checked against
+conda create -n eogsplus python=3.9 -y && conda activate eogsplus
+sudo apt-get install libtiff-dev libpng-dev libwebp-dev libglm-dev
+bash install.sh                  # PyTorch, the requirements and the two CUDA extensions
+python /opt/viewer/workers/eogs/holo_eogs.py patch --eogs /opt/holo/eogs-plus
+python /opt/viewer/workers/eogs/holo_eogs.py check --eogs /opt/holo/eogs-plus
+python /opt/viewer/workers/eogs/test_holo_eogs.py   # no GPU needed; EOGS_REPO=/opt/holo/eogs-plus adds EOGS++'s camera step
+```
+
+- `patch` makes three small changes so EOGS++ runs on a scene of its own:
+  - any scene name is allowed;
+  - the ground sample distance comes from the capture;
+  - with no reference DSM, nothing is compared and the MAE is left out.
+- Before writing, `patch` checks every change against the exact upstream text. With another revision it changes nothing and says which files differ.
+- The originals are kept as `.holo-orig`, and `patch --undo` puts them back.
+- `check` reports a missing module, no CUDA GPU, or changes not yet made. HOLO's "Set up" shows its answer.
+
+Then, in `workers/holo-worker.json`, set the `eogs-plus` entry's `repo` to the EOGS++ folder and its `python` to the environment's Python (`/opt/conda/envs/eogsplus/bin/python`), and add `eogs-plus=/opt/viewer/workers/holo-splat-worker.mjs` to `SPLAT_WORKERS`.
 
 ## Traceability, GS-01 to GS-34
 
@@ -144,7 +189,7 @@ Status: **Built** (code and tests named), **Partly** (what is missing is named),
 | GS-06 | Partly | gsplat 2DGS is chosen for surfaces. Properties of a splat model compare its heights with a GeoTIFF DSM or DTM (EPSG code required): mean, RMS, RMS after a vertical shift, 95th percentile and maximum, per raster cell, with floaters left out. | `elevation.test.ts`; `check-capture.cjs` (synthetic DSM) | A 2DGS run on real data against a checked DSM |
 | GS-07 | Partly | HOLO tiles large clouds into level-of-detail 3D Tiles (median splits, replace refinement, every splat kept in the leaves). CityGaussianV2 is listed. | `splat.test.ts` (tiling keeps every splat) | A multi-flight run; seams; memory budget |
 | GS-08 | Partly | The worker fits the reconstruction to camera GNSS (EXIF, SRT or CSV) with a similarity transform, holds every fifth camera back as a check, trains in local ENU metres and writes `georef.json`; HOLO places the model and reports CRS, datum and residuals. | `splat-worker.test.ts`; `reconstruct.test.ts` (georef placement) | Ground control points measured on the ground; a real drone flight |
-| GS-09 | Partly | EOGS++ is listed; satellite captures are checked before training for an RPC model per image, two views or more, and view angles at least 5° apart; the result is recorded in provenance. | `satellite.test.ts`; `reconstruct.test.ts` | EOGS++ command on a real install; placing satellite output on the globe |
+| GS-09 | Gate open | EOGS++ through `workers/eogs/holo_eogs.py`: the views are cut to their shared ground and put in EOGS++'s layout (RPCs embedded, `.RPB` or `_RPC.TXT`; sun angles from metadata or the time). The three changes EOGS++ needs are checked against its exact text. The result is placed in metres east-north-up from the RPCs, with `georef.json`, and the DSM can be kept. Satellite captures are checked before training for an RPC model per image, two views or more, and view angles at least 5° apart. | `test_holo_eogs.py` (EOGS++'s own camera step accepts the prepared layout; positions within 1 mm, shapes turned by grid convergence); `splat-worker.test.ts` (default command, georef handed over, change checks); `satellite.test.ts` | A real EOGS++ training on a CUDA machine |
 | GS-10 | Partly | A satellite video without per-frame RPCs is refused with what to send instead; a video next to RPC images is ignored and said so. | `satellite.test.ts` | Satellite video frames with RPCs on real data |
 | GS-11 | Built | `.spz` and splat `.ply` upload in the browser, through the server and in the desktop open dialog; the original is kept byte for byte; local files are read, never changed. | `ingest.test.ts` (original byte for byte); `check-splats.cjs` | Reopen after a desktop restart on the target machine |
 | GS-12 | Built (adapted) | v2/v3 read; v4 recognised and refused; corrupt header, cut short, bytes after the splats, too many splats and gzip bombs refused before publishing. | `splat.test.ts` | v4 decoding (needs Zstandard) |
@@ -219,7 +264,6 @@ Status: **Built** (code and tests named), **Partly** (what is missing is named),
 ## What is still open
 
 - No real GPU training has run yet: this environment has no GPU. The worker was run on a real 1080p phone video up to the poses (159 of 256 frames posed with pycolmap); the trainer step needs a CUDA machine or Brush on a Mac.
-- EOGS++ needs its training command set from the release installed.
-- Satellite results open floating; placing them on the globe from the RPCs is not done.
+- EOGS++ has not trained here (no GPU): its data step, source changes and output conversion were run against the real EOGS++ code at cdd21aeb, with training stood in. Absolute placement of satellite results follows the RPCs; ground control is not used.
 - Placement uses camera GNSS only; ground control points measured on the ground are not used yet.
 - Checks on the target machines (RTX A4000, RTX 4000 Ada, L40S, Apple silicon) are run by the owner on those machines, not tracked here.
