@@ -219,6 +219,37 @@ describe("COLMAP model", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  it("moves the frame poses of a COLMAP 3.12+ model too, which is what newer readers use", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "viewer-colmap-"));
+    const centres: V3[] = [[0, 0, 10], [5, 1, 10], [2, 7, 11]];
+    await writeModel(dir, centres, [[1, 2, 0]]);
+    // frames.bin as pycolmap 3.13 writes it: id, rig id, rig-from-world (q, t), then data ids.
+    const frames = Buffer.alloc(8 + centres.length * (68 + 16));
+    frames.writeBigUInt64LE(BigInt(centres.length));
+    centres.forEach((c, k) => {
+      const o = 8 + k * 84;
+      frames.writeUInt32LE(k + 1, o);
+      frames.writeUInt32LE(1, o + 4);
+      [0, 1, 0, 0].forEach((v, i) => frames.writeDoubleLE(v, o + 8 + i * 8));
+      [-c[0], c[1], c[2]].forEach((v, i) => frames.writeDoubleLE(v, o + 40 + i * 8));
+      frames.writeUInt32LE(1, o + 64);
+      frames.writeUInt32LE(0, o + 68);
+      frames.writeUInt32LE(1, o + 72);
+      frames.writeBigUInt64LE(BigInt(k + 1), o + 76);
+    });
+    await writeFile(path.join(dir, "frames.bin"), frames);
+    transformModel(dir, known);
+    const images = readImages(await readFile(path.join(dir, "images.bin")));
+    const fb = await readFile(path.join(dir, "frames.bin"));
+    images.forEach((im, k) => {
+      const o = 8 + k * 84;
+      [0, 1, 2, 3].forEach((i) => expect(fb.readDoubleLE(o + 8 + i * 8)).toBeCloseTo(im.q[i]!, 12));
+      [0, 1, 2].forEach((i) => expect(fb.readDoubleLE(o + 40 + i * 8)).toBeCloseTo(im.t[i]!, 9));
+      expect(fb.readBigUInt64LE(o + 76)).toBe(BigInt(k + 1));
+    });
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it("places a reconstruction from camera positions and checks it on cameras held back", () => {
     const origin = { lat: 31.7683, lon: 35.2137, height: 780 };
     // Camera centres in metres east, north and up, on a drone's lawnmower path.

@@ -395,7 +395,7 @@ export function readImages(buf) {
   return out;
 }
 
-/** Moves a COLMAP binary model (images.bin and points3D.bin in a folder) by y = s R x + t, in place. */
+/** Moves a COLMAP binary model (images.bin, frames.bin when there is one, and points3D.bin) by y = s R x + t, in place. */
 export function transformModel(dir, T) {
   const imgPath = path.join(dir, "images.bin");
   const ib = readFileSync(imgPath);
@@ -410,6 +410,34 @@ export function transformModel(dir, T) {
     tc.forEach((v, i) => ib.writeDoubleLE(v, im.at + 36 + i * 8));
   }
   writeFileSync(imgPath, ib);
+  // COLMAP 3.12 and later keep the poses that count in frames.bin (rig from world), and image
+  // poses are derived from them; images.bin's copy is only for older readers. Move both.
+  const framesPath = path.join(dir, "frames.bin");
+  if (existsSync(framesPath)) {
+    const rigsPath = path.join(dir, "rigs.bin");
+    if (T.s !== 1 && existsSync(rigsPath)) {
+      // A rig's other cameras sit at fixed offsets from its first one; scaling would need those
+      // moved too. Every rig HOLO's pose step makes has one camera, so refuse anything else.
+      const rb = readFileSync(rigsPath);
+      let ro = 8;
+      for (let k = 0, n = Number(rb.readBigUInt64LE(0)); k < n; k++) {
+        if (rb.readUInt32LE(ro + 4) !== 1) throw new Error("This model has camera rigs with several cameras; it cannot be rescaled to camera positions.");
+        ro += 16;
+      }
+    }
+    const fb = readFileSync(framesPath);
+    let o = 8;
+    for (let k = 0, n = Number(fb.readBigUInt64LE(0)); k < n; k++) {
+      const q = [0, 1, 2, 3].map((i) => fb.readDoubleLE(o + 8 + i * 8));
+      const t = [0, 1, 2].map((i) => fb.readDoubleLE(o + 40 + i * 8));
+      const Rc = mulMM(quatToR(q), Rt);
+      const Rct = mulMV(Rc, T.t);
+      rToQuat(Rc).forEach((v, i) => fb.writeDoubleLE(v, o + 8 + i * 8));
+      [0, 1, 2].map((i) => T.s * t[i] - Rct[i]).forEach((v, i) => fb.writeDoubleLE(v, o + 40 + i * 8));
+      o += 68 + fb.readUInt32LE(o + 64) * 16;
+    }
+    writeFileSync(framesPath, fb);
+  }
   const ptPath = path.join(dir, "points3D.bin");
   const pb = readFileSync(ptPath);
   const n = Number(pb.readBigUInt64LE(0));
@@ -780,7 +808,7 @@ async function sfm(cfg, images, work, o, video) {
   const zero = path.join(model, "0");
   if (!existsSync(path.join(zero, "images.bin"))) {
     mkdirSync(zero, { recursive: true });
-    for (const f of ["cameras.bin", "images.bin", "points3D.bin"]) copyFileSync(path.join(model, f), path.join(zero, f));
+    for (const f of ["cameras.bin", "images.bin", "points3D.bin", "rigs.bin", "frames.bin"]) if (existsSync(path.join(model, f))) copyFileSync(path.join(model, f), path.join(zero, f));
   }
   return { data: undist, model: zero, total: count };
 }
