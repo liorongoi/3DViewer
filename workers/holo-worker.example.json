@@ -1,5 +1,5 @@
 {
-  "_note": "Copy to holo-worker.json next to holo-splat-worker.mjs and set the paths of this machine. The eogs-plus command is an example: use the one your EOGS++ release documents.",
+  "_note": "Copy to holo-worker.json next to holo-splat-worker.mjs and set the paths of this machine. EOGS++ runs through eogs/holo_eogs.py (docs/GAUSSIAN_SPLATS.md, \"Satellite images with EOGS++\"); its python is the EOGS++ environment's. Leave out its train to use the default command; this one also keeps each DSM.",
   "ffmpeg": "/usr/bin/ffmpeg",
   "sfm": "glomap",
   "colmap": "/usr/local/bin/colmap",
@@ -9,14 +9,39 @@
   "exhaustiveUpTo": 250,
   "vocabTree": "/opt/holo/vocab_tree_flickr100K_words256K.bin",
   "methods": {
-    "gsplat": { "repo": "/opt/holo/gsplat" },
-    "gsplat-2dgs": { "repo": "/opt/holo/gsplat" },
-    "brush": { "program": "/opt/holo/brush/brush_app", "revision": "v0.2.0" },
-    "opensplat": { "program": "/opt/holo/OpenSplat/build/opensplat" },
+    "gsplat": {
+      "repo": "/opt/holo/gsplat"
+    },
+    "gsplat-2dgs": {
+      "repo": "/opt/holo/gsplat"
+    },
+    "brush": {
+      "program": "/opt/holo/brush/brush_app",
+      "revision": "v0.2.0"
+    },
+    "opensplat": {
+      "program": "/opt/holo/OpenSplat/build/opensplat"
+    },
     "eogs-plus": {
       "repo": "/opt/holo/eogs-plus",
-      "train": ["{python}", "{repo}/train.py", "--data", "{data}", "--out", "{train}", "--iterations", "{iterations}"],
-      "check": ["{python}", "-c", "import torch; assert torch.cuda.is_available()"]
+      "python": "/opt/conda/envs/eogsplus/bin/python",
+      "train": [
+        "{python}",
+        "{here}/eogs/holo_eogs.py",
+        "run",
+        "--eogs",
+        "{repo}",
+        "--data",
+        "{data}",
+        "--train",
+        "{train}",
+        "--iterations",
+        "{iterations}",
+        "--max-size",
+        "{resolution}",
+        "--keep-dsm",
+        "/srv/holo/eogs-dsm"
+      ]
     }
   }
 }
