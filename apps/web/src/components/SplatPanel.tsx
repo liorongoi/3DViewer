@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { splatToSpz, tilesetZip, zipFiles, type PlacementSidecar } from "@viewer/core";
+import { splatToPly, splatToSpz, tilesetZip, zipFiles, type PlacementSidecar } from "@viewer/core";
 import type { ModelSummary } from "@viewer/shared";
 import { useEngine, useSignal } from "../engine";
 import { saveBytes, slug } from "../download";
@@ -121,6 +121,15 @@ export function SplatPanel({ model }: { model: ModelSummary }) {
     const zip = await zipFiles({ [`${name}.spz`]: spz, "holo-placement.json": new TextEncoder().encode(JSON.stringify(side, null, 2)) });
     saveBytes(`${name}-spz.zip`, zip.buffer as ArrayBuffer, "application/zip");
   });
+  const downloadPly = run("ply", async () => {
+    const f = await mainOriginal();
+    await new Promise((r) => setTimeout(r, 30));
+    const ply = splatToPly(f.path, await bytes(f.url), floating ? 1 : k);
+    const side = sidecar(1);
+    if (!side) return saveBytes(`${name}.ply`, ply.buffer as ArrayBuffer);
+    const zip = await zipFiles({ [`${name}.ply`]: ply, "holo-placement.json": new TextEncoder().encode(JSON.stringify(side, null, 2)) });
+    saveBytes(`${name}-ply.zip`, zip.buffer as ArrayBuffer, "application/zip");
+  });
   const downloadTiles = run("tiles", async () => {
     const zip = await tilesetZip(model.source.url, bytes, floating || !info ? {} : { placeMatrix: info.modelMatrix, sidecar: sidecar(1) });
     saveBytes(`${name}-3dtiles.zip`, zip.buffer as ArrayBuffer, "application/zip");
@@ -171,6 +180,11 @@ export function SplatPanel({ model }: { model: ModelSummary }) {
         {live && (
           <button type="button" className="btn-secondary" disabled={!!busy} onClick={() => void downloadSpz()} data-testid="splat-dl-spz">
             <Download size={14} /> {busy === "spz" ? t("splat.props.preparing") : t("splat.props.spz")}
+          </button>
+        )}
+        {live && (
+          <button type="button" className="btn-secondary" disabled={!!busy} onClick={() => void downloadPly()} data-testid="splat-dl-ply">
+            <Download size={14} /> {busy === "ply" ? t("splat.props.preparing") : t("splat.props.ply")}
           </button>
         )}
         <button type="button" className="btn-secondary" disabled={!!busy} onClick={() => void downloadTiles()} data-testid="splat-dl-tiles">

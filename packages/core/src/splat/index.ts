@@ -5,8 +5,8 @@ import { splatTiles, type SplatTiles, type SplatTilesOptions } from "./tiles";
 
 export * from "./cloud";
 export { decodeSpz, encodeSpzV2, packRotationV3, sniffSpz, MAX_SPLATS, SPZ_MAGIC } from "./spz";
-export { decodePly, readPlyHeader, plyInfo } from "./ply";
-export { glbTilesetZip, glbToGltf, scaledCloud, splatToSpz, tilesetZip, zipFiles, type PlacementSidecar } from "./export";
+export { decodePly, encodePly, readPlyHeader, plyInfo } from "./ply";
+export { glbTilesetZip, glbToGltf, scaledCloud, splatToPly, splatToSpz, tilesetZip, zipFiles, type PlacementSidecar } from "./export";
 export { compareElevation, readElevationRaster, splatBox, splatPositions, type ElevationComparison, type ElevationRaster } from "./elevation";
 export { splatGlb, splatTiles, GS_EXTENSIONS, type SplatTiles, type SplatTilesOptions } from "./tiles";
 
