@@ -28,6 +28,8 @@ interface DesktopApi {
   convertFbx(url: string): Promise<{ ok: true; file: DesktopFile; ms: number } | { ok: false; reason: string; detail?: string }>;
   takeOpened(): Promise<DesktopFile[] | null>;
   onOpened(cb: () => void): void;
+  /** Present from the version that has "Check this computer". */
+  computer?: () => Promise<{ cpuModel: string | null; cores: number; ramGb: number; freeDiskGb: number | null; os: string }>;
   platform: string;
 }
 

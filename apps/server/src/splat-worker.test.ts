@@ -14,6 +14,7 @@ import {
   parseFrameScores,
   frameMotion,
   jpegSplitter,
+  levelTransform,
   selectFrames,
   videoFrames,
   loadConfig,
@@ -218,6 +219,37 @@ describe("COLMAP model", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  it("moves the frame poses of a COLMAP 3.12+ model too, which is what newer readers use", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "viewer-colmap-"));
+    const centres: V3[] = [[0, 0, 10], [5, 1, 10], [2, 7, 11]];
+    await writeModel(dir, centres, [[1, 2, 0]]);
+    // frames.bin as pycolmap 3.13 writes it: id, rig id, rig-from-world (q, t), then data ids.
+    const frames = Buffer.alloc(8 + centres.length * (68 + 16));
+    frames.writeBigUInt64LE(BigInt(centres.length));
+    centres.forEach((c, k) => {
+      const o = 8 + k * 84;
+      frames.writeUInt32LE(k + 1, o);
+      frames.writeUInt32LE(1, o + 4);
+      [0, 1, 0, 0].forEach((v, i) => frames.writeDoubleLE(v, o + 8 + i * 8));
+      [-c[0], c[1], c[2]].forEach((v, i) => frames.writeDoubleLE(v, o + 40 + i * 8));
+      frames.writeUInt32LE(1, o + 64);
+      frames.writeUInt32LE(0, o + 68);
+      frames.writeUInt32LE(1, o + 72);
+      frames.writeBigUInt64LE(BigInt(k + 1), o + 76);
+    });
+    await writeFile(path.join(dir, "frames.bin"), frames);
+    transformModel(dir, known);
+    const images = readImages(await readFile(path.join(dir, "images.bin")));
+    const fb = await readFile(path.join(dir, "frames.bin"));
+    images.forEach((im, k) => {
+      const o = 8 + k * 84;
+      [0, 1, 2, 3].forEach((i) => expect(fb.readDoubleLE(o + 8 + i * 8)).toBeCloseTo(im.q[i]!, 12));
+      [0, 1, 2].forEach((i) => expect(fb.readDoubleLE(o + 40 + i * 8)).toBeCloseTo(im.t[i]!, 9));
+      expect(fb.readBigUInt64LE(o + 76)).toBe(BigInt(k + 1));
+    });
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it("places a reconstruction from camera positions and checks it on cameras held back", () => {
     const origin = { lat: 31.7683, lon: 35.2137, height: 780 };
     // Camera centres in metres east, north and up, on a drone's lawnmower path.
@@ -247,6 +279,89 @@ describe("COLMAP model", () => {
     expect(g.georef.checks!.horizontalRms).toBeLessThan(0.01);
     expect(g.georef.checks!.verticalRms).toBeLessThan(0.01);
     expect(georeference(cams.slice(0, 2), fixes, "x")).toEqual({ reason: expect.stringMatching(/at least 3/) });
+  });
+});
+
+describe("levelling a model with no placement", () => {
+  type M = [V3, V3, V3];
+  const norm = (v: V3): V3 => {
+    const n = Math.hypot(...v);
+    return [v[0] / n, v[1] / n, v[2] / n];
+  };
+  const cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const mv = (m: M, v: V3): V3 => [0, 1, 2].map((i) => m[i]![0] * v[0] + m[i]![1] * v[1] + m[i]![2] * v[2]) as V3;
+  const mt = (m: M): M => [0, 1, 2].map((i) => [m[0][i]!, m[1][i]!, m[2][i]!]) as M;
+  const mm = (a: M, b: M): M => [0, 1, 2].map((i) => [0, 1, 2].map((j) => a[i]![0] * b[0][j]! + a[i]![1] * b[1][j]! + a[i]![2] * b[2][j]!)) as M;
+  const quat = (R: M): number[] => {
+    // Shepperd: any rotation matrix to (w, x, y, z).
+    const tr = R[0][0] + R[1][1] + R[2][2];
+    if (tr > 0) {
+      const s = Math.sqrt(tr + 1) * 2;
+      return [s / 4, (R[2][1] - R[1][2]) / s, (R[0][2] - R[2][0]) / s, (R[1][0] - R[0][1]) / s];
+    }
+    if (R[0][0] > R[1][1] && R[0][0] > R[2][2]) {
+      const s = Math.sqrt(1 + R[0][0] - R[1][1] - R[2][2]) * 2;
+      return [(R[2][1] - R[1][2]) / s, s / 4, (R[0][1] + R[1][0]) / s, (R[0][2] + R[2][0]) / s];
+    }
+    if (R[1][1] > R[2][2]) {
+      const s = Math.sqrt(1 + R[1][1] - R[0][0] - R[2][2]) * 2;
+      return [(R[0][2] - R[2][0]) / s, (R[0][1] + R[1][0]) / s, s / 4, (R[1][2] + R[2][1]) / s];
+    }
+    const s = Math.sqrt(1 + R[2][2] - R[0][0] - R[1][1]) * 2;
+    return [(R[1][0] - R[0][1]) / s, (R[0][2] + R[2][0]) / s, (R[1][2] + R[2][1]) / s, s / 4];
+  };
+  // A turn of `deg` about `axis`, the way pose software leaves a scene.
+  const turn = (axis: V3, deg: number): M => {
+    const [x, y, z] = norm(axis);
+    const c = Math.cos((deg * Math.PI) / 180);
+    const s = Math.sin((deg * Math.PI) / 180);
+    const C = 1 - c;
+    return [
+      [c + x * x * C, x * y * C - z * s, x * z * C + y * s],
+      [y * x * C + z * s, c + y * y * C, y * z * C - x * s],
+      [z * x * C - y * s, z * y * C + x * s, c + z * z * C],
+    ];
+  };
+  // Cameras in a world with up = +z, held level (no roll), then the world turned by Q.
+  const cameras = (Q: M, look: (i: number) => V3, roll = (_i: number) => 0) =>
+    Array.from({ length: 40 }, (_, i) => {
+      const fwd = norm(look(i));
+      const ref: V3 = Math.abs(fwd[2]) > 0.99 ? [Math.cos(i), Math.sin(i), 0] : [0, 0, 1];
+      let x = norm(cross(fwd, ref));
+      if (Math.abs(fwd[2]) > 0.99) x = norm(cross(fwd, [0, 0, 1]).some((v) => Math.abs(v) > 1e-9) ? cross(fwd, [0, 0, 1]) : [Math.cos(i), Math.sin(i), 0]);
+      const r = (roll(i) * Math.PI) / 180;
+      const y0 = cross(fwd, x);
+      x = norm([x[0] * Math.cos(r) + y0[0] * Math.sin(r), x[1] * Math.cos(r) + y0[1] * Math.sin(r), x[2] * Math.cos(r) + y0[2] * Math.sin(r)]);
+      const y = cross(fwd, x);
+      const Rc: M = [x, y, fwd];
+      const centre: V3 = [Math.cos(i / 6) * 8, Math.sin(i / 6) * 5, 1.6];
+      return { q: quat(mm(Rc, mt(Q))), centre: mv(Q, centre) };
+    });
+  const upAfter = (T: Sim, Q: M) => norm(mv(T.R as M, mv(Q, [0, 0, 1])));
+
+  it("turns a walk-through so that up is the viewer's up (COLMAP −y), keeping the heading", () => {
+    const Q = turn([0.3, 1, 0.2], 37);
+    const cams = cameras(Q, (i) => [Math.cos(i / 5), Math.sin(i / 5), 0.15 * Math.sin(i)], (i) => 3 * Math.sin(i * 1.7));
+    const l = levelTransform(cams);
+    if (!l.T) throw new Error(l.reason);
+    const up = upAfter(l.T, Q);
+    expect((Math.acos(Math.min(1, -up[1])) * 180) / Math.PI).toBeLessThan(1);
+    expect(l.tiltDeg).toBeGreaterThan(30);
+    // The cameras' middle is at the origin.
+    const mid = [0, 1, 2].map((k) => cams.reduce((a, c) => a + applySim(l.T, c.centre)[k]!, 0) / cams.length);
+    mid.forEach((v) => expect(Math.abs(v)).toBeLessThan(1e-9));
+  });
+
+  it("levels a drone's straight-down survey from the view direction", () => {
+    const Q = turn([1, 0, 0.4], 15);
+    const l = levelTransform(cameras(Q, () => [0, 0, -1]));
+    const up = upAfter(l.T!, Q);
+    expect(-up[1]).toBeGreaterThan(Math.cos((1 * Math.PI) / 180));
+  });
+
+  it("leaves a model alone when the cameras were turned every way", () => {
+    const l = levelTransform(cameras(turn([0, 0, 1], 0), (i) => [Math.cos(i * 2.4), Math.sin(i * 1.3), Math.cos(i * 0.7)], (i) => (i * 47) % 360));
+    expect(l.reason).toMatch(/which way is up/);
   });
 });
 

@@ -43,6 +43,8 @@ $machine = Get-ChildItem "HKLM:\$uninstallKeys" -ErrorAction SilentlyContinue | 
 Check ($null -eq $machine) "nothing is registered for the whole machine"
 Check (Test-Path "HKCU:\Software\Classes\.fbx\OpenWithList\HOLO.exe") "FBX files offer Open with HOLO"
 Check (Test-Path "HKCU:\Software\Classes\.zip\OpenWithList\HOLO.exe") "zip files offer Open with HOLO"
+Check (Test-Path "HKCU:\Software\Classes\.spz\OpenWithList\HOLO.exe") "SPZ splat files offer Open with HOLO"
+Check (Test-Path "HKCU:\Software\Classes\.ply\OpenWithList\HOLO.exe") "PLY splat files offer Open with HOLO"
 $zipDefault = (Get-ItemProperty "HKCU:\Software\Classes\.zip" -ErrorAction SilentlyContinue).'(default)'
 Check ($zipDefault -notlike "*HOLO*") "HOLO does not take over zip files" "$zipDefault"
 $glb = (Get-ItemProperty "HKCU:\Software\Classes\.glb" -ErrorAction SilentlyContinue).'(default)'
@@ -64,6 +66,7 @@ for ($i = 0; $i -lt 60 -and (Test-Path "$dir\HOLO.exe"); $i++) { Start-Sleep -Se
 Check (-not (Test-Path "$dir\HOLO.exe")) "it uninstalls silently" "exit code $($u.ExitCode)"
 Check (-not (Test-Path "$dir\viewer.json")) "the uninstaller removes viewer.json"
 Check (-not (Test-Path "HKCU:\Software\Classes\.fbx\OpenWithList\HOLO.exe")) "the uninstaller removes Open with"
+Check (-not (Test-Path "HKCU:\Software\Classes\.ply\OpenWithList\HOLO.exe")) "the uninstaller removes Open with for PLY"
 $left = Get-ChildItem "HKCU:\$uninstallKeys" | Get-ItemProperty | Where-Object { $_.DisplayName -like "HOLO*" }
 Check ($null -eq $left) "it is gone from the installed apps"
 

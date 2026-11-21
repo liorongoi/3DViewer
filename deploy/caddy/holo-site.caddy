@@ -1,0 +1,71 @@
+# The routes HOLO serves on one origin: the API, published model files, base maps and the web
+# app. Imported by Caddyfile (HTTPS, the site install) and Caddyfile.user (the install in a home
+# folder, HTTP or HTTPS). Settings come from the same environment values (Caddyfile's header).
+
+# API: everything goes to Node, which audits it. The client address is passed on for the
+# audit log (the server trusts X-Forwarded-For from this proxy only).
+handle /api/* {
+	request_body {
+		# tus sends at most one 2 GB file per PATCH (LIMITS.file).
+		max_size 2GB
+	}
+	reverse_proxy {$API_UPSTREAM:127.0.0.1:8787} {
+		# Stream upload bodies straight through instead of buffering them on disk.
+		request_buffers 0
+		response_buffers 0
+		flush_interval -1
+		transport http {
+			read_timeout 30m
+			write_timeout 30m
+		}
+	}
+}
+
+# Published model files. A path names a model, an upload and a file, and never changes, so
+# it is cached for a year. file_server adds ETag and Last-Modified and answers Range requests.
+handle_path /files/* {
+	root * {$FILES_ROOT}
+	@json path *.json *.gltf
+	encode @json zstd gzip
+	header Cache-Control "public, max-age=31536000, immutable"
+	header @json Content-Type "application/json"
+	header *.gltf Content-Type "model/gltf+json"
+	header *.glb Content-Type "model/gltf-binary"
+	header *.ktx2 Content-Type "image/ktx2"
+	# No folder listings: file_server lists a folder only when told to with `browse` (and
+	# `browse off` would turn listings on, reading a template file named "off").
+	file_server {
+		hide .*
+	}
+}
+
+# Base map packages (RND-11), installed by viewer-basemap-install: imagery and terrain tiles.
+# A package can be replaced by a newer one under the same name, so tiles are cached for a
+# day, with ETag. Quantized-mesh tiles are stored gzipped, as Cesium's terrain builder
+# writes them, and are sent as they are.
+handle_path /basemaps/* {
+	root * {$BASEMAP_ROOT:/var/lib/viewer/basemaps}
+	header Cache-Control "public, max-age=86400"
+	@terrain path *.terrain
+	header @terrain Content-Type "application/vnd.quantized-mesh"
+	header @terrain Content-Encoding gzip
+	@json path *.json
+	encode @json zstd gzip
+	header @json Content-Type "application/json"
+	file_server {
+		hide .* SHA256SUMS
+	}
+}
+
+# The web app. Hashed assets are immutable; index.html is checked on every load so an
+# update reaches everyone at once.
+handle {
+	root * {$WEB_ROOT}
+	encode zstd gzip
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+	@index path / /index.html
+	header @index Cache-Control "no-cache"
+	try_files {path} /index.html
+	file_server
+}

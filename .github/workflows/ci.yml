@@ -166,6 +166,11 @@ jobs:
           sudo apt-get install -y postgresql-common
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           sudo apt-get install -y postgresql-client-17
+      - name: Install without root in a home folder, upgrade, uninstall
+        run: |
+          bash scripts/check-user-install.sh \
+            out/viewer-server-0.6.${{ github.run_number }}-linux-x64.tar.gz \
+            out/viewer-server-0.6.${{ github.run_number }}-next-linux-x64.tar.gz
       - name: Install, upgrade, fail, roll back
         run: |
           sudo PATH="$PATH" bash scripts/check-server-install.sh \

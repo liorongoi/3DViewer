@@ -1,0 +1,36 @@
+# HOLO front end for the install in a home folder without HTTPS (deploy/install-user.sh).
+#
+# Plain HTTP on a port above 1024, so no root is needed. Use it on a trusted network or for a
+# trial; with a certificate, install-user.sh uses Caddyfile (HTTPS) on ports 8080 and 8443 instead.
+# Settings, from install-user.sh's caddy.env: HTTP_PORT, WEB_ROOT, FILES_ROOT, BASEMAP_ROOT,
+# API_UPSTREAM and LOG_DIR, as Caddyfile's header describes.
+{
+	auto_https off
+	admin off
+	http_port {$HTTP_PORT:8080}
+	servers {
+		protocols h1 h2c
+		timeouts {
+			read_header 10s
+			idle 2m
+		}
+	}
+	log {
+		output file {$LOG_DIR}/caddy.log {
+			roll_size 100MiB
+			roll_keep 5
+		}
+		format json
+	}
+}
+
+http://:{$HTTP_PORT:8080} {
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		X-Frame-Options SAMEORIGIN
+		-Server
+	}
+
+	import holo-site.caddy
+}

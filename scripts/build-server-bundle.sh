@@ -10,7 +10,8 @@
 #   deploy/        systemd units, Caddy config, settings templates, backup, restore, base maps
 #   sandbox/rootfs the conversion sandbox's root: the C libraries Node.js and FBX2glTF load
 #   docs/          INSTALL.md and OPERATIONS.md
-#   install.sh     installs or upgrades it (docs/INSTALL.md)
+#   install.sh     installs or upgrades it as root, for a site (docs/INSTALL.md)
+#   install-user.sh  installs or upgrades it in a home folder, with no root (docs/INSTALL.md)
 #   VERSION, SHA256SUMS
 #
 # Run on an internet-connected build machine after `pnpm install --frozen-lockfile` and
@@ -79,6 +80,8 @@ mkdir -p "$STAGE/docs"
 cp "$ROOT/docs/INSTALL.md" "$ROOT/docs/OPERATIONS.md" "$ROOT/docs/SECURITY.md" "$STAGE/docs/"
 cp "$ROOT/THIRD_PARTY_LICENSES.md" "$STAGE/"
 install -m 0755 "$ROOT/deploy/install.sh" "$STAGE/install.sh"
+install -m 0755 "$ROOT/deploy/install-user.sh" "$STAGE/install-user.sh"
+cp "$ROOT/deploy/README-FIRST.txt" "$STAGE/README-FIRST.txt"
 cat > "$STAGE/VERSION" <<EOF
 viewer $VERSION
 node $NODE_VERSION

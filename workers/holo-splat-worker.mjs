@@ -395,7 +395,7 @@ export function readImages(buf) {
   return out;
 }
 
-/** Moves a COLMAP binary model (images.bin and points3D.bin in a folder) by y = s R x + t, in place. */
+/** Moves a COLMAP binary model (images.bin, frames.bin when there is one, and points3D.bin) by y = s R x + t, in place. */
 export function transformModel(dir, T) {
   const imgPath = path.join(dir, "images.bin");
   const ib = readFileSync(imgPath);
@@ -410,6 +410,34 @@ export function transformModel(dir, T) {
     tc.forEach((v, i) => ib.writeDoubleLE(v, im.at + 36 + i * 8));
   }
   writeFileSync(imgPath, ib);
+  // COLMAP 3.12 and later keep the poses that count in frames.bin (rig from world), and image
+  // poses are derived from them; images.bin's copy is only for older readers. Move both.
+  const framesPath = path.join(dir, "frames.bin");
+  if (existsSync(framesPath)) {
+    const rigsPath = path.join(dir, "rigs.bin");
+    if (T.s !== 1 && existsSync(rigsPath)) {
+      // A rig's other cameras sit at fixed offsets from its first one; scaling would need those
+      // moved too. Every rig HOLO's pose step makes has one camera, so refuse anything else.
+      const rb = readFileSync(rigsPath);
+      let ro = 8;
+      for (let k = 0, n = Number(rb.readBigUInt64LE(0)); k < n; k++) {
+        if (rb.readUInt32LE(ro + 4) !== 1) throw new Error("This model has camera rigs with several cameras; it cannot be rescaled to camera positions.");
+        ro += 16;
+      }
+    }
+    const fb = readFileSync(framesPath);
+    let o = 8;
+    for (let k = 0, n = Number(fb.readBigUInt64LE(0)); k < n; k++) {
+      const q = [0, 1, 2, 3].map((i) => fb.readDoubleLE(o + 8 + i * 8));
+      const t = [0, 1, 2].map((i) => fb.readDoubleLE(o + 40 + i * 8));
+      const Rc = mulMM(quatToR(q), Rt);
+      const Rct = mulMV(Rc, T.t);
+      rToQuat(Rc).forEach((v, i) => fb.writeDoubleLE(v, o + 8 + i * 8));
+      [0, 1, 2].map((i) => T.s * t[i] - Rct[i]).forEach((v, i) => fb.writeDoubleLE(v, o + 40 + i * 8));
+      o += 68 + fb.readUInt32LE(o + 64) * 16;
+    }
+    writeFileSync(framesPath, fb);
+  }
   const ptPath = path.join(dir, "points3D.bin");
   const pb = readFileSync(ptPath);
   const n = Number(pb.readBigUInt64LE(0));
@@ -421,6 +449,59 @@ export function transformModel(dir, T) {
     o += 51 + track * 8;
   }
   writeFileSync(ptPath, pb);
+}
+
+/**
+ * Levels a model that has no positions to place it by, so that up is up in the viewer.
+ *
+ * Pose software leaves the world turned any way, and the view then rolls as you orbit. People hold
+ * a camera with its picture level: the cameras' right-hand (x) axes are close to horizontal, so
+ * "up" is the direction most nearly at right angles to all of them (the smallest axis of their
+ * spread, as COLMAP's model_orientation_aligner assumes). Its sign comes from the pictures' "up"
+ * (the cameras' −y), or from the view direction when the cameras look straight down.
+ *
+ * Returns the turn (and a shift to the cameras' mean centre) that brings up to COLMAP's −y, the
+ * viewer's up, with the least turn so the heading is kept; or a reason when up is not clear.
+ */
+export function levelTransform(cams) {
+  if (cams.length < 3) return { reason: "Too few cameras to tell which way is up." };
+  const axes = cams.map((c) => quatToR(c.q));
+  const sum = (f) => axes.reduce((acc, R) => f(R).map((v, i) => acc[i] + v), [0, 0, 0]);
+  const S = [0, 1, 2].map((i) => [0, 1, 2].map((j) => axes.reduce((acc, R) => acc + R[0][i] * R[0][j], 0) / axes.length));
+  const e = jacobiEigen(S);
+  const order = e.values.map((v, i) => [v, i]).sort((a, b) => a[0] - b[0]);
+  // The right-hand axes must lie in a plane: a clear gap from the second-smallest spread.
+  if (!(order[1][0] > 4 * order[0][0] && order[1][0] > 0.02)) return { reason: "The cameras were turned too many ways to tell which way is up." };
+  let up = [0, 1, 2].map((k) => e.vectors[k][order[0][1]]);
+  const unit = (v) => {
+    const n = Math.hypot(...v);
+    return v.map((x) => x / n);
+  };
+  const picUp = unit(sum((R) => [-R[1][0], -R[1][1], -R[1][2]]));
+  const look = unit(sum((R) => R[2]));
+  const d = up[0] * picUp[0] + up[1] * picUp[1] + up[2] * picUp[2];
+  const dl = up[0] * look[0] + up[1] * look[1] + up[2] * look[2];
+  const flip = Math.abs(d) > 0.2 ? d < 0 : dl > 0;
+  if (flip) up = up.map((v) => -v);
+  // Least turn taking up to (0, −1, 0) (Rodrigues).
+  const target = [0, -1, 0];
+  const ax = [up[1] * target[2] - up[2] * target[1], up[2] * target[0] - up[0] * target[2], up[0] * target[1] - up[1] * target[0]];
+  const sin = Math.hypot(...ax);
+  const cos = up[0] * target[0] + up[1] * target[1] + up[2] * target[2];
+  let R;
+  if (sin < 1e-9) R = cos > 0 ? [[1, 0, 0], [0, 1, 0], [0, 0, 1]] : [[1, 0, 0], [0, -1, 0], [0, 0, -1]];
+  else {
+    const [x, y, z] = ax.map((v) => v / sin);
+    const C = 1 - cos;
+    R = [
+      [cos + x * x * C, x * y * C - z * sin, x * z * C + y * sin],
+      [y * x * C + z * sin, cos + y * y * C, y * z * C - x * sin],
+      [z * x * C - y * sin, z * y * C + x * sin, cos + z * z * C],
+    ];
+  }
+  const mean = [0, 1, 2].map((k) => cams.reduce((acc, c) => acc + c.centre[k], 0) / cams.length);
+  const rm = mulMV(R, mean);
+  return { T: { s: 1, R, t: rm.map((v) => -v) }, tiltDeg: Math.round((Math.atan2(sin, cos) * 180) / Math.PI * 10) / 10 };
 }
 
 /**
@@ -727,7 +808,7 @@ async function sfm(cfg, images, work, o, video) {
   const zero = path.join(model, "0");
   if (!existsSync(path.join(zero, "images.bin"))) {
     mkdirSync(zero, { recursive: true });
-    for (const f of ["cameras.bin", "images.bin", "points3D.bin"]) copyFileSync(path.join(model, f), path.join(zero, f));
+    for (const f of ["cameras.bin", "images.bin", "points3D.bin", "rigs.bin", "frames.bin"]) if (existsSync(path.join(model, f))) copyFileSync(path.join(model, f), path.join(zero, f));
   }
   return { data: undist, model: zero, total: count };
 }
@@ -881,6 +962,16 @@ async function main() {
       georef = g.georef;
     }
   }
+  let levelled = null;
+  if (!georef) {
+    // No placement: still turn the model so that up is up, and put the cameras' middle at the origin.
+    const l = levelTransform(cams);
+    if (l.T) {
+      transformModel(model, l.T);
+      levelled = { tiltDeg: l.tiltDeg };
+      say(`level: turned the model by ${l.tiltDeg}° so that up is up`);
+    } else say(`level: left as it is (${l.reason})`);
+  }
   progress(0.3, "train");
 
   const train = path.join(work, "train");
@@ -903,7 +994,7 @@ async function main() {
   copyFileSync(plys[0], path.join(o.output, "splats.ply"));
   writeFileSync(
     path.join(o.output, "provenance.json"),
-    JSON.stringify({ tool: o.method, version: check(cfg, o.method).version, poses: cfg.sfm === "glomap" ? "COLMAP features, GLOMAP mapper" : cfg.sfm === "pycolmap" ? "pycolmap" : "COLMAP", frames, registeredViews: cams.length, georefNote }),
+    JSON.stringify({ tool: o.method, version: check(cfg, o.method).version, poses: cfg.sfm === "glomap" ? "COLMAP features, GLOMAP mapper" : cfg.sfm === "pycolmap" ? "pycolmap" : "COLMAP", frames, registeredViews: cams.length, georefNote, levelled }),
   );
   if (georef) writeFileSync(path.join(o.output, "georef.json"), JSON.stringify(georef));
   progress(1, "done");

@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+# HOLO hardware check: can this Linux machine run the HOLO server, and train Gaussian splats?
+#
+#   holo-check [folder]     (folder: where HOLO keeps its data; default: the home folder)
+#
+# Reads the processor, memory, free disk, operating system and NVIDIA cards (nvidia-smi), and says
+# in plain words what HOLO can do here. Nothing is installed or changed, and it needs no root.
+# The output names no host, address or user, so it can be copied off the machine for support.
+# Exit code: 0 ready, 1 runs with limits, 2 cannot run here.
+set -uo pipefail
+DIR="${1:-$HOME}"
+ok=0 limits=() blockers=()
+line() { printf '  %-18s %s\n' "$1" "$2"; }
+mark() { case "$1" in ok) echo "OK";; warn) echo "LIMIT";; bad) echo "NO";; esac; }
+
+echo "HOLO hardware check"
+echo
+
+# --- Processor ---------------------------------------------------------------------------------
+arch="$(uname -m)"
+cores="$(nproc 2>/dev/null || echo 1)"
+model="$(sed -n 's/^model name[[:space:]]*: //p' /proc/cpuinfo 2>/dev/null | head -1)"
+if [[ "$arch" != x86_64 ]]; then
+  blockers+=("this build is for x86-64 processors; this one is $arch")
+  line "Processor" "$model ($arch)  [$(mark bad)]"
+elif (( cores < 4 )); then
+  limits+=("only $cores processor cores: uploads and conversions will be slow (8 or more is best)")
+  line "Processor" "$model, $cores cores  [$(mark warn)]"
+else
+  line "Processor" "$model, $cores cores  [$(mark ok)]"
+fi
+
+# --- Memory ------------------------------------------------------------------------------------
+mem_kb="$(awk '/^MemTotal:/{print $2}' /proc/meminfo 2>/dev/null || echo 0)"
+mem_gb=$(( (mem_kb + 524288) / 1048576 ))
+if (( mem_gb < 4 )); then
+  blockers+=("$mem_gb GB of memory; HOLO needs at least 4 GB")
+  line "Memory" "$mem_gb GB  [$(mark bad)]"
+elif (( mem_gb < 16 )); then
+  limits+=("$mem_gb GB of memory: fine for a few users; big uploads and splat training want 16 GB or more")
+  line "Memory" "$mem_gb GB  [$(mark warn)]"
+else
+  line "Memory" "$mem_gb GB  [$(mark ok)]"
+fi
+
+# --- Disk --------------------------------------------------------------------------------------
+probe="$DIR"; while [[ ! -d "$probe" && "$probe" != / ]]; do probe="$(dirname "$probe")"; done
+free_gb="$(df -Pk "$probe" 2>/dev/null | awk 'NR==2{printf "%d", $4/1048576}')"
+free_gb="${free_gb:-0}"
+if (( free_gb < 5 )); then
+  blockers+=("only $free_gb GB free on the disk HOLO would use; it needs 5 GB to install, plus room for models")
+  line "Free disk" "$free_gb GB  [$(mark bad)]"
+elif (( free_gb < 100 )); then
+  limits+=("$free_gb GB free on disk: enough to start; models and training need room (100 GB or more is comfortable)")
+  line "Free disk" "$free_gb GB  [$(mark warn)]"
+else
+  line "Free disk" "$free_gb GB  [$(mark ok)]"
+fi
+
+# --- Operating system --------------------------------------------------------------------------
+os_name="$(. /etc/os-release 2>/dev/null && echo "${PRETTY_NAME:-Linux}")"
+glibc="$(getconf GNU_LIBC_VERSION 2>/dev/null | awk '{print $2}')"
+if [[ -z "$glibc" ]]; then
+  blockers+=("no GNU C library found (Alpine and other musl systems are not supported)")
+  line "System" "${os_name:-Linux}  [$(mark bad)]"
+elif [[ "$(printf '%s\n2.28\n' "$glibc" | sort -V | head -1)" != 2.28 ]]; then
+  blockers+=("the C library is $glibc; HOLO's Node.js needs 2.28 or newer (Ubuntu 20.04, Debian 10, RHEL 8 or later)")
+  line "System" "${os_name:-Linux}, glibc $glibc  [$(mark bad)]"
+else
+  line "System" "${os_name:-Linux}, glibc $glibc  [$(mark ok)]"
+fi
+
+# --- Graphics card -----------------------------------------------------------------------------
+gpu_lines=""
+if command -v nvidia-smi >/dev/null 2>&1; then
+  gpu_lines="$(timeout 10 nvidia-smi --query-gpu=name,memory.total,memory.free,driver_version --format=csv,noheader,nounits 2>/dev/null || true)"
+fi
+best=0
+if [[ -n "$gpu_lines" ]]; then
+  while IFS=, read -r name total free driver; do
+    name="$(echo "$name" | xargs)"; total="${total// /}"; free="${free// /}"; driver="$(echo "$driver" | xargs)"
+    gb=$(( (total + 512) / 1024 )); fgb=$(( (free + 512) / 1024 ))
+    (( gb > best )) && best=$gb
+    line "Graphics card" "NVIDIA $name, $gb GB ($fgb GB free), driver $driver"
+  done <<< "$gpu_lines"
+elif command -v lspci >/dev/null 2>&1 && lspci 2>/dev/null | grep -qi 'vga.*nvidia\|3d.*nvidia'; then
+  line "Graphics card" "an NVIDIA card is fitted, but its driver is not working (nvidia-smi does not answer)"
+else
+  line "Graphics card" "no NVIDIA card found"
+fi
+
+echo
+echo "What HOLO can do here"
+if (( ${#blockers[@]} )); then
+  echo "  HOLO cannot run on this machine:"
+  for b in "${blockers[@]}"; do echo "    - $b"; done
+  exit 2
+fi
+echo "  - Show, measure and share 3D models in the browser and the Windows app: yes"
+if (( best >= 16 )); then
+  echo "  - Train Gaussian splats from video, photos or satellite images: yes, at full quality (${best} GB graphics card)"
+elif (( best >= 8 )); then
+  echo "  - Train Gaussian splats: yes, at standard quality (${best} GB card; 16 GB or more gives the best results)"
+elif (( best > 0 )); then
+  echo "  - Train Gaussian splats: only small, fast ones (${best} GB card; 8 GB or more is needed for standard quality)"
+  limits+=("the graphics card has $best GB: splat training is limited to small models")
+else
+  echo "  - Train Gaussian splats: slowly, on the processor only. An NVIDIA card with 8 GB or more makes it many times faster."
+  limits+=("no NVIDIA graphics card: splats can be viewed, but training them here is very slow")
+fi
+if (( ${#limits[@]} )); then
+  echo
+  echo "  It will run, with these limits:"
+  for l in "${limits[@]}"; do echo "    - $l"; done
+  exit 1
+fi
+echo
+echo "  This machine is ready for HOLO."
+exit "$ok"
