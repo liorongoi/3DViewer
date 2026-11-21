@@ -416,6 +416,120 @@ def find_views(data):
 
 
 # ---------------------------------------------------------------------------------------------
+# Ground control: surveyed points correct each view's RPC (bias compensation)
+
+def rpc_intersect(sights, h0):
+    """Where the views' rays through their pixels meet: (lon, lat, height), by Gauss-Newton on pixel error."""
+    import numpy as np
+
+    rpc, col, row = sights[0]
+    lon, lat = rpc.localization(col, row, h0)
+    x = np.array([float(lon), float(lat), float(h0)])
+    steps = np.array([1e-6, 1e-6, 0.5])
+
+    def resid(v):
+        out = []
+        for r, c, w in sights:
+            pc, pr = r.projection(v[0], v[1], v[2])
+            out += [float(pc) - c, float(pr) - w]
+        return np.array(out)
+
+    for _ in range(15):
+        r0 = resid(x)
+        J = np.stack([(resid(x + np.eye(3)[k] * steps[k]) - r0) / steps[k] for k in range(3)], axis=1)
+        dx, *_ = np.linalg.lstsq(J, -r0, rcond=None)
+        x = x + dx
+        if abs(dx[0]) < 1e-10 and abs(dx[1]) < 1e-10 and abs(dx[2]) < 1e-4:
+            break
+    return x
+
+
+def read_ground_control(path):
+    with open(path, encoding="utf8") as f:
+        gc = json.load(f)
+    return gc.get("crs", "unknown"), [p for p in gc.get("points", []) if p.get("observations")]
+
+
+def biases(views, points, leave_out=None):
+    """Each view's mean pixel offset (observed minus the RPC's projection) over the points it sees."""
+    out = {}
+    for i, v in enumerate(views):
+        d = []
+        for k, p in enumerate(points):
+            if k == leave_out:
+                continue
+            for ob in p["observations"]:
+                if ob["image"] == os.path.basename(v["file"]):
+                    c, r = v["rpc0"].projection(p["lon"], p["lat"], p["height"])
+                    d.append((ob["x"] - float(c), ob["y"] - float(r)))
+        if d:
+            out[i] = (sum(a for a, _ in d) / len(d), sum(b for _, b in d) / len(d))
+    return out
+
+
+def shifted(rpc, shift):
+    import copy
+
+    r = copy.deepcopy(rpc)
+    if shift:
+        r.col_offset = float(r.col_offset) + shift[0]
+        r.row_offset = float(r.row_offset) + shift[1]
+    return r
+
+
+def control_residuals(views, points, leave_out_each):
+    """Surveyed minus measured position of every point seen in two views or more, in metres (east, north, up)."""
+    import numpy as np
+
+    errs = []
+    full = biases(views, points)
+    for k, p in enumerate(points):
+        b = biases(views, points, leave_out=k) if leave_out_each else full
+        sights = []
+        for i, v in enumerate(views):
+            for ob in p["observations"]:
+                if ob["image"] == os.path.basename(v["file"]):
+                    sights.append((shifted(v["rpc0"], b.get(i)), ob["x"], ob["y"]))
+        if len(sights) < 2:
+            continue
+        lon, lat, h = rpc_intersect(sights, p["height"])
+        my, mx = metres_per_degree(p["lat"])
+        errs.append(((lon - p["lon"]) * mx, (lat - p["lat"]) * my, h - p["height"]))
+    if not errs:
+        return None
+    e = np.array(errs)
+    hz = np.hypot(e[:, 0], e[:, 1])
+    return {"count": len(errs), "horizontalRms": round(float(np.sqrt(np.mean(hz**2))), 3), "verticalRms": round(float(np.sqrt(np.mean(e[:, 2] ** 2))), 3), "max": round(float(np.max(np.hypot(hz, e[:, 2]))), 3)}
+
+
+def apply_ground_control(views, path):
+    """Corrects the views' RPCs in place with the surveyed points they see; returns what to report, or None."""
+    crs, points = read_ground_control(path)
+    for v in views:
+        v["rpc0"] = v["rpc"]
+    b = biases(views, points)
+    names = {os.path.basename(v["file"]) for v in views}
+    seen = [p for p in points if any(ob["image"] in names for ob in p["observations"])]
+    if not b:
+        say("ground control: no point is marked in these satellite views; RPCs used as delivered")
+        return None
+    for i, v in enumerate(views):
+        v["rpc"] = shifted(v["rpc0"], b.get(i))
+        if i in b:
+            say("ground control: %s moved %.2f px across, %.2f px down" % (os.path.basename(v["file"]), b[i][0], b[i][1]))
+    uncorrected = [os.path.basename(v["file"]) for i, v in enumerate(views) if i not in b]
+    if uncorrected:
+        say("ground control: no point marked in %s; left as delivered" % ", ".join(uncorrected))
+    return {
+        "crs": crs,
+        "points": len(seen),
+        "views": len(b),
+        "controls": control_residuals(views, seen, False),
+        "checks": control_residuals(views, seen, True) if len(seen) >= 2 else None,
+    }
+
+
+# ---------------------------------------------------------------------------------------------
 # prepare: the EOGS++ data layout for one capture
 
 def gsd_of(rpc, col, row, h):
@@ -429,7 +543,7 @@ def gsd_of(rpc, col, row, h):
     return math.sqrt(abs(ex[0] * ey[1] - ex[1] * ey[0])) / 10
 
 
-def prepare(data, work, scene, max_size, alt_range=None):
+def prepare(data, work, scene, max_size, alt_range=None, ground_control=None):
     """Writes work/data/... for EOGS++ and returns a summary of what it made."""
     import numpy as np
     import rasterio
@@ -460,6 +574,7 @@ def prepare(data, work, scene, max_size, alt_range=None):
         say("view left out: %s" % s)
     if len(views) < 2:
         raise InputError("At least two satellite views with RPC models are needed; %d found." % len(views))
+    gcp = apply_ground_control(views, ground_control) if ground_control else None
 
     h0 = float(np.median([v["rpc"].alt_offset for v in views]))
     lo_alt, hi_alt = alt_range if alt_range else (h0 - 100.0, h0 + 150.0)
@@ -563,7 +678,7 @@ def prepare(data, work, scene, max_size, alt_range=None):
         f.write("".join(n + ".json\n" for n in names if n not in test))
     with open(os.path.join(split_dir, "test.txt"), "w") as f:
         f.write("".join(n + ".json\n" for n in test))
-    return {"scene": scene, "views": len(names), "skipped": len(skipped), "gsd": round(gsd, 3), "areaMetres": round(2 * half), "minAlt": lo_alt, "maxAlt": hi_alt, "centre": [lat_c, lon_c]}
+    return {"scene": scene, "views": len(names), "skipped": len(skipped), "gsd": round(gsd, 3), "areaMetres": round(2 * half), "minAlt": lo_alt, "maxAlt": hi_alt, "centre": [lat_c, lon_c], "groundControl": gcp}
 
 
 # ---------------------------------------------------------------------------------------------
@@ -717,7 +832,7 @@ def run(a):
     os.makedirs(work, exist_ok=True)
     scene = "HOLO_" + hashlib.sha1(train.encode()).hexdigest()[:8].upper()
     alt = tuple(float(x) for x in a.alt_range.split(",")) if a.alt_range else None
-    info = prepare(os.path.abspath(a.data), work, scene, a.max_size, alt)
+    info = prepare(os.path.abspath(a.data), work, scene, a.max_size, alt, a.ground_control or None)
     env = dict(os.environ, HOLO_EOGS_GSD=str(info["gsd"]), MPLBACKEND="Agg", HYDRA_FULL_ERROR="1", PROJECT_ROOT=repo)
     py = sys.executable
     stream([py, "-m", "scripts.dataset_creation.to_affine", "scene_name=" + scene, "rpc_type=rpc_raw", "mode=pan", "basepath=" + work], repo, env)
@@ -732,6 +847,7 @@ def run(a):
     frame, views = frame_of(os.path.join(work, "scripts", "dataset_creation", "affine_models", scene + "_pan_rpc_raw", "affine_models.json"))
     origin, count, turn, k = convert(ply, frame, os.path.join(train, "splats.ply"))
     say("splats: %d, placed at the scene centre; UTM zone %d%s, grid turned %.3f deg and scaled %.6f against east-north-up" % (count, frame["n"], frame["l"], turn, k))
+    gcp = info.get("groundControl")
     georef = {
         "frame": "enu",
         "origin": {"lat": origin[0], "lon": origin[1], "height": origin[2]},
@@ -743,6 +859,18 @@ def run(a):
         "checks": None,
         "note": "Placed from the satellites' RPC models, which EOGS++ refines while training. Without ground control the absolute position is as good as the RPCs (often a few metres). Controls: how far EOGS++'s affine cameras are from the RPCs.",
     }
+    if gcp and gcp["controls"]:
+        georef.update(
+            source="satellite RPC camera models, corrected with %d surveyed ground control points" % gcp["points"],
+            horizontalCrs="EPSG:4326 (surveyed in %s)" % gcp["crs"],
+            verticalDatum="as surveyed (%s); RPC heights are above the WGS 84 ellipsoid, so the points' heights should be too" % gcp["crs"],
+            controls=gcp["controls"],
+            checks=gcp["checks"],
+            note="Each view's RPC was moved by the mean pixel offset of the surveyed points it shows. Controls: the points found again with the corrected RPCs. Checks: each point found with RPCs corrected without it. EOGS++ refines the cameras further while training.",
+        )
+    elif gcp:
+        georef["note"] += " Ground control was given, but no point is marked in two views, so it could not be checked."
+        georef["source"] = "satellite RPC camera models, corrected with %d surveyed ground control points (not checked)" % gcp["points"]
     with open(os.path.join(train, "georef.json"), "w") as f:
         json.dump(georef, f, indent=1)
     dsm = sorted(glob.glob(os.path.join(model_dir, "test_opNone", "ours_*", "tsdf", "dsm.iio")))
@@ -773,6 +901,7 @@ def main(argv=None):
     r.add_argument("--max-size", type=int, default=2048, help="largest side of the area, in pixels")
     r.add_argument("--alt-range", default="", help="lowest and highest ground height in metres (WGS 84 ellipsoid), as MIN,MAX")
     r.add_argument("--keep-dsm", default="", help="folder to keep the DSM GeoTIFF in")
+    r.add_argument("--ground-control", default="", help="ground-control.json from HOLO (surveyed points and where they show in the views)")
     a = p.parse_args(argv)
     if a.cmd == "check":
         return check(a.eogs)

@@ -15,7 +15,19 @@ export function exifGps(buf: Buffer): Fix | null;
 export function parseSrt(text: string): (Fix & { t: number })[];
 export function parseGnssCsv(text: string): (Fix & { t: number })[];
 export function positionAt(track: (Fix & { t: number })[], t: number): Fix | null;
-export function readImages(buf: Buffer): { at: number; name: string; q: number[]; t: V3; centre: V3 }[];
+export function readImages(buf: Buffer): { at: number; name: string; q: number[]; t: V3; centre: V3; cameraId: number }[];
+export interface Camera { model: number; width: number; height: number; params: number[] }
+export function readCameras(buf: Buffer): Map<number, Camera>;
+/** A pixel as an undistorted direction (x, y, 1) in its camera, or null for a camera model not handled. */
+export function pixelRay(cam: Camera, px: number, py: number): V3 | null;
+export function triangulate(rays: { o: V3; d: V3 }[]): { point: V3; widestDeg: number } | null;
+export interface GroundControlFile { crs: string; points: { name: string; lat: number; lon: number; height: number; observations: { image: string; x: number; y: number }[] }[] }
+/** Placement from surveyed ground control points seen in posed pictures. */
+export function controlPlacement(
+  images: { name: string; q: number[]; centre: V3; cameraId: number }[],
+  cameras: Map<number, Camera>,
+  gc: GroundControlFile,
+): { reason: string; skipped: string[] } | { T: Sim; skipped: string[]; georef: { origin: { lat: number; lon: number; height: number }; source: string; metresPerModelUnit: number; controls: Res; checks: Res | null; horizontalCrs: string; verticalDatum: string } };
 export function transformModel(dir: string, T: Sim): void;
 export function georeference(
   cameras: { name: string; centre: V3 }[],

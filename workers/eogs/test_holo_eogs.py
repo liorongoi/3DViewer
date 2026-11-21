@@ -95,6 +95,40 @@ def test_prepare(tmp):
     return work
 
 
+def test_ground_control(tmp):
+    """Views delivered with RPCs a few pixels off: surveyed points marked in them bring each back."""
+    cap = os.path.join(tmp, "cap")
+    views = []
+    for f in h.find_views(cap):
+        views.append({"file": f, "rpc": h.read_rpc(f)})
+    truth = [(2.5, -1.5), (-3.0, 2.0), (1.0, 4.0), (-2.0, -2.5)]  # where the ground really shows, against each RPC
+    points = []
+    for k, (de, dn, hh) in enumerate([(-120, -90, 35.0), (110, -80, 48.0), (90, 130, 41.0), (-100, 120, 60.0), (5, 10, 44.0)]):
+        my, mx = h.metres_per_degree(LAT0)
+        lat, lon = LAT0 + dn / my, LON0 + de / mx
+        obs = []
+        for v, (bx, by) in zip(views, truth):
+            c, r = v["rpc"].projection(lon, lat, hh)
+            obs.append({"image": os.path.basename(v["file"]), "x": float(c) + bx, "y": float(r) + by})
+        points.append({"name": "gcp%d" % k, "lat": lat, "lon": lon, "height": hh, "observations": obs})
+    gfile = os.path.join(tmp, "ground-control.json")
+    json.dump({"crs": "EPSG:4326", "points": points}, open(gfile, "w"))
+    # Before: the delivered RPCs put the points metres away.
+    p0 = points[0]
+    lon, lat, _ = h.rpc_intersect([(v["rpc"], ob["x"], ob["y"]) for v, ob in zip(views, p0["observations"])], p0["height"])
+    my, mx = h.metres_per_degree(LAT0)
+    assert math.hypot((lon - p0["lon"]) * mx, (lat - p0["lat"]) * my) > 0.5
+    got = h.apply_ground_control(views, gfile)
+    assert got["points"] == 5 and got["views"] == 4, got
+    assert got["controls"]["count"] == 5 and got["controls"]["horizontalRms"] < 0.01 and got["controls"]["verticalRms"] < 0.05, got
+    assert got["checks"]["horizontalRms"] < 0.01, got
+    for v, (bx, by) in zip(views, truth):
+        assert abs(float(v["rpc"].col_offset) - float(v["rpc0"].col_offset) - bx) < 1e-6 and abs(float(v["rpc"].row_offset) - float(v["rpc0"].row_offset) - by) < 1e-6
+    # prepare() takes the file and reports it.
+    info = h.prepare(cap, os.path.join(tmp, "work-gcp"), "HOLO_GCP", 1024, None, gfile)
+    assert info["groundControl"]["points"] == 5, info
+
+
 def test_convert(tmp, frame):
     n = 5
     rng = np.random.default_rng(0)
@@ -126,6 +160,7 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         test_sun()
         work = test_prepare(tmp)
+        test_ground_control(tmp)
         repo = os.environ.get("EOGS_REPO")
         if repo:
             env = dict(os.environ, PROJECT_ROOT=repo)

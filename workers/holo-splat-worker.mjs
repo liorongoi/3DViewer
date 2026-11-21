@@ -393,7 +393,7 @@ export function readImages(buf) {
     o = e + 9 + pts * 24;
     const R = quatToR(q);
     const c = mulMV(transpose(R), t).map((v) => -v);
-    out.push({ at, name, q, t, centre: c });
+    out.push({ at, name, q, t, centre: c, cameraId: buf.readUInt32LE(at + 60) });
   }
   return out;
 }
@@ -536,6 +536,171 @@ export function georeference(cameras, fixes, source) {
       note: "Camera positions, not surveyed ground points: accuracy follows the GPS used.",
     },
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Surveyed ground control points (ground-control.json from the server, made from gcp_list.txt)
+
+// COLMAP camera models whose distortion this worker can undo: id -> number of parameters.
+const CAMERA_PARAMS = { 0: 3, 1: 4, 2: 4, 3: 5, 4: 8 };
+const CAMERA_SIZES = { 0: 3, 1: 4, 2: 4, 3: 5, 4: 8, 5: 8, 6: 12, 7: 5, 8: 4, 9: 5, 10: 12, 11: 3, 12: 4 };
+
+/** The cameras of a COLMAP cameras.bin: id -> { model, width, height, params }. */
+export function readCameras(buf) {
+  const out = new Map();
+  let o = 8;
+  const n = Number(buf.readBigUInt64LE(0));
+  for (let k = 0; k < n; k++) {
+    const id = buf.readUInt32LE(o);
+    const model = buf.readInt32LE(o + 4);
+    const width = Number(buf.readBigUInt64LE(o + 8));
+    const height = Number(buf.readBigUInt64LE(o + 16));
+    const np = CAMERA_SIZES[model];
+    if (np === undefined) throw new Error(`cameras.bin: unknown camera model ${model}`);
+    const params = Array.from({ length: np }, (_, i) => buf.readDoubleLE(o + 24 + i * 8));
+    out.set(id, { model, width, height, params });
+    o += 24 + np * 8;
+  }
+  return out;
+}
+
+/** A pixel of a picture as an undistorted direction (x, y, 1) in its camera, or null for a model not handled. */
+export function pixelRay(cam, px, py) {
+  if (CAMERA_PARAMS[cam.model] === undefined) return null;
+  const p = cam.params;
+  const [fx, fy, cx, cy] = cam.model === 0 || cam.model === 2 || cam.model === 3 ? [p[0], p[0], p[1], p[2]] : [p[0], p[1], p[2], p[3]];
+  const du = (px - cx) / fx;
+  const dv = (py - cy) / fy;
+  // What the lens adds at an undistorted point; inverted by fixed-point steps.
+  const shift = (u, v) => {
+    const r2 = u * u + v * v;
+    if (cam.model === 2) return [p[3] * r2 * u, p[3] * r2 * v];
+    if (cam.model === 3) return [(p[3] * r2 + p[4] * r2 * r2) * u, (p[3] * r2 + p[4] * r2 * r2) * v];
+    if (cam.model === 4) {
+      const [k1, k2, p1, p2] = p.slice(4);
+      const rad = k1 * r2 + k2 * r2 * r2;
+      return [u * rad + 2 * p1 * u * v + p2 * (r2 + 2 * u * u), v * rad + 2 * p2 * u * v + p1 * (r2 + 2 * v * v)];
+    }
+    return [0, 0];
+  };
+  let u = du;
+  let v = dv;
+  for (let i = 0; i < 50; i++) {
+    const [a, b] = shift(u, v);
+    const nu = du - a;
+    const nv = dv - b;
+    const done = Math.abs(nu - u) + Math.abs(nv - v) < 1e-12;
+    u = nu;
+    v = nv;
+    if (done) break;
+  }
+  return [u, v, 1];
+}
+
+/** The point nearest to several rays (origin, unit direction), and the widest angle between them in degrees. */
+export function triangulate(rays) {
+  const A = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  const b = [0, 0, 0];
+  for (const { o, d } of rays)
+    for (let i = 0; i < 3; i++)
+      for (let j = 0; j < 3; j++) {
+        const m = (i === j ? 1 : 0) - d[i] * d[j];
+        A[i][j] += m;
+        b[i] += m * o[j];
+      }
+  const det = A[0][0] * (A[1][1] * A[2][2] - A[1][2] * A[2][1]) - A[0][1] * (A[1][0] * A[2][2] - A[1][2] * A[2][0]) + A[0][2] * (A[1][0] * A[2][1] - A[1][1] * A[2][0]);
+  if (Math.abs(det) < 1e-12) return null;
+  const inv = [
+    [A[1][1] * A[2][2] - A[1][2] * A[2][1], A[0][2] * A[2][1] - A[0][1] * A[2][2], A[0][1] * A[1][2] - A[0][2] * A[1][1]],
+    [A[1][2] * A[2][0] - A[1][0] * A[2][2], A[0][0] * A[2][2] - A[0][2] * A[2][0], A[0][2] * A[1][0] - A[0][0] * A[1][2]],
+    [A[1][0] * A[2][1] - A[1][1] * A[2][0], A[0][1] * A[2][0] - A[0][0] * A[2][1], A[0][0] * A[1][1] - A[0][1] * A[1][0]],
+  ].map((r) => r.map((v) => v / det));
+  let widest = 0;
+  for (let i = 0; i < rays.length; i++)
+    for (let j = i + 1; j < rays.length; j++) {
+      const c = rays[i].d[0] * rays[j].d[0] + rays[i].d[1] * rays[j].d[1] + rays[i].d[2] * rays[j].d[2];
+      widest = Math.max(widest, (Math.acos(Math.min(1, Math.max(-1, c))) * 180) / Math.PI);
+    }
+  return { point: mulMV(inv, b), widestDeg: widest };
+}
+
+/**
+ * Places a model from surveyed ground control points: each point seen in at least two posed
+ * pictures is found in the model, and the similarity that fits them to their surveyed positions is
+ * the placement. With four points or more, each is also checked against a fit made without it
+ * (leave one out), so the checks are independent of the point they test.
+ */
+export function controlPlacement(images, cameras, gc) {
+  const byName = new Map(images.map((im) => [im.name, im]));
+  const located = [];
+  const skipped = [];
+  for (const p of gc.points ?? []) {
+    const rays = [];
+    for (const ob of p.observations ?? []) {
+      const im = byName.get(ob.image);
+      const cam = im && cameras.get(im.cameraId);
+      const dir = cam && pixelRay(cam, ob.x, ob.y);
+      if (!dir) continue;
+      const w = mulMV(transpose(quatToR(im.q)), dir);
+      const len = Math.hypot(w[0], w[1], w[2]);
+      rays.push({ o: im.centre, d: w.map((v) => v / len) });
+    }
+    const t = rays.length >= 2 ? triangulate(rays) : null;
+    if (!t || t.widestDeg < 2) {
+      skipped.push(`${p.name} (${rays.length < 2 ? `seen in ${rays.length} posed picture${rays.length === 1 ? "" : "s"}, 2 needed` : "the pictures see it from almost the same direction"})`);
+      continue;
+    }
+    located.push({ p, model: t.point });
+  }
+  if (located.length < 3) return { reason: `Only ${located.length} ground control point${located.length === 1 ? "" : "s"} could be found in the model; at least 3 are needed.${skipped.length ? ` Not used: ${skipped.slice(0, 5).join(", ")}.` : ""}`, skipped };
+  const mean = (k) => located.reduce((s, x) => s + x.p[k], 0) / located.length;
+  const origin = { lat: mean("lat"), lon: mean("lon"), height: mean("height") };
+  const xs = located.map((x) => x.model);
+  const ys = located.map((x) => toEnu(origin, x.p.lat, x.p.lon, x.p.height));
+  const T = fitSimilarity(xs, ys);
+  if (!T) return { reason: "The ground control points lie nearly on one line, so the model's turn cannot be fixed from them.", skipped };
+  let checks = null;
+  if (located.length >= 4) {
+    let h = 0;
+    let v = 0;
+    let worst = 0;
+    for (let i = 0; i < located.length; i++) {
+      const Ti = fitSimilarity(xs.filter((_, j) => j !== i), ys.filter((_, j) => j !== i));
+      if (!Ti) continue;
+      const q = applySim(Ti, xs[i]);
+      const dh2 = (q[0] - ys[i][0]) ** 2 + (q[1] - ys[i][1]) ** 2;
+      const dv = q[2] - ys[i][2];
+      h += dh2;
+      v += dv * dv;
+      worst = Math.max(worst, Math.sqrt(dh2 + dv * dv));
+    }
+    const r = (x) => Math.round(Math.sqrt(x / located.length) * 1000) / 1000;
+    checks = { count: located.length, horizontalRms: r(h), verticalRms: r(v), max: Math.round(worst * 1000) / 1000 };
+  }
+  return {
+    T,
+    skipped,
+    georef: {
+      frame: "enu",
+      origin,
+      source: `surveyed ground control points (${located.length})`,
+      horizontalCrs: `EPSG:4326 (surveyed in ${gc.crs})`,
+      verticalDatum: `as surveyed (${gc.crs})`,
+      metresPerModelUnit: Math.round(T.s * 1e6) / 1e6,
+      controls: residuals(T, xs, ys),
+      checks,
+      note: checks ? "Checks: each point against a fit made without it." : "Fewer than 4 points: no independent check.",
+    },
+  };
+}
+
+/** The pose model before undistortion (work/sparse/<n> with the most pictures): pixels there are the pictures' own. */
+function rawModel(work) {
+  const sparse = path.join(work, "sparse");
+  if (!existsSync(sparse)) return null;
+  const dirs = readdirSync(sparse).filter((d) => existsSync(path.join(sparse, d, "images.bin")) && existsSync(path.join(sparse, d, "cameras.bin")));
+  if (!dirs.length) return null;
+  return dirs.map((d) => ({ d: path.join(sparse, d), n: readImages(readFileSync(path.join(sparse, d, "images.bin"))).length })).sort((a, b) => b.n - a.n)[0].d;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -830,7 +995,10 @@ async function satellite(cfg, m, o, work) {
   const train = path.join(work, "train");
   mkdirSync(train, { recursive: true });
   progress(0.05, "train");
-  await run(fill(m.train, { ...cfg, ...m, data: o.input, train, iterations: o.iterations, maxSplats: o.maxSplats, resolution: o.resolution, shDegree: o.shDegree, threads: o.threads }), {
+  const argv = fill(m.train, { ...cfg, ...m, data: o.input, train, iterations: o.iterations, maxSplats: o.maxSplats, resolution: o.resolution, shDegree: o.shDegree, threads: o.threads });
+  // holo_eogs.py corrects each view's RPC with the surveyed points it sees.
+  if (o.groundControl && argv.some((a) => a.endsWith("holo_eogs.py"))) argv.push("--ground-control", o.groundControl);
+  await run(argv, {
     cwd: m.repo || work,
     inputErrors: true,
     onLine: (line) => {
@@ -963,9 +1131,24 @@ async function main() {
 
   let georef = null;
   let georefNote = null;
-  if (source && o.goal !== "satellite") {
+  if (o.groundControl) {
+    // Surveyed points come first: they measure the ground, not the camera.
+    const raw = rawModel(work);
+    const gc = JSON.parse(readFileSync(o.groundControl, "utf8"));
+    const g = raw ? controlPlacement(readImages(readFileSync(path.join(raw, "images.bin"))), readCameras(readFileSync(path.join(raw, "cameras.bin"))), gc) : { reason: "The pose step left no model to find the ground control points in.", skipped: [] };
+    if (g.skipped?.length) say(`ground control: not used ${g.skipped.join("; ")}`);
+    if (g.reason) {
+      georefNote = `Ground control not used: ${g.reason}`;
+      say(georefNote);
+    } else {
+      transformModel(model, g.T);
+      georef = g.georef;
+      say(`ground control: placed from ${g.georef.source}, controls ${g.georef.controls.horizontalRms} m across, ${g.georef.controls.verticalRms} m up`);
+    }
+  }
+  if (!georef && source && o.goal !== "satellite") {
     const g = georeference(cams, fixes, source);
-    if (g.reason) georefNote = g.reason;
+    if (g.reason) georefNote = georefNote ? `${georefNote} ${g.reason}` : g.reason;
     else {
       transformModel(model, g.T);
       georef = g.georef;
