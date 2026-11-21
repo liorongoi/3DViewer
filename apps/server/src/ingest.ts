@@ -615,7 +615,7 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
           version = v;
           await audit(q, { ...actor, action: "version.create", target: modelId, detail: { version, ingest: ingestId, note: req.note ?? "" } });
         } else {
-          await createModel(q, { ...req.model!, id: modelId, sourceFormat: report.format!, source, centre, placement, sizeBytes: bytes });
+          await createModel(q, { ...req.model!, id: modelId, sourceFormat: report.format!, source, centre, placement, sizeBytes: bytes, ...(req.note ? { note: req.note } : {}) });
           version = 1;
           await audit(q, { ...actor, action: "model.create", target: modelId, detail: { name: req.model!.name, classificationId: req.model!.classificationId, status: req.model!.status, ingest: ingestId } });
         }

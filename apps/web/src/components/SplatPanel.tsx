@@ -4,12 +4,12 @@ import { splatToSpz, tilesetZip, zipFiles, type PlacementSidecar } from "@viewer
 import type { ModelSummary } from "@viewer/shared";
 import { useEngine, useSignal } from "../engine";
 import { saveBytes, slug } from "../download";
-import { addPlacementVersion, listOriginals } from "../server/api";
+import { addPlacementVersion, getModelDetail, listOriginals } from "../server/api";
 import { errorText } from "../server/error-text";
 import { refreshLibrary } from "../state/library";
 import { useApp } from "../state/store";
 import { useOpenModel } from "../useAppEffects";
-import { AlertTriangle, Download, Ruler, Sparkles } from "./icons";
+import { AlertTriangle, Columns2, Download, Ruler, Sparkles } from "./icons";
 import { RealSize, scaleFromKnown, type SizeChoice } from "./RealSize";
 
 /**
@@ -34,6 +34,23 @@ export function SplatPanel({ model }: { model: ModelSummary }) {
   const latest = model.version === model.versions;
   const info = engine?.splatInfo() ?? null;
   const upAxis = placement?.upAxis ?? "y";
+  const comparing = useSignal(engine?.comparing, null);
+  const history = useApp((s) => (s.versionHistory?.id === model.id ? s.versionHistory.list : null));
+  const others = (history ?? []).filter((h) => h.version !== model.version);
+  const compare = async (v: number) => {
+    if (!engine || !server) return;
+    setBusy("compare");
+    setProblem(null);
+    try {
+      const d = await getModelDetail(server, model.id, v);
+      if (!history) useApp.setState({ versionHistory: { id: d.id, list: d.history } });
+      await engine.compareWith(d);
+    } catch (e) {
+      setProblem(t("splat.props.failed", { reason: errorText(e, t) }));
+    } finally {
+      setBusy(null);
+    }
+  };
   const fmtK = (v: number) => (v >= 100 ? v.toFixed(0) : v >= 1 ? v.toFixed(3) : v.toPrecision(3));
 
   const apply = async () => {
@@ -160,6 +177,30 @@ export function SplatPanel({ model }: { model: ModelSummary }) {
         </button>
       </div>
       <p className="text-[12px] text-fg3">{floating ? t("splat.props.downloadFloating") : t("splat.props.downloadPlaced")}</p>
+      {live && model.versions > 1 && (
+        <label className="mt-1 grid gap-1">
+          <span className="flex items-center gap-1.5 text-[12px] text-fg3">
+            <Columns2 size={14} /> {t("compare.title")}
+          </span>
+          <select
+            className="input"
+            value={comparing?.id === model.id ? String(comparing.version) : ""}
+            disabled={busy === "compare"}
+            onFocus={() => !history && server && void getModelDetail(server, model.id).then((d) => useApp.setState({ versionHistory: { id: d.id, list: d.history } }), () => undefined)}
+            onChange={(e) => (e.target.value ? void compare(Number(e.target.value)) : engine?.stopCompare())}
+            data-testid="compare-pick"
+          >
+            <option value="">{busy === "compare" ? t("compare.loading") : t("compare.none")}</option>
+            {others.map((h) => (
+              <option key={h.version} value={h.version}>
+                v{h.version}
+                {h.note ? ` · ${h.note}` : ""}
+              </option>
+            ))}
+          </select>
+          <span className="text-[12px] text-fg3">{t("compare.hint")}</span>
+        </label>
+      )}
       {problem && <p role="alert" className="text-[12px] text-danger">{problem}</p>}
     </section>
   );

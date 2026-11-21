@@ -383,6 +383,14 @@ type SplatShape<T> = { [K in keyof T]: T[K] extends string ? string : SplatShape
 
 export const en = {
   splat: enSplat,
+  compare: {
+    title: "Compare side by side with",
+    none: "Choose a version…",
+    loading: "Opening…",
+    hint: "The version shown stays on the left, the one you choose opens on the right. Drag the divider to move between them.",
+    divider: "Divider between the two versions",
+    stop: "Stop comparing",
+  },
   app: { name: "HOLO", tagline: "3D Intelligence Model Viewer" },
   common: {
     search: "Search",
@@ -1344,6 +1352,14 @@ type Shape<T> = { [K in keyof T]: T[K] extends string ? string : Shape<T[K]> } &
 
 export const he: Shape<typeof en> = {
   splat: heSplat,
+  compare: {
+    title: "השוואה זה לצד זה עם",
+    none: "בחרו גרסה…",
+    loading: "פותח…",
+    hint: "הגרסה המוצגת נשארת משמאל, והגרסה שבוחרים נפתחת מימין. גררו את הקו המפריד כדי לעבור ביניהן.",
+    divider: "קו מפריד בין שתי הגרסאות",
+    stop: "להפסיק להשוות",
+  },
   app: { name: "הולו", tagline: "מציג מודלים תלת-ממדיים מודיעיניים" },
   common: {
     search: "חיפוש",

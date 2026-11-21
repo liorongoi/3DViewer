@@ -44,6 +44,7 @@ import {
   Entity,
   HeightReference,
   DistanceDisplayCondition,
+  SplitDirection,
 } from "cesium";
 import type { BaseMapConfig, ModelSummary, UpdateStatus } from "@viewer/shared";
 import { CameraController } from "./camera-controller";
@@ -161,6 +162,12 @@ export class ViewerEngine {
   private manifest: LayerManifest | null = null;
   private gltfNodes: { children?: number[] }[] = [];
   readonly loading = signal(false);
+  /** The model shown on the right of a side-by-side comparison (SRS GS-28), or null. */
+  readonly comparing = signal<ModelSummary | null>(null);
+  /** Where the divider of a side-by-side comparison stands, 0 (left edge) to 1 (right edge). */
+  readonly splitAt = signal(0.5);
+  private compareSet: Cesium3DTileset | null = null;
+  private compareSeq = 0;
   readonly error = signal<OpenError | null>(null);
   readonly tileProblems = signal<TileProblems | null>(null);
   readonly current = signal<ModelSummary | null>(null);
@@ -446,6 +453,7 @@ export class ViewerEngine {
   }
 
   close(): void {
+    this.stopCompare();
     this.openSeq++;
     this.tour.stop();
     this.measure.cancel();
@@ -489,8 +497,50 @@ export class ViewerEngine {
   private splatsSettling(): boolean {
     // A sort commits during a frame and is drawn by the frames after it: a few more, counted in frames
     // not milliseconds, because a slow GPU can take longer than any fixed time per frame.
-    if (this.tileset && splatsBusy(this.tileset)) this.splatFrames = 4;
+    if ((this.tileset && splatsBusy(this.tileset)) || (this.compareSet && splatsBusy(this.compareSet))) this.splatFrames = 4;
     return this.splatFrames > 0;
+  }
+
+  /**
+   * Side by side (SRS GS-28): another version of the open model, or another result of the same
+   * capture, drawn on the right of a divider while the open model stays on the left, from the same
+   * viewpoint. Both must be 3D Tiles in their own frame (splats, or tiled models placed like a GLB).
+   * Stopping removes the second tileset and frees its GPU memory.
+   */
+  async compareWith(other: ModelSummary): Promise<void> {
+    this.stopCompare();
+    const open = this.current.get();
+    if (!this.tileset || !open || other.source.kind !== "3dtiles" || !other.source.localFrame || !other.placement) throw new Error("Only 3D Tiles models in their own frame can be compared side by side.");
+    const seq = ++this.compareSeq;
+    const scene = this.widget.scene;
+    const set = await Cesium3DTileset.fromUrl(other.source.url, { maximumScreenSpaceError: SSE[this.quality], ...this.budgetSplit(), imageBasedLighting: this.makeIbl(), shadows: ShadowMode.ENABLED });
+    if (seq !== this.compareSeq || this.current.get() !== open) return void set.destroy();
+    set.modelMatrix = localTilesetMatrix(other, other.placement, await this.placementHeight(other.placement));
+    if (seq !== this.compareSeq || this.current.get() !== open) return void set.destroy();
+    set.splitDirection = SplitDirection.RIGHT;
+    this.tileset.splitDirection = SplitDirection.LEFT;
+    scene.splitPosition = this.splitAt.get();
+    scene.primitives.add(set);
+    this.compareSet = set;
+    this.comparing.set(other);
+    scene.requestRender();
+  }
+
+  /** Moves the side-by-side divider; 0 is the left edge of the view, 1 the right. */
+  setSplit(at: number): void {
+    const v = Math.min(0.98, Math.max(0.02, at));
+    this.splitAt.set(v);
+    this.widget.scene.splitPosition = v;
+    this.widget.scene.requestRender();
+  }
+
+  stopCompare(): void {
+    this.compareSeq++;
+    if (this.compareSet) this.widget.scene.primitives.remove(this.compareSet);
+    this.compareSet = null;
+    if (this.tileset) this.tileset.splitDirection = SplitDirection.NONE;
+    if (this.comparing.get()) this.comparing.set(null);
+    this.widget.scene.requestRender();
   }
 
   /**

@@ -52,6 +52,9 @@ const check = (ok, what) => {
   check(/OpenSplat/.test(rec), `recommends the method that runs here (${rec.replace(/\s+/g, " ").slice(0, 120)})`);
   check(/processor/.test(rec), "says why: no graphics card here");
   check((await dialog.getByTestId("preset-fast").getAttribute("aria-checked")) === "true", "a CPU-only server starts on Fast");
+  await dialog.getByTestId("capture-setup").locator("summary").click();
+  const setupText = await dialog.getByTestId("setup-opensplat").innerText();
+  check(/Connected to HOLO/.test(setupText) && /test worker/.test(setupText), `install states shown, the test worker labelled (${setupText.replace(/\s+/g, " ").slice(0, 140)})`);
   await page.screenshot({ path: path.join(out, "3-how.png") });
   await dialog.getByTestId("capture-next").click();
   await dialog.getByTestId("capture-name").fill("Courtyard test");
@@ -99,6 +102,26 @@ const check = (ok, what) => {
   await dl2.saveAs(path.join(out, `sized-${dl2.suggestedFilename()}`));
   await page.waitForTimeout(2000);
   await page.screenshot({ path: path.join(out, "8-sized.png") });
+
+  // Side by side: the sized version on the left, the floating first version on the right.
+  await page.getByTestId("splat-panel").getByTestId("compare-pick").selectOption("1");
+  await page.getByTestId("compare-overlay").waitFor({ timeout: 60000 });
+  const left = await page.getByTestId("compare-left").innerText();
+  const right = await page.getByTestId("compare-right").innerText();
+  check(/v2/.test(left) && /v1/.test(right) && /Made with OpenSplat/.test(right), `side by side names each version and how it was made (${left.replace(/\s+/g, " ")} | ${right.replace(/\s+/g, " ")})`);
+  const handle = page.getByTestId("compare-handle");
+  const box = await handle.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(1440 * 0.3, box.y + box.height / 2, { steps: 5 });
+  await page.mouse.up();
+  const split = await page.evaluate(() => window.viewerEngine.widget.scene.splitPosition);
+  check(Math.abs(split - 0.3) < 0.03, `the divider follows the drag (${split.toFixed(2)})`);
+  await page.waitForTimeout(2500);
+  await page.screenshot({ path: path.join(out, "9-side-by-side.png") });
+  await page.getByTestId("compare-stop").click();
+  const freed = await page.evaluate(() => window.viewerEngine.widget.scene.primitives.length);
+  check(!(await page.getByTestId("compare-overlay").isVisible()) && freed >= 1, "stopping removes the compared model");
   check(errors.length === 0, `no page errors ${errors.slice(0, 3).join(" | ")}`);
   await browser.close();
   console.log(`Screenshots in ${out}`);

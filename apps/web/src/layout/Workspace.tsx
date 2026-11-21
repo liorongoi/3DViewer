@@ -18,6 +18,7 @@ import { IconButton, cx } from "../components/primitives";
 import { fadeClasses, useChromeFade } from "./useChromeFade";
 import { Guard } from "../components/Guard";
 import { UndoBar } from "../components/UndoBar";
+import { CompareOverlay } from "../components/CompareOverlay";
 import { ServerPill } from "../components/ServerPill";
 
 /**
@@ -116,6 +117,8 @@ export function Workspace() {
         {route === "viewer" && rightOpen && <SidePanel className={cx("pointer-events-auto min-h-0", fade.panel)} onClose={() => set({ rightOpen: false })} />}
         </Guard>
       </div>
+
+      {route === "viewer" && <CompareOverlay />}
 
       {/* bottom */}
       <div className={cx("pointer-events-none fixed inset-x-0 z-10 flex flex-col items-center gap-2", "bottom-7", fade.ambient)}>
