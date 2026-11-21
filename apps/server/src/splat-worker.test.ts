@@ -8,6 +8,7 @@ import {
   applySim,
   DEFAULTS,
   exifGps,
+  exportStep,
   fill,
   fitSimilarity,
   georeference,
@@ -454,6 +455,10 @@ describe("video frames", () => {
 });
 
 describe("training commands", () => {
+  it("has Brush export about every twentieth of the run, ending on the last step", () => {
+    expect([7000, 15000, 30000, 1234].map(exportStep)).toEqual([350, 750, 1500, 617]);
+    for (const n of [7000, 15000, 30000, 1234, 997]) expect(n % exportStep(n)).toBe(0);
+  });
   it("fills placeholders into whole arguments, never splitting or interpreting them", () => {
     const argv = fill(DEFAULTS.methods.opensplat!.train, { program: "/opt/opensplat/opensplat", data: "/srv/w/my data; rm -rf /", iterations: 7000, shDegree: 1, train: "/srv/w/train" });
     expect(argv).toEqual(["/opt/opensplat/opensplat", "/srv/w/my data; rm -rf /", "-n", "7000", "--sh-degree", "1", "-o", "/srv/w/train/splats.ply"]);

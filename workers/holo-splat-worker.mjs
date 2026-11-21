@@ -18,7 +18,7 @@
 // Exit 0: done. Exit 2: the capture cannot be used (said on stderr in plain words). Exit 1: a tool
 // failed; HOLO retries once.
 import { spawn, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -62,7 +62,9 @@ export const DEFAULTS = {
     brush: {
       program: "brush_app",
       revision: "",
-      train: ["{program}", "{data}", "--total-steps", "{iterations}", "--max-splats", "{maxSplats}", "--sh-degree", "{shDegree}", "--max-resolution", "{resolution}", "--export-every", "{iterations}", "--export-path", "{train}", "--export-name", "splats.ply"],
+      train: ["{program}", "{data}", "--total-steps", "{iterations}", "--max-splats", "{maxSplats}", "--sh-degree", "{shDegree}", "--max-resolution", "{resolution}", "--export-every", "{exportEvery}", "--export-path", "{train}", "--export-name", "export_{iter}.ply"],
+      // Brush prints no progress when its output is not a terminal; its numbered exports show it.
+      progressFiles: true,
       check: ["{program}", "--version"],
     },
     // EOGS++ for satellite views, through workers/eogs/holo_eogs.py: it cuts the views to the area
@@ -84,7 +86,8 @@ export const DEFAULTS = {
   },
 };
 
-export function loadConfig(file = path.join(HERE, "holo-worker.json")) {
+/** Settings: holo-worker.json next to this program, or the file HOLO_WORKER_CONFIG names (the install in a home folder keeps it with its settings). */
+export function loadConfig(file = process.env.HOLO_WORKER_CONFIG || path.join(HERE, "holo-worker.json")) {
   const user = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
   const methods = { ...DEFAULTS.methods };
   for (const [k, v] of Object.entries(user.methods ?? {})) methods[k] = { ...(methods[k] ?? {}), ...v };
@@ -778,6 +781,12 @@ export function parseFrameScores(text) {
   return { blur, times };
 }
 
+/** About a twentieth of the run, dividing it exactly so the last export is the last step. */
+export function exportStep(iterations) {
+  for (let k = 20; k > 1; k--) if (iterations % k === 0 && iterations / k >= 100) return iterations / k;
+  return iterations;
+}
+
 async function sfm(cfg, images, work, o, video) {
   const db = path.join(work, "colmap.db");
   const sparse = path.join(work, "sparse");
@@ -976,18 +985,36 @@ async function main() {
 
   const train = path.join(work, "train");
   mkdirSync(train, { recursive: true });
-  const values = { ...cfg, ...m, data, train, iterations: o.iterations, maxSplats: o.maxSplats, resolution: o.resolution, shDegree: o.shDegree, threads: o.threads };
-  await run(fill(m.train, values), {
-    cwd: m.repo || work,
-    onLine: (line) => {
-      // Trainers print "1234/30000" or "step 1234": map that onto the training share of the bar.
-      const hit = /(\d+)\s*\/\s*(\d+)/.exec(line) ?? /step[^\d]{0,3}(\d+)/i.exec(line);
-      if (!hit) return;
-      const done = Number(hit[1]);
-      const total = hit[2] ? Number(hit[2]) : o.iterations;
-      if (total === o.iterations && done <= total) progress(0.3 + 0.65 * (done / total), "train");
-    },
-  });
+  const values = { ...cfg, ...m, data, train, iterations: o.iterations, exportEvery: exportStep(o.iterations), maxSplats: o.maxSplats, resolution: o.resolution, shDegree: o.shDegree, threads: o.threads, iter: "{iter}" };
+  // A trainer that only writes numbered exports (export_<step>.ply): read progress from them, and
+  // keep only the newest two so a long run does not fill the disk.
+  const watch = m.progressFiles
+    ? setInterval(() => {
+        const steps = listFiles(train)
+          .map((f) => ({ f, n: Number(/_(\d+)\.ply$/.exec(f)?.[1]) }))
+          .filter((x) => Number.isFinite(x.n))
+          .sort((a, b) => b.n - a.n);
+        if (!steps.length) return;
+        if (steps[0].n <= o.iterations) progress(0.3 + 0.65 * (steps[0].n / o.iterations), "train");
+        // The newest may still be being written; older ones are finished and no longer needed.
+        for (const x of steps.slice(2)) rmSync(x.f, { force: true });
+      }, 10_000)
+    : null;
+  try {
+    await run(fill(m.train, values), {
+      cwd: m.repo || work,
+      onLine: (line) => {
+        // Trainers print "1234/30000" or "step 1234": map that onto the training share of the bar.
+        const hit = /(\d+)\s*\/\s*(\d+)/.exec(line) ?? /step[^\d]{0,3}(\d+)/i.exec(line);
+        if (!hit) return;
+        const done = Number(hit[1]);
+        const total = hit[2] ? Number(hit[2]) : o.iterations;
+        if (total === o.iterations && done <= total) progress(0.3 + 0.65 * (done / total), "train");
+      },
+    });
+  } finally {
+    if (watch) clearInterval(watch);
+  }
   const plys = listFiles(train).filter((f) => f.endsWith(".ply")).sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
   if (!plys.length) throw new Error(`${o.method} finished without writing a PLY in ${train}.`);
   mkdirSync(o.output, { recursive: true });
@@ -1000,7 +1027,15 @@ async function main() {
   progress(1, "done");
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Run as a program (also through a symlinked folder, as the home-folder install's "current" is).
+const isMain = () => {
+  try {
+    return !!process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+};
+if (isMain()) {
   main().catch((e) => {
     console.error(e instanceof Error ? e.message : String(e));
     process.exit(e instanceof InputError ? 2 : 1);

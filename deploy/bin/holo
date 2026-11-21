@@ -5,6 +5,7 @@
 #   holo start        start it (also: stop, restart)
 #   holo address      the address to open in a browser or give the Windows app
 #   holo check        what this machine can do (processor, memory, disk, graphics card)
+#   holo test-training  a short training on a sample scene, once the training tools are installed
 #   holo logs [n]     the last n lines of the server's log (default 50)
 #   holo report       a file to send for support, with addresses and names taken out
 #   holo backup       a backup of the database and models, in backups/ (keeps 14)
@@ -188,6 +189,34 @@ case "$cmd" in
   status)
     if healthy; then echo "HOLO $(awk '/^viewer /{print $2}' "$CUR/VERSION") is running."; address; else echo "HOLO is not running. Start it with: holo start"; exit 3; fi ;;
   address) address ;;
+  test-training)
+    # A short training on the made-up sample scene: do the tools run, and how fast on this machine?
+    T="$D/training/current"
+    [[ -x "$T/env/bin/python" ]] || fail "the training tools are not installed (install-training.sh from the holo-training download)"
+    echo "Training self-test"
+    ok=1
+    "$T/env/bin/ffmpeg" -hide_banner -version >/dev/null 2>&1 && echo "  ffmpeg (video frames)        OK" || { echo "  ffmpeg (video frames)        NO"; ok=0; }
+    "$T/env/bin/python" -c "import pycolmap" 2>/dev/null && echo "  pycolmap (camera poses)      OK" || { echo "  pycolmap (camera poses)      NO"; ok=0; }
+    work="$D/run/selftest"; rm -rf "$work"; mkdir -p "$work"
+    t0=$(date +%s)
+    if "$D/training/bin/brush" "$T/sample" --total-steps 300 --max-resolution 320 --export-every 300 --export-path "$work" --export-name splats.ply > "$work/brush.log" 2>&1 && [[ -s "$work/splats.ply" ]]; then
+      secs=$(( $(date +%s) - t0 ))
+      echo "  Brush (training)             OK: 300 steps in ${secs} s"
+      if command -v nvidia-smi >/dev/null && nvidia-smi -L >/dev/null 2>&1; then
+        echo "                               on $(nvidia-smi --query-gpu=name --format=csv,noheader | head -1)"
+      fi
+      if (( secs > 45 )); then
+        echo "  That is slow: Brush is probably drawing on the processor, not a graphics card. Check that the"
+        echo "  graphics driver is installed and that its Vulkan part works (ask IT: \"vulkaninfo --summary\")."
+      fi
+    else
+      echo "  Brush (training)             NO. Its last messages:"
+      tail -n 8 "$work/brush.log" | sed 's/^/    /'
+      echo "  Most often the graphics driver has no Vulkan support. Ask IT to install the driver's Vulkan part."
+      ok=0
+    fi
+    rm -rf "$work"
+    if [[ $ok -eq 1 ]]; then echo "  The training tools work. HOLO can make splats on this machine."; else exit 1; fi ;;
   check) exec "$CUR/deploy/bin/holo-check" "$D" ;;
   logs) tail -n "${1:-50}" "$D/logs/server.log" 2>/dev/null || echo "No log yet." ;;
   report)
@@ -241,6 +270,6 @@ case "$cmd" in
     rm -rf "$D/releases" "$D/current" "$D/run" "$D/holo"
     echo "HOLO is removed. Your models, settings and backups are still in $D (data, settings, backups)."
     echo "To delete them too: rm -r $D" ;;
-  help|-h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//' ;;
+  help|-h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//' ;;
   *) fail "unknown command $cmd (holo help lists them)" ;;
 esac

@@ -31,3 +31,5 @@ export function jpegSplitter(onImage: (jpg: Buffer, n: number) => void): (chunk:
 
 /** The least turn (and shift to the cameras' middle) that makes up the viewer's up, for a model with no placement. */
 export function levelTransform(cams: { q: number[]; centre: V3 }[]): { T: Sim; tiltDeg: number; reason?: undefined } | { reason: string; T?: undefined };
+/** About a twentieth of a training run, dividing it exactly. */
+export function exportStep(iterations: number): number;
