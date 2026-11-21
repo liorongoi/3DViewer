@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { packRotation, type SplatCloud } from "./cloud";
 import { decodePly, encodePly } from "./ply";
-import { splatToPly } from "./export";
+import { glbToGltf, splatToGlb, splatToPly } from "./export";
+import { readSplatFile } from "./index";
 
 function cloud(n: number): SplatCloud {
   let seed = 7;
@@ -41,5 +42,21 @@ describe("writing a splat PLY", () => {
     const twice = decodePly(splatToPly("m.ply", ply, 2)).cloud;
     const once = decodePly(ply).cloud;
     expect(twice.pos[3]).toBeCloseTo(once.pos[3]! * 2, 3);
+  });
+});
+
+describe("a splat model as GLB and glTF", () => {
+  it("carries the splats with KHR_gaussian_splatting, at the real size", () => {
+    const ply = encodePly(cloud(50));
+    const glb = splatToGlb("m.ply", ply, 2);
+    const files = glbToGltf(glb, "m");
+    const doc = JSON.parse(new TextDecoder().decode(files["m.gltf"]!));
+    expect(doc.extensionsRequired).toContain("KHR_gaussian_splatting");
+    expect(doc.accessors[0].count).toBe(50);
+    // The positions' bounds doubled with the scale.
+    const once = readSplatFile("m.ply", ply).cloud;
+    let maxX = -Infinity;
+    for (let i = 0; i < once.count; i++) maxX = Math.max(maxX, once.pos[i * 3]!);
+    expect(doc.accessors[0].max[0]).toBeCloseTo(maxX * 2, 2);
   });
 });
