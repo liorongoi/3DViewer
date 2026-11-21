@@ -17,6 +17,51 @@ const check = (ok, what) => {
   if (!ok) failures++;
 };
 
+/** A one-band float GeoTIFF in WGS 84 (EPSG:4326), every cell the same height. Enough for the check. */
+function geotiff4326(west, north, cell, w, h, value) {
+  const tags = [];
+  const extra = [];
+  let extraAt = 0;
+  const dataAt = 8;
+  const dataLen = w * h * 4;
+  const put = (buf) => {
+    const at = extraAt;
+    extra.push(buf);
+    extraAt += buf.length;
+    return at;
+  };
+  const doubles = (a) => { const b = Buffer.alloc(a.length * 8); a.forEach((v, i) => b.writeDoubleLE(v, i * 8)); return b; };
+  const shorts = (a) => { const b = Buffer.alloc(a.length * 2); a.forEach((v, i) => b.writeUInt16LE(v, i * 2)); return b; };
+  const scale = put(doubles([cell, cell, 0]));
+  const tie = put(doubles([0, 0, 0, west, north, 0]));
+  const keys = put(shorts([1, 1, 0, 3, 1024, 0, 1, 2, 1025, 0, 1, 1, 2048, 0, 1, 4326]));
+  const nodata = put(Buffer.from("-9999\0", "latin1"));
+  const entries = [
+    [256, 3, 1, w], [257, 3, 1, h], [258, 3, 1, 32], [259, 3, 1, 1], [262, 3, 1, 1], [273, 4, 1, dataAt], [277, 3, 1, 1], [278, 3, 1, h], [279, 4, 1, dataLen], [339, 3, 1, 3],
+    [33550, 12, 3, -scale - 1], [33922, 12, 6, -tie - 1], [34735, 3, 16, -keys - 1], [42113, 2, 6, -nodata - 1],
+  ];
+  const ifdAt = dataAt + dataLen;
+  const extraBase = ifdAt + 2 + entries.length * 12 + 4;
+  const ifd = Buffer.alloc(2 + entries.length * 12 + 4);
+  ifd.writeUInt16LE(entries.length, 0);
+  entries.forEach(([tag, type, count, v], k) => {
+    const e = 2 + k * 12;
+    ifd.writeUInt16LE(tag, e);
+    ifd.writeUInt16LE(type, e + 2);
+    ifd.writeUInt32LE(count, e + 4);
+    if (v < 0) ifd.writeUInt32LE(extraBase - v - 1, e + 8);
+    else if (type === 3) ifd.writeUInt16LE(v, e + 8);
+    else ifd.writeUInt32LE(v, e + 8);
+  });
+  const head = Buffer.alloc(8);
+  head.write("II", 0, "latin1");
+  head.writeUInt16LE(42, 2);
+  head.writeUInt32LE(ifdAt, 4);
+  const data = Buffer.alloc(dataLen);
+  for (let i = 0; i < w * h; i++) data.writeFloatLE(value, i * 4);
+  return Buffer.concat([head, data, ifd, ...extra]);
+}
+
 (async () => {
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || undefined, args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
@@ -102,6 +147,20 @@ const check = (ok, what) => {
   await dl2.saveAs(path.join(out, `sized-${dl2.suggestedFilename()}`));
   await page.waitForTimeout(2000);
   await page.screenshot({ path: path.join(out, "8-sized.png") });
+
+  // Heights against a DSM (SRS GS-06): a GeoTIFF in WGS 84 around the model, one metre below its base.
+  const place = await page.evaluate(() => window.viewerEngine.current.get().placement);
+  const tifPath = path.join(out, "reference-dsm.tif");
+  fs.writeFileSync(tifPath, geotiff4326(place.lon - 0.0003, place.lat + 0.0003, 0.00001, 60, 60, place.height - 1));
+  const sp = page.getByTestId("splat-panel");
+  await sp.getByTestId("elev-open").click();
+  await sp.getByTestId("elev-file").setInputFiles(tifPath);
+  await sp.getByTestId("elev-run").click();
+  const elev = page.getByTestId("elev-result").or(sp.getByRole("alert"));
+  await elev.first().waitFor({ timeout: 60000 });
+  const elevText = await elev.first().innerText();
+  check(/Cells compared/.test(elevText), `heights compared with a DSM (${elevText.replace(/\s+/g, " ").slice(0, 200)})`);
+  await page.screenshot({ path: path.join(out, "8b-elevation.png") });
 
   // Side by side: the sized version on the left, the floating first version on the right.
   await page.getByTestId("splat-panel").getByTestId("compare-pick").selectOption("1");

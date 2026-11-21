@@ -7,6 +7,7 @@ export * from "./cloud";
 export { decodeSpz, encodeSpzV2, packRotationV3, sniffSpz, MAX_SPLATS, SPZ_MAGIC } from "./spz";
 export { decodePly, readPlyHeader, plyInfo } from "./ply";
 export { scaledCloud, splatToSpz, tilesetZip, zipFiles, type PlacementSidecar } from "./export";
+export { compareElevation, readElevationRaster, splatBox, splatPositions, type ElevationComparison, type ElevationRaster } from "./elevation";
 export { splatGlb, splatTiles, GS_EXTENSIONS, type SplatTiles, type SplatTilesOptions } from "./tiles";
 
 export type SplatFormat = "spz" | "ply";

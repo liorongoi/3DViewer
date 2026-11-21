@@ -11,6 +11,7 @@ import { useApp } from "../state/store";
 import { useOpenModel } from "../useAppEffects";
 import { AlertTriangle, Columns2, Download, Ruler, Sparkles } from "./icons";
 import { RealSize, scaleFromKnown, type SizeChoice } from "./RealSize";
+import { ElevationCheck } from "./ElevationCheck";
 
 /**
  * A splat model's real size and downloads, in Properties (docs/GAUSSIAN_SPLATS.md, scaling and
@@ -177,6 +178,16 @@ export function SplatPanel({ model }: { model: ModelSummary }) {
         </button>
       </div>
       <p className="text-[12px] text-fg3">{floating ? t("splat.props.downloadFloating") : t("splat.props.downloadPlaced")}</p>
+      {live && !floating && info && (
+        <ElevationCheck
+          name={model.name}
+          modelMatrix={info.modelMatrix}
+          splatsFile={async () => {
+            const f = await mainOriginal();
+            return { path: f.path, data: await bytes(f.url) };
+          }}
+        />
+      )}
       {live && model.versions > 1 && (
         <label className="mt-1 grid gap-1">
           <span className="flex items-center gap-1.5 text-[12px] text-fg3">
