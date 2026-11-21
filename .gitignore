@@ -15,3 +15,4 @@ check-out/
 apps/desktop/release/
 /out/
 /apps/desktop/build/sbom.cdx.json
+__pycache__/
