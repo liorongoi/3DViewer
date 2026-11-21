@@ -3110,6 +3110,46 @@
         }
       }
     },
+    "/api/admin/debug-log": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "description": "A redacted text log for reporting a problem: versions, hardware, method checks, recent captures and jobs, training logs.",
+        "responses": {
+          "200": {
+            "description": "The log as plain text, with network details replaced by placeholders.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/audit": {
       "get": {
         "tags": [

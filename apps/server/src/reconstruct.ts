@@ -9,6 +9,7 @@ import { enqueue, PermanentError, type Handler } from "./jobs.ts";
 import { closed, text } from "./schemas.ts";
 import { Storage } from "./storage.ts";
 import { problem } from "./errors.ts";
+import { writeTrainingLog } from "./training-log.ts";
 import { componentChecker, componentStates } from "./splat-components.ts";
 import { satellitePreflight } from "./satellite.ts";
 
@@ -143,6 +144,8 @@ export interface ReconstructOptions {
   scan?: (dir: string) => Promise<{ severity: string; title: string }>;
   /** Runs a worker's `--check` (splat-components.ts); by default each worker is checked at most every ten minutes. */
   check?: ReturnType<typeof componentChecker>;
+  /** Where each training's redacted log is kept (training-log.ts); unset: no logs. */
+  logDir?: string;
 }
 
 const checkers = new WeakMap<ReconstructOptions, ReturnType<typeof componentChecker>>();
@@ -190,6 +193,8 @@ async function listFiles(dir: string, rel = ""): Promise<string[]> {
 interface WorkerRun {
   code: number | null;
   stderr: string;
+  /** Everything the worker said apart from progress lines, newest 2 MB. */
+  log: string;
   timedOut: boolean;
   cancelled: boolean;
 }
@@ -201,6 +206,8 @@ export function runWorker(bin: string, args: string[], cwd: string, timeoutMs: n
     if (process.env.CUDA_VISIBLE_DEVICES) env.CUDA_VISIBLE_DEVICES = process.env.CUDA_VISIBLE_DEVICES;
     const child = spawn(bin, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     let stderr = "";
+    let log = "";
+    const keep = (t: string) => void (log = (log + t).slice(-2_000_000));
     let line = "";
     let timedOut = false;
     let cancelled = false;
@@ -219,12 +226,17 @@ export function runWorker(bin: string, args: string[], cwd: string, timeoutMs: n
       if (line.length > 65536) line = line.slice(-4096);
       let i: number;
       while ((i = line.indexOf("\n")) >= 0) {
-        const m = /^progress\s+([0-9.]+)\s*(\S*)/.exec(line.slice(0, i).trim());
+        const text = line.slice(0, i).trim();
+        const m = /^progress\s+([0-9.]+)\s*(\S*)/.exec(text);
+        if (!m && text) keep(`${text}\n`);
         line = line.slice(i + 1);
         if (m) onProgress(Math.min(1, Math.max(0, Number(m[1]) || 0)), m[2]!.slice(0, 40));
       }
     });
-    child.stderr.setEncoding("utf8").on("data", (chunk: string) => void (stderr = (stderr + chunk).slice(-4000)));
+    child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
+      stderr = (stderr + chunk).slice(-4000);
+      keep(chunk);
+    });
     const timer = setTimeout(() => {
       timedOut = true;
       stop();
@@ -235,11 +247,11 @@ export function runWorker(bin: string, args: string[], cwd: string, timeoutMs: n
     };
     child.on("error", (e) => {
       done();
-      resolve({ code: -1, stderr: e.message, timedOut, cancelled });
+      resolve({ code: -1, stderr: e.message, log: log + e.message, timedOut, cancelled });
     });
     child.on("close", (code) => {
       done();
-      resolve({ code, stderr, timedOut, cancelled });
+      resolve({ code, stderr, log, timedOut, cancelled });
     });
   });
 }
@@ -334,6 +346,10 @@ export function reconstructHandler(
     const [done] = await db.query("SELECT 1 FROM ingests WHERE request->>'parentIngest' = $1 AND request->>'method' = $2", [ingestId, method.id]);
     if (done) return finishIfLast();
 
+    // The run's log (training-log.ts): written redacted when the run ends, however it ends.
+    const started = Date.now();
+    const trace: string[] = [`HOLO training log`, `capture ${ingestId}, method ${method.id}, attempt ${job.attempts} of ${job.max_attempts}`, `input ${r.input}, goal ${r.goal}, preset ${r.preset}`, `started ${new Date(started).toISOString()}`];
+    const note = (t: string) => trace.push(`[${((Date.now() - started) / 1000).toFixed(1)} s] ${t}`);
     const abort = new AbortController();
     const watch = setInterval(() => void cancelled().then((c) => c && abort.abort(), () => undefined), 2000);
     try {
@@ -349,6 +365,9 @@ export function reconstructHandler(
       const ups = await db.query<{ id: string; path: string }>("SELECT id, path FROM uploads WHERE ingest_id = $1", [ingestId]);
       for (const u of ups) await unpack(storage.uploadPart(u.id), u.path, input);
       const pictures = (await listFiles(input)).filter((f) => ACCEPT[r.input].test(f) && !SIDECAR.test(f));
+      const kinds = new Map<string, number>();
+      for (const f of await listFiles(input)) kinds.set(path.extname(f).toLowerCase() || "(none)", (kinds.get(path.extname(f).toLowerCase() || "(none)") ?? 0) + 1);
+      note(`capture files: ${[...kinds].map(([k, n]) => `${n} × ${k}`).join(", ") || "none"}`);
       if (!pictures.length) throw new PermanentError(`The upload has no ${r.input === "video" ? "video" : "images"} to make splats from.`);
       // Satellite views need camera models and different directions: checked before any training.
       let satellite: SplatProvenance["satellite"];
@@ -356,6 +375,7 @@ export function reconstructHandler(
         const pf = await satellitePreflight(input, await listFiles(input));
         if (pf.problem) throw new PermanentError(pf.problem);
         satellite = { views: pf.views.length, convergenceDeg: pf.convergenceDeg === null ? null : Math.round(pf.convergenceDeg * 10) / 10, warnings: pf.warnings };
+        note(`satellite check: ${pf.views.length} views, RPC ${pf.views.map((v) => v.rpc ?? "missing").join("/")}, angles known for ${pf.views.filter((v) => v.azimuth !== undefined).length}, widest ${satellite.convergenceDeg ?? "unknown"}°, warnings ${pf.warnings.join(" ") || "none"}`);
       }
       // The capture is scanned before a worker opens it; the splats it makes are scanned again when published.
       if (opts.scan) {
@@ -380,6 +400,10 @@ export function reconstructHandler(
         "--threads", String(settings.threads),
       ];
       const startedAt = new Date().toISOString();
+      const g = [...hw.gpus].sort((a, b) => b.memoryGb - a.memoryGb)[0];
+      note(`hardware: ${hw.platform} ${hw.arch}, ${hw.cpuModel}, ${hw.cpus} threads, ${hw.ramGb} GB; GPU ${g ? `${g.name}, ${g.memoryGb} GB${g.freeGb !== undefined ? ` (${g.freeGb} GB free)` : ""}${g.driver ? `, driver ${g.driver}` : ""}` : "none"}`);
+      note(`settings: ${JSON.stringify(settings)}`);
+      note("worker started");
       let last = 0;
       const run = await runWorker(
         bin,
@@ -394,6 +418,8 @@ export function reconstructHandler(
         },
         abort.signal,
       );
+      note(`worker ended: exit ${run.code}${run.timedOut ? ", timed out" : ""}${run.cancelled ? ", cancelled" : ""}`);
+      trace.push("----- worker output -----", run.log.trimEnd(), "----- end of worker output -----");
       if (run.cancelled || (await cancelled())) throw new PermanentError(CANCELLED);
       if (run.timedOut) throw new PermanentError(`${method.name} did not finish in ${opts.timeoutHours ?? 12} hours.`);
       const tail = run.stderr.trim().split("\n").slice(-3).join(" ").slice(0, 400);
@@ -455,9 +481,11 @@ export function reconstructHandler(
         await enqueue(q, "ingest", { ingestId: childId });
         await audit(q, { ...actor, action: "reconstruct.done", target: ingestId, detail: { ingest: childId, method: method.id, preset: r.preset, fixture: prov.fixture, splatsBytes: size } });
       });
+      note(`handed over: ${made[0]}, ${size} bytes`);
       await rm(work, { recursive: true, force: true });
       await finishIfLast();
     } catch (e) {
+      note(`failed: ${e instanceof Error ? (e.stack ?? e.message) : String(e)}`);
       await rm(work, { recursive: true, force: true });
       const stopped = e instanceof PermanentError && e.message === CANCELLED;
       if (e instanceof PermanentError || job.attempts >= job.max_attempts) {
@@ -468,6 +496,8 @@ export function reconstructHandler(
       throw e;
     } finally {
       clearInterval(watch);
+      // Configured paths are named so they are removed even where they do not look like paths.
+      if (opts.logDir) await writeTrainingLog(opts.logDir, `${method.id}-${ingestId.slice(0, 8)}`, trace, [storage.ingests, ...Object.values(opts.workers)]).catch(() => undefined);
     }
   };
 }

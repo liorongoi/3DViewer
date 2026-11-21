@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,6 +13,7 @@ import { ingestHandler, unpackUpload } from "./ingest.ts";
 import { Worker } from "./jobs.ts";
 import { captureFileOk, reconstructHandler, runWorker, type ReconstructOptions } from "./reconstruct.ts";
 import { seed } from "./seed.ts";
+import { ensureAdminPassword } from "./admin.ts";
 import { Storage } from "./storage.ts";
 
 // Every splat "made" here comes from a TEST FIXTURE worker (test-fixtures/splat-worker-fixture.mjs),
@@ -82,6 +83,7 @@ describe("making splats from a capture", () => {
     await seed(db, { samples: false });
     storage = new Storage(dir);
     await storage.init();
+    capture.logDir = path.join(dir, "logs", "training");
     app = await buildApp({ db, storage, capture });
   });
   afterAll(async () => {
@@ -169,6 +171,30 @@ describe("making splats from a capture", () => {
     // A finished run counts as a training on this server, marked as a fixture run.
     const comps = (await app.inject("/api/splat-methods")).json().components;
     expect(comps.find((c: { method: string }) => c.method === "gsplat").trained).toMatchObject({ fixture: true });
+  });
+
+  it("keeps a redacted log of each training, and gives the administrator one debug log with no network details", async () => {
+    const logs = (await readdir(capture.logDir!)).filter((f) => f.endsWith(".log"));
+    expect(logs.length).toBeGreaterThanOrEqual(2);
+    const one = await readFile(path.join(capture.logDir!, logs[0]!), "utf8");
+    expect(one).toMatch(/HOLO training log/);
+    expect(one).toMatch(/worker ended: exit 0/);
+    expect(one).not.toContain(dir);
+    expect(one).not.toContain(tmpdir());
+
+    expect((await app.inject("/api/admin/debug-log")).statusCode).toBe(401);
+    await ensureAdminPassword(db, "a long enough password");
+    const token = (await app.inject({ method: "POST", url: "/api/admin/login", payload: { password: "a long enough password" } })).json().token;
+    const res = await app.inject({ url: "/api/admin/debug-log", headers: { authorization: `Bearer ${token}` } });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-disposition"]).toMatch(/attachment; filename="holo-debug-/);
+    const text = res.body;
+    if (process.env.DUMP_DEBUG_LOG) await writeFile(process.env.DUMP_DEBUG_LOG, text);
+    expect(text).toMatch(/=== Splat methods ===/);
+    expect(text).toMatch(/gsplat: configured yes, environment ok/);
+    expect(text).toMatch(/NVIDIA RTX A5000, 24 GB, driver 550.54.14/);
+    expect(text).toMatch(/=== Training logs/);
+    for (const bad of [dir, tmpdir(), FIXTURE, (await import("node:os")).hostname(), "127.0.0.1"]) expect(text).not.toContain(bad);
   });
 
   it("cancels a capture: queued methods end at once, the running worker is stopped, and its files are removed", async () => {

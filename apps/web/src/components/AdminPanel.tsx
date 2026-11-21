@@ -659,6 +659,24 @@ function StorageTab({ api, fail }: { api: AdminApi; fail: Fail }) {
           {t("admin.saveQuota")}
         </button>
       </form>
+      <section className="mt-4 grid gap-2 rounded-[10px] border border-line bg-s2 p-3" data-testid="debug-log">
+        <h3 className="font-semibold">{t("admin.debugTitle")}</h3>
+        <p className="text-[12px] text-fg2">{t("admin.debugHow")}</p>
+        <button
+          type="button"
+          className="btn-secondary self-start"
+          onClick={async () => {
+            try {
+              saveText(`holo-debug-${new Date().toISOString().slice(0, 10)}.txt`, await api.debugLog());
+            } catch (e) {
+              fail(e);
+            }
+          }}
+          data-testid="debug-log-save"
+        >
+          <Download size={14} /> {t("admin.debugSave")}
+        </button>
+      </section>
     </>
   );
 }

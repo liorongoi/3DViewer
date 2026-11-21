@@ -13,7 +13,7 @@ import {
   georeference,
   parseFrameScores,
   frameMotion,
-  selectByMotion,
+  selectFrames,
   videoFrames,
   loadConfig,
   parseGnssCsv,
@@ -272,18 +272,12 @@ describe("video frames", () => {
     expect(frameMotion(blank, blank, W, H)).toBe(0);
   });
 
-  it("keeps frames by distance moved, densely when fast, and the sharpest near each point", () => {
-    // 30 slow frames (0.5 px each), then 30 fast ones (4 px each).
-    const motion = [0, ...Array(29).fill(0.5), ...Array(30).fill(4)];
-    const blur = new Map(motion.map((_, i) => [i, i === 13 ? 1 : 3]));
-    const keep = selectByMotion(motion, blur, { step: 6, maxGap: 15, window: 2 });
-    const slow = keep.filter((k) => k < 30);
-    const fast = keep.filter((k) => k >= 30);
-    expect(slow).toContain(13); // the sharp frame near the first 6 px point
-    expect(fast.length).toBeGreaterThan(slow.length * 2);
-    for (let i = 1; i < keep.length; i++) expect(keep[i]! - keep[i - 1]!).toBeLessThanOrEqual(17);
+  it("keeps the sharpest frame near each point the view had moved enough, and fills long gaps", () => {
+    const blur = new Map(Array.from({ length: 60 }, (_, i) => [i, i === 11 ? 1 : 3]));
+    // Moved enough at 0, 10, 12, 14, then nothing until 50.
+    expect(selectFrames([0, 10, 12, 14, 50], 60, blur, { maxGap: 15 })).toEqual([0, 11, 12, 14, 29, 44, 50]);
     // A camera standing still still gives one frame per maxGap.
-    expect(selectByMotion(Array(46).fill(0), new Map(), { step: 6, maxGap: 15 })).toEqual([0, 15, 30, 45]);
+    expect(selectFrames([0], 46, new Map(), { maxGap: 15 })).toEqual([0, 15, 30, 45]);
   });
 
   it.skipIf(spawnSync("ffmpeg", ["-version"]).status !== 0)("takes frames from a real video densely while it pans", async () => {

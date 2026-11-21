@@ -23,7 +23,7 @@ export function georeference(
   source: string,
 ): { reason: string } | { T: Sim; georef: { origin: { lat: number; lon: number; height: number }; metresPerModelUnit: number; controls: Res; checks: Res | null; source: string } };
 export function frameMotion(a: Uint8Array, b: Uint8Array, w: number, h: number, block?: number, search?: number): number;
-export function selectByMotion(motion: number[], blur: Map<number, number>, opts: { step: number; maxGap: number; window?: number }): number[];
+export function selectFrames(triggers: number[], n: number, blur: Map<number, number>, opts: { maxGap: number; window?: number }): number[];
 export function parseFrameScores(text: string): { blur: Map<number, number>; times: number[] };
 export function loadConfig(file?: string): Record<string, unknown>;
 export function videoFrames(cfg: Record<string, unknown>, video: string, dir: string, o: { resolution: number; videoFps: number }): Promise<{ name: string; time: number }[]>;

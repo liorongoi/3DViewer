@@ -10,7 +10,8 @@ import { audit, auditCsv, verifyAudit, type AuditRow } from "./audit.ts";
 import type { Db } from "./db.ts";
 import { registerIngest } from "./ingest.ts";
 import { serverHardware } from "./hardware.ts";
-import { registerReconstruct, type ReconstructOptions } from "./reconstruct.ts";
+import { checkerFor, registerReconstruct, type ReconstructOptions } from "./reconstruct.ts";
+import { debugLog } from "./debug-log.ts";
 import { enqueue } from "./jobs.ts";
 import { registerFiles, Storage } from "./storage.ts";
 import { addSchemas, arrayOf, bool, closed, int, ref, text, checkContract } from "./schemas.ts";
@@ -396,6 +397,20 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   const capture = opts.capture ?? { workers: {}, hardware: serverHardware };
   registerReconstruct(app, db, capture, opts.storage ? { storage: opts.storage, who } : undefined);
   const admin = registerAdmin(app, db, { storage: opts.storage, who, thumbnails: opts.thumbnails });
+
+  // One text file to take away when reporting a problem, with network details removed (debug-log.ts).
+  app.get(
+    "/api/admin/debug-log",
+    { onRequest: admin, schema: { tags: ["admin"], description: "A redacted text log for reporting a problem: versions, hardware, method checks, recent captures and jobs, training logs.", response: { 200: { description: "The log as plain text, with network details replaced by placeholders.", content: { "text/plain": { schema: { type: "string" } } } } } } },
+    async (req, reply) => {
+      const text = await debugLog(db, capture, checkerFor(capture));
+      await audit(db, { ...(await who(req)), action: "admin.debuglog", target: "server", detail: { bytes: text.length } });
+      return reply
+        .header("content-type", "text/plain; charset=utf-8")
+        .header("content-disposition", `attachment; filename="holo-debug-${new Date().toISOString().slice(0, 10)}.txt"`)
+        .send(text);
+    },
+  );
 
   // The audit log says who opened what, so reading it is for the administrator (admin page, WP 3.9).
   const auditQuery = {

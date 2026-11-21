@@ -123,3 +123,15 @@ Everything after the backup is lost, including the audit entries written since; 
 | Admin password lost | | Set `ADMIN_PASSWORD` to a new password and `ADMIN_PASSWORD_RESET=1`, restart, sign in, then remove both lines. |
 | Uploads say "not scanned for viruses" | `CLAMDSCAN` is not set. | Install ClamAV, set `CLAMDSCAN` and restart. |
 | The server stops at start with "CONVERT_SANDBOX=podman, but …" (exit 78) | The conversion sandbox does not run, or a step in it could reach the network. The message says which. | Check podman runs as `viewer`: `sudo -u viewer -H podman --version`. On Ubuntu 24.04, AppArmor must allow podman to make user namespaces (the `podman` profile from the `apparmor` package). Fix it, or set `CONVERT_SANDBOX=none` and restart. |
+
+## Debug log
+
+To report a problem without sending anything about your network, sign in as administrator, open **Storage** and press **Save a debug log**. It saves one text file, `holo-debug-<date>.txt`, that you can take away (`GET /api/admin/debug-log`, audited as `admin.debuglog`).
+
+What it holds:
+- HOLO, Node and kernel versions, CPU, memory, and each GPU's model, memory and driver.
+- Which splat methods are set up, with what their checks reported (version, revision, problems).
+- The newest 20 captures and 30 failed or running jobs, with their timings and errors.
+- The newest 10 training logs. Each training writes one to `DATA_DIR/logs/training/`, redacted as it is written, and the newest 30 are kept. It has the steps the worker ran, how long each took, the exit codes and the last lines of a step that failed.
+
+What it never holds: environment variables, settings values, client addresses, audit entries, file names from captures. The whole file then goes through `apps/server/src/redact.ts`, which replaces the following with placeholders: machine and user names, IPv4, IPv6 and MAC addresses, e-mail addresses, URLs (`https://<host>/…`), domain names, UNC shares, folder paths (only a generic file name such as `splats.ply` stays, other names become `<file>.ext`), and `KEY=value` settings whose names suggest a host, proxy, path, user or secret. Read the file before sending it; it is plain text.

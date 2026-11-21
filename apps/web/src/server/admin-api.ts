@@ -90,6 +90,10 @@ export class AdminApi {
     const r = must(await this.api.GET("/api/audit.csv", { params: { query: clean({ ...q, limit: 100000 }) }, parseAs: "text" }));
     return r.replace(/^\uFEFF/, "");
   }
+  /** One redacted text file for reporting a problem (no addresses, names, paths or settings). */
+  async debugLog(): Promise<string> {
+    return must(await this.api.GET("/api/admin/debug-log", { parseAs: "text" })) as string;
+  }
   async verifyAudit() {
     return must(await this.api.GET("/api/audit/verify"));
   }
