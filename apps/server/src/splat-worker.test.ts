@@ -13,6 +13,7 @@ import {
   georeference,
   parseFrameScores,
   frameMotion,
+  jpegSplitter,
   selectFrames,
   videoFrames,
   loadConfig,
@@ -292,6 +293,49 @@ describe("video frames", () => {
     expect(still.length).toBeLessThanOrEqual(5);
     expect(readdirSync(path.join(dir, "images")).length).toBe(out.length);
   }, 60_000);
+
+  it("cuts a JPEG stream into whole pictures however the pipe splits it", () => {
+    // Two JPEGs; the first holds an EXIF thumbnail (its own FF D8 ... FF D9) and a stuffed FF 00.
+    const a = Buffer.from([0xff, 0xd8, 0xff, 0xe1, 0xff, 0xd8, 1, 0xff, 0xd9, 0xff, 0xda, 7, 0xff, 0x00, 8, 0xff, 0xd9]);
+    const b = Buffer.from([0xff, 0xd8, 0xff, 0xda, 9, 0xff, 0xff, 0xd9]);
+    const stream = Buffer.concat([a, b]);
+    for (let cut = 1; cut < stream.length; cut++) {
+      const got: [number, string][] = [];
+      const feed = jpegSplitter((jpg, n) => got.push([n, jpg.toString("hex")]));
+      feed(stream.subarray(0, cut));
+      feed(stream.subarray(cut));
+      expect(got, `cut at ${cut}`).toEqual([
+        [0, a.toString("hex")],
+        [1, b.toString("hex")],
+      ]);
+    }
+  });
+
+  it.skipIf(spawnSync("ffmpeg", ["-version"]).status !== 0)("writes hundreds of picked frames, each the frame it is named after", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "vf-"));
+    const video = path.join(dir, "long.mp4");
+    // 12 s of fast motion at 30 fps: nearly every frame is picked (the old select list broke here).
+    spawnSync("ffmpeg", ["-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=s=3200x240:r=30,crop=320:240:t*240:0", "-t", "12", "-pix_fmt", "yuv420p", video]);
+    const out = await videoFrames({ ...loadConfig(path.join(dir, "none.json")), frameStep: 0.001 }, video, path.join(dir, "images"), { resolution: 320, videoFps: 2 });
+    expect(out.length).toBeGreaterThan(300);
+    // A picked frame equals the same frame decoded on its own.
+    const pick = out[Math.floor(out.length / 2)]!;
+    const n = Number(/frame_(\d+)/.exec(pick.name)![1]);
+    const grey = async (input: string, select: string | null, name: string) => {
+      const f = path.join(dir, name);
+      spawnSync("ffmpeg", ["-loglevel", "error", "-i", input, "-vf", `${select ? `select=eq(n\\,${select}),` : ""}format=gray`, "-frames:v", "1", "-fps_mode", "passthrough", f]);
+      return readFile(f);
+    };
+    const meanDiff = (x: Buffer, y: Buffer) => {
+      let d = 0;
+      for (let i = 20; i < x.length; i++) d += Math.abs(x[i]! - y[i]!);
+      return d / x.length;
+    };
+    const kept = await grey(path.join(dir, "images", pick.name), null, "kept.pgm");
+    const same = meanDiff(kept, await grey(video, String(n), "same.pgm"));
+    const next = meanDiff(kept, await grey(video, String(n + 1), "next.pgm"));
+    expect(same).toBeLessThan(next / 3);
+  }, 120_000);
 });
 
 describe("training commands", () => {

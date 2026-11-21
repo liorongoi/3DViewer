@@ -90,17 +90,29 @@ const MODELS = 1000;
     });
     check(thumbs.size > first && lastId === "ok", "scrolling to the end brings the last cards' thumbnails (or their icon)", `${thumbs.size} fetched`);
 
-    // Search: typing narrows the cards quickly.
+    // Search: typing narrows the cards quickly. Timed inside the page, from the input event to the
+    // cards changing, which is what a person sees. Timing Playwright's fill and polling instead
+    // counted its round trips, which wait behind the globe's frames (half a second each in software
+    // rendering on CI), and failed now and then although the app had answered in about 60 ms.
     const search = page.getByRole("textbox", { name: "Search", exact: true }).first();
     for (const q of ["Site 77", "גבעה 12"]) {
-      t = Date.now();
-      await search.fill(q);
-      await page.waitForFunction((n) => document.querySelectorAll("[data-model-card]").length < n, cards);
-      const ms = Date.now() - t;
+      await search.focus();
+      const ms = await search.evaluate(async (el, [q, before]) => {
+        const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+        const t0 = performance.now();
+        setValue.call(el, q);
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        await new Promise((done) => {
+          const look = () => (document.querySelectorAll("[data-model-card]").length < before ? done() : setTimeout(look, 2));
+          look();
+        });
+        return Math.round(performance.now() - t0);
+      }, [q, cards]);
       const n = await page.locator("[data-model-card]").count();
+      const shown = await search.inputValue();
       await search.fill("");
       await page.waitForFunction((n) => document.querySelectorAll("[data-model-card]").length === n, cards);
-      check(ms < 500 && n > 0 && n < 100, `searching "${q}" narrows ${cards} cards to ${n}`, `${ms} ms, budget 500 ms`);
+      check(ms < 500 && n > 0 && n < 100 && shown === q, `searching "${q}" narrows ${cards} cards to ${n}`, `${ms} ms, budget 500 ms`);
     }
 
     // A model far down the list opens.

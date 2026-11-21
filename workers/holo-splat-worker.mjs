@@ -545,19 +545,65 @@ export async function videoFrames(cfg, video, dir, o) {
   const { blur, times } = parseFrameScores(existsSync(scores) ? readFileSync(scores, "utf8") : "");
   const fps = times.length > 1 ? (times.length - 1) / (times[times.length - 1] - times[0] || 1) : 30;
   const keep = selectFrames(triggers, count, blur, { maxGap: Math.max(1, Math.round(fps / Math.max(0.5, o.videoFps))) });
-  // Pass 2: only those frames, at the training size.
+  // Pass 2: every frame as JPEG on a pipe at the training size, keeping only the picked ones. A
+  // select expression naming hundreds of frames breaks ffmpeg's expression parser, so none is used.
   const scale = `scale='if(gt(iw,ih),min(${o.resolution},iw),-2)':'if(gt(iw,ih),-2,min(${o.resolution},ih))'`;
-  const script = path.join(work, "select.txt");
-  writeFileSync(script, `select='${keep.map((n) => `eq(n\\,${n})`).join("+")}',${scale}`);
-  await run([cfg.ffmpeg, "-hide_banner", "-loglevel", "error", "-i", video, "-an", "-filter_script:v", script, "-fps_mode", "passthrough", "-q:v", "2", path.join(work, "k_%06d.jpg")]);
-  const written = readdirSync(work).filter((f) => /^k_\d+\.jpg$/.test(f)).sort();
-  if (written.length !== keep.length) throw new Error(`ffmpeg wrote ${written.length} of the ${keep.length} frames picked.`);
-  return written.map((f, i) => {
-    const n = keep[i];
-    const name = `frame_${String(n).padStart(6, "0")}.jpg`;
-    copyFileSync(path.join(work, f), path.join(dir, name));
-    return { name, time: times[n] ?? n / fps };
+  const wanted = new Set(keep);
+  const out = [];
+  await new Promise((resolve, reject) => {
+    const child = spawn(cfg.ffmpeg, ["-hide_banner", "-loglevel", "error", "-i", video, "-an", "-vf", scale, "-fps_mode", "passthrough", "-q:v", "2", "-f", "image2pipe", "-c:v", "mjpeg", "pipe:1"], { stdio: ["ignore", "pipe", "pipe"] });
+    const stop = () => child.kill("SIGTERM");
+    process.once("SIGTERM", stop);
+    const split = jpegSplitter((jpg, n) => {
+      if (!wanted.has(n)) return;
+      const name = `frame_${String(n).padStart(6, "0")}.jpg`;
+      writeFileSync(path.join(dir, name), jpg);
+      out.push({ name, time: times[n] ?? n / fps });
+    });
+    let err = "";
+    child.stdout.on("data", split);
+    child.stderr.on("data", (c) => (err = (err + c).slice(-2000)));
+    child.on("error", reject);
+    child.on("close", (code) => {
+      process.off("SIGTERM", stop);
+      code === 0 ? resolve() : reject(new Error(`ffmpeg stopped (exit ${code}): ${err.trim().slice(-300)}`));
+    });
   });
+  if (out.length !== keep.length) throw new Error(`ffmpeg gave ${out.length} of the ${keep.length} frames picked.`);
+  return out;
+}
+
+/**
+ * Cuts a stream of concatenated JPEGs (ffmpeg's image2pipe) into whole pictures, numbered from 0.
+ * A JPEG ends at FF D9; inside the coded data every FF byte is followed by 00, so that pair cannot
+ * appear early. Markers before the image data (FF D8 of a thumbnail) are skipped by counting SOIs.
+ */
+export function jpegSplitter(onImage) {
+  let parts = [];
+  let size = 0;
+  let n = 0;
+  let prevFF = false;
+  let depth = 0;
+  return (chunk) => {
+    let start = 0;
+    for (let i = 0; i < chunk.length; i++) {
+      const b = chunk[i];
+      if (prevFF && b === 0xd8) depth++;
+      else if (prevFF && b === 0xd9 && depth > 0 && --depth === 0) {
+        parts.push(chunk.subarray(start, i + 1));
+        size += i + 1 - start;
+        onImage(Buffer.concat(parts, size), n++);
+        parts = [];
+        size = 0;
+        start = i + 1;
+      }
+      prevFF = b === 0xff;
+    }
+    if (start < chunk.length) {
+      parts.push(Buffer.from(chunk.subarray(start)));
+      size += chunk.length - start;
+    }
+  };
 }
 
 /**
