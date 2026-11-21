@@ -1,4 +1,4 @@
-import { fractionBitsFor, packAlpha, packColor, packRotation, packScale, packSh, SplatError, type SplatCloud } from "./cloud";
+import { fractionBitsFor, packAlpha, packColor, packRotation, packScale, packSh, shDim, SplatError, unpackColor, unpackRotation, unpackScale, unpackSh, type SplatCloud } from "./cloud";
 import { MAX_SPLATS } from "./spz";
 
 /**
@@ -281,4 +281,46 @@ function decodeCompressed(data: Uint8Array, h: PlyHeader, info: PlyInfo): SplatC
   const grid = 1 << fractionalBits;
   for (let i = 0; i < pos.length; i++) pos[i] = Math.round(pos[i]! * grid) / grid;
   return { count: n, shDegree: info.shDegree as 0 | 1 | 2 | 3, fractionalBits, flags: 0, pos, alphas, colors, scales, rotations, sh };
+}
+
+// ---------------------------------------------------------------- writing
+
+/**
+ * The cloud as a standard Gaussian splat PLY, the format trainers write (3DGS, gsplat, Brush):
+ * float x, y, z, normals, f_dc, f_rest, opacity (logit), scale (log), rot (w, x, y, z), in the
+ * trainer's frame, the inverse of decodePly. SuperSplat, Blender add-ons and game engines read it.
+ */
+export function encodePly(c: SplatCloud): Uint8Array {
+  const dim = shDim(c.shDegree);
+  const names = ["x", "y", "z", "nx", "ny", "nz", "f_dc_0", "f_dc_1", "f_dc_2", ...Array.from({ length: dim * 3 }, (_, i) => `f_rest_${i}`), "opacity", "scale_0", "scale_1", "scale_2", "rot_0", "rot_1", "rot_2", "rot_3"];
+  const header = new TextEncoder().encode(`ply\nformat binary_little_endian 1.0\ncomment HOLO\nelement vertex ${c.count}\n${names.map((n) => `property float ${n}`).join("\n")}\nend_header\n`);
+  const stride = names.length * 4;
+  const out = new Uint8Array(header.length + c.count * stride);
+  out.set(header);
+  const dv = new DataView(out.buffer, header.length);
+  for (let i = 0; i < c.count; i++) {
+    let o = i * stride;
+    const put = (v: number) => {
+      dv.setFloat32(o, v, true);
+      o += 4;
+    };
+    put(c.pos[i * 3]!);
+    put(-c.pos[i * 3 + 1]!);
+    put(-c.pos[i * 3 + 2]!);
+    put(0);
+    put(0);
+    put(0);
+    for (let k = 0; k < 3; k++) put(unpackColor(c.colors[i * 3 + k]!));
+    for (let k = 0; k < 3; k++) for (let j = 0; j < dim; j++) put(SH_SIGN[j]! * unpackSh(c.sh[(i * dim + j) * 3 + k]!));
+    const a = Math.min(254.5, Math.max(0.5, c.alphas[i]!)) / 255;
+    put(Math.log(a / (1 - a)));
+    for (let k = 0; k < 3; k++) put(unpackScale(c.scales[i * 3 + k]!));
+    // Stored as x, y, z, w in the viewer's frame = (w, −qz, qy, −qx) of the PLY's (w, qx, qy, qz).
+    const [X, Y, Z, W] = unpackRotation(c.rotations, i);
+    put(X);
+    put(-W);
+    put(Z);
+    put(-Y);
+  }
+  return out;
 }

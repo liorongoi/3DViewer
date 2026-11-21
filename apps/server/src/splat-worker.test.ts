@@ -1,3 +1,5 @@
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readdirSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -9,10 +11,13 @@ import {
   fill,
   fitSimilarity,
   georeference,
-  parseBlur,
+  parseFrameScores,
+  frameMotion,
+  selectFrames,
+  videoFrames,
+  loadConfig,
   parseGnssCsv,
   parseSrt,
-  pickSharpest,
   positionAt,
   readImages,
   toEnu,
@@ -245,14 +250,48 @@ describe("COLMAP model", () => {
 });
 
 describe("video frames", () => {
-  it("keeps the sharpest frame of each three, by ffmpeg's blur scores", () => {
-    const text = "frame:0    pts:0       pts_time:0\nlavfi.blurdetect.blur=5.2\nframe:1    pts:1       pts_time:0.166667\nlavfi.blurdetect.blur=2.1\nframe:2    pts:2       pts_time:0.333333\nlavfi.blurdetect.blur=3.9\nframe:3    pts:3       pts_time:0.5\nlavfi.blurdetect.blur=1.0\nframe:4    pts:5       pts_time:0.833333\nlavfi.blurdetect.blur=0.5\n";
-    const blur = parseBlur(text, 6);
-    expect([...blur.entries()]).toEqual([[0, 5.2], [1, 2.1], [2, 3.9], [3, 1], [5, 0.5]]);
-    const frames = [0, 1, 2, 3, 5, 7].map((step) => ({ name: `frame_${step}.jpg`, step }));
-    // Steps 0-2: step 1 is sharpest; 3-5: step 5; 6-8: step 7 has no score but is the only one.
-    expect(pickSharpest(frames, blur, 3).map((f) => f.step)).toEqual([1, 5, 7]);
+  it("reads blur scores and times by frame number", () => {
+    const text = "frame:0    pts:0       pts_time:0\nlavfi.blurdetect.blur=5.2\nframe:1    pts:512     pts_time:0.0333\nlavfi.blurdetect.blur=2.1\n";
+    const r = parseFrameScores(text);
+    expect([...r.blur.entries()]).toEqual([[0, 5.2], [1, 2.1]]);
+    expect(r.times).toEqual([0, 0.0333]);
   });
+
+  it("measures a pan and a forward move, and ignores a blank area", () => {
+    const W = 192, H = 108;
+    // Texture that is smooth enough to match: a sum of sines.
+    const tex = (x: number, y: number) => 128 + 60 * Math.sin(x * 0.31) * Math.cos(y * 0.23) + 40 * Math.sin((x + 2 * y) * 0.17);
+    const img = (f: (x: number, y: number) => number) => Uint8Array.from({ length: W * H }, (_, i) => f(i % W, Math.floor(i / W)));
+    const a = img(tex);
+    expect(frameMotion(a, img((x, y) => tex(x - 4, y)), W, H)).toBeCloseTo(4, 0);
+    // Zoom by 5% about the centre: shifts grow towards the edges.
+    const zoom = frameMotion(a, img((x, y) => tex(96 + (x - 96) / 1.05, 54 + (y - 54) / 1.05)), W, H);
+    expect(zoom).toBeGreaterThan(1.5);
+    expect(zoom).toBeLessThan(6);
+    const blank = new Uint8Array(W * H).fill(90);
+    expect(frameMotion(blank, blank, W, H)).toBe(0);
+  });
+
+  it("keeps the sharpest frame near each point the view had moved enough, and fills long gaps", () => {
+    const blur = new Map(Array.from({ length: 60 }, (_, i) => [i, i === 11 ? 1 : 3]));
+    // Moved enough at 0, 10, 12, 14, then nothing until 50.
+    expect(selectFrames([0, 10, 12, 14, 50], 60, blur, { maxGap: 15 })).toEqual([0, 11, 12, 14, 29, 44, 50]);
+    // A camera standing still still gives one frame per maxGap.
+    expect(selectFrames([0], 46, new Map(), { maxGap: 15 })).toEqual([0, 15, 30, 45]);
+  });
+
+  it.skipIf(spawnSync("ffmpeg", ["-version"]).status !== 0)("takes frames from a real video densely while it pans", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "vf-"));
+    const video = path.join(dir, "pan.mp4");
+    // 2 s panning 300 px/s, then 2 s still on a plain colour.
+    spawnSync("ffmpeg", ["-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=s=1600x360:r=30,crop=640:360:t*300:0", "-t", "2", "-f", "lavfi", "-i", "color=c=gray:s=640x360:r=30", "-t", "2", "-filter_complex", "[0][1]concat=n=2:v=1", "-pix_fmt", "yuv420p", video]);
+    const out = await videoFrames(loadConfig(path.join(dir, "none.json")), video, path.join(dir, "images"), { resolution: 640, videoFps: 2 });
+    const pan = out.filter((f) => f.time < 2);
+    const still = out.filter((f) => f.time >= 2.05);
+    expect(pan.length).toBeGreaterThan(20);
+    expect(still.length).toBeLessThanOrEqual(5);
+    expect(readdirSync(path.join(dir, "images")).length).toBe(out.length);
+  }, 60_000);
 });
 
 describe("training commands", () => {

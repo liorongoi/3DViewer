@@ -69,7 +69,7 @@ const corsOrigins = config.corsOrigins;
 // THUMBNAIL_WEB_URL: where the web app is served, on the same origin as /files (WP 3.5).
 const renderer = config.thumbnailWebUrl ? chromiumRenderer({ webUrl: config.thumbnailWebUrl, executablePath: config.chromium }) : null;
 const thumbnails = !!renderer;
-const capture = { workers: config.splatWorkers, hardware: serverHardware, timeoutHours: config.splatTimeoutHours, ...(config.clamdscan ? { scan: (dir: string) => scan(config.clamdscan, dir) } : {}) };
+const capture = { workers: config.splatWorkers, hardware: serverHardware, timeoutHours: config.splatTimeoutHours, logDir: path.join(config.dataDir, "logs", "training"), ...(config.clamdscan ? { scan: (dir: string) => scan(config.clamdscan, dir) } : {}) };
 const app = await buildApp({ db, storage, corsOrigins, thumbnails, reverseDns: true, logger: true, writeRateLimit: config.writeRateLimit, capture });
 app.log.info({ db: db.kind, migrations: applied, seeded, storage: storage.root, production: config.production }, "database ready");
 if (!config.databaseUrl && config.production) app.log.warn("EMBEDDED_DB=1: the embedded database is for a single workstation, not a shared server");

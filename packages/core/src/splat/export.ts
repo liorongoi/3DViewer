@@ -1,5 +1,7 @@
 import { fractionBitsFor, toU8, type SplatCloud } from "./cloud";
 import { encodeSpzV2 } from "./spz";
+import { encodePly } from "./ply";
+import { splatGlb } from "./tiles";
 import { readSplatFile } from "./index";
 
 /**
@@ -33,6 +35,24 @@ export function splatToSpz(name: string, data: Uint8Array, k?: number): Uint8Arr
   const r = readSplatFile(name, data);
   if (scale === 1 && r.spzV2) return r.spzV2;
   return encodeSpzV2(scale === 1 ? r.cloud : scaledCloud(r.cloud, scale));
+}
+
+/** A standard splat PLY of the splat file `name`, scaled by `k` (1 or undefined: unscaled). */
+export function splatToPly(name: string, data: Uint8Array, k?: number): Uint8Array {
+  const scale = k && k !== 1 ? k : 1;
+  const r = readSplatFile(name, data);
+  return encodePly(scale === 1 ? r.cloud : scaledCloud(r.cloud, scale));
+}
+
+/**
+ * The splat file `name` as one GLB with KHR_gaussian_splatting (SPZ v2 compressed, as HOLO's own
+ * tiles carry it), scaled by `k`. glTF's y-up frame, the same as the viewer's.
+ */
+export function splatToGlb(name: string, data: Uint8Array, k?: number): Uint8Array {
+  const scale = k && k !== 1 ? k : 1;
+  const r = readSplatFile(name, data);
+  const c = scale === 1 ? r.cloud : scaledCloud(r.cloud, scale);
+  return splatGlb(c, scale === 1 && r.spzV2 ? r.spzV2 : undefined);
 }
 
 /** Where a splat model stands, written beside a download of a model that has a real size. */

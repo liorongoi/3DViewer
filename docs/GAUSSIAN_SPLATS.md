@@ -119,7 +119,7 @@ HOLO then puts the splats through a normal ingest: checked, scanned, tiled and p
 
 ## Installing a method
 
-HOLO installs nothing: GPU libraries stay out of the application. `workers/holo-splat-worker.mjs` is one worker program for every ground-capture method (Node only, no packages). It takes frames from a video (the sharpest of each three candidates, near-duplicates dropped), recovers camera poses with COLMAP, GLOMAP or pycolmap (`workers/sfm_pycolmap.py`), places the result when the capture carries camera positions, and runs the method's trainer.
+HOLO installs nothing: GPU libraries stay out of the application. `workers/holo-splat-worker.mjs` is one worker program for every ground-capture method (Node only, no packages). It takes frames from a video by how far the view has moved, not on a fixed clock (a frame each time the image has shifted 3% of its width, `frameStep` in holo-worker.json, and at least `--video-fps` a second; of the frames around each point the sharpest), so a car at 40 km/h gets nearly every frame and a slow walk a few a second, recovers camera poses with COLMAP, GLOMAP or pycolmap (`workers/sfm_pycolmap.py`), places the result when the capture carries camera positions, and runs the method's trainer.
 
 1. Install the trainer of each method you want (gsplat with PyTorch and CUDA, Brush, OpenSplat), ffmpeg, and COLMAP (with GLOMAP, or pycolmap in the same Python).
 2. Copy `workers/holo-worker.example.json` to `workers/holo-worker.json` and set the paths of this machine. EOGS++ has no fixed command: set its `train` (and `check`) from the release you install.
@@ -166,7 +166,7 @@ Status: **Built** (code and tests named), **Partly** (what is missing is named),
 | GS-28 | Built | Side by side: a splat model is compared with another version through a draggable divider, both from the same viewpoint, labelled with method and version. | `check-capture.cjs` (screenshot) | — |
 | GS-29 | Built (gate open) | CPU, RAM, NVIDIA name, total and free memory and driver, Apple silicon; presets fitted to free memory. | `reconstruct.test.ts`, `splat-methods.test.ts` | RTX A4000, RTX 4000 Ada and L40S on real machines |
 | GS-30 | Built | One training at a time per server; a training can be stopped (SIGTERM, then SIGKILL), publishes nothing, and its folders are removed. | `reconstruct.test.ts` (cancel) | Memory measurements on target machines |
-| GS-31 | Built | Splats: original, SPZ, 3D Tiles zip. Meshes and tilesets: original, GLB and glTF zips with `holo-model.json`, 3D Tiles (a placed GLB in a one-tile tileset; a tileset copied whole or refused). FBX only when the original was FBX: HOLO does not write FBX. | `export-models.test.ts`; `check-capture.cjs` downloads | — |
+| GS-31 | Built | Splats: original, SPZ, GLB and glTF (KHR_gaussian_splatting with SPZ, as in the tiles), standard PLY (the format trainers write; read by SuperSplat, Blender add-ons and game engines), 3D Tiles zip. Meshes and tilesets: original, GLB and glTF zips with `holo-model.json`, 3D Tiles (a placed GLB in a one-tile tileset; a tileset copied whole or refused). FBX only when the original was FBX: HOLO does not write FBX, and splats have no FBX form (a mesh would invent a surface). | `export-models.test.ts`; `ply-write.test.ts` (PLY reads back as the same splats); `check-capture.cjs` downloads | — |
 | GS-32 | Built | The 3D Tiles zip keeps the tiles as published (Gaussian extensions intact); a placed model has its placement in the root transform once, plus `holo-placement.json`; a floating model has none. No mesh is invented from splats. | `splat.test.ts` (3D Tiles download) | — |
 | GS-33 | Built | Each method records its upstream URL and licence; "Set up" shows source revision, environment check, configured and trained as four separate states. | `reconstruct.test.ts` (install states, broken worker) | — |
 | GS-34 | Built | This table, the browser walkthroughs and the audit below. | This document | Native target-machine checks |
@@ -222,4 +222,4 @@ Status: **Built** (code and tests named), **Partly** (what is missing is named),
 - EOGS++ needs its training command set from the release installed.
 - Satellite results open floating; placing them on the globe from the RPCs is not done.
 - Placement uses camera GNSS only; ground control points measured on the ground are not used yet.
-- Frame rate, memory and training times on the target machines (RTX A4000, RTX 4000 Ada, L40S, Apple silicon) are not measured.
+- Checks on the target machines (RTX A4000, RTX 4000 Ada, L40S, Apple silicon) are run by the owner on those machines, not tracked here.
