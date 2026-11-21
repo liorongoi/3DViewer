@@ -23,6 +23,28 @@ From the operating system's own packages (the site's mirror), these are optional
 
 Everything else (Node.js, the Caddy web server, the FBX converter) is in the bundle.
 
+## Without root: one server in a home folder
+
+For a trial, a single team, or a machine where you have no admin rights. It needs no root, no
+PostgreSQL and no certificate. The bundle's `README-FIRST.txt` walks through it for someone new
+to Linux.
+
+```sh
+tar -xzf viewer-server-<version>-linux-x64.tar.gz
+cd viewer-server-<version>-linux-x64
+./deploy/bin/holo-check        # optional: what this machine can do; changes nothing
+./install-user.sh              # installs in ~/holo, starts, prints the address and admin password
+```
+
+- **Where:** everything is under `~/holo` (or `--dir`): `releases/` and `current` (the program), `settings/` (mode 700), `data/` (the built-in database and models), `logs/`, `backups/`. Nothing is written outside it except `~/.local/bin/holo` and, where used, your own crontab or per-user systemd units.
+- **Database:** the built-in one (`EMBEDDED_DB=1`), unless `--database-url` names a PostgreSQL database.
+- **Address:** plain HTTP on port 8080 (or the next free one, or `--port`). With `--cert` and `--key` it serves HTTPS on 8443, with 8080 redirecting. Ports under 1024 need root, so they are not offered.
+- **Running:** with systemd 240 or newer and "linger" for the user, as per-user services (restart after a crash, start at boot). Otherwise `holo` runs the server and Caddy in a restart loop and starts them at boot from the user's crontab. A nightly backup runs at 02:30; with the built-in database it stops the server for about a minute.
+- **The `holo` command:** `status`, `start`, `stop`, `restart`, `address`, `check`, `logs`, `report`, `backup`, `password`, `uninstall`. `holo report` writes a support file with the hardware check and recent logs, with network addresses, host names, user names, e-mails and home paths taken out.
+- **Upgrade:** run `./install-user.sh` from the newer bundle. Settings and data are kept. If the new version does not start, it goes back to the old one.
+- **Limits:** the conversion sandbox (podman) is off, and uploads are not virus-scanned unless `clamdscan` is installed. For a shared site server, use the root install below.
+- **Check:** `scripts/check-user-install.sh` (CI) installs as an ordinary user, signs in, stops, starts, backs up, writes a report, upgrades and uninstalls.
+
 ## 1. Copy the bundle and check it
 
 Copy both files to the server, then:
