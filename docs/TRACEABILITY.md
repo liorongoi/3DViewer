@@ -109,3 +109,7 @@ Every requirement in the SRS mapped to the work package (WP) that builds it and 
 | VWR-ANL-03 | T | 360° viewshed, observer moved horizontally and vertically, live update | 2.9 | Within 2% of `gdal_viewshed`; ≥ 30 fps while dragging |
 | VWR-LOD-01 | T | LOD inspector and detail control | 1.5, 2.10 | Values match Cesium statistics |
 | VWR-DAT-01 | T | Public georeferenced test data in every format | 0.8 | Kit in DATA_SOURCES opens end to end |
+
+## Gaussian splats
+
+The Gaussian splat requirements (GS-01 to GS-34) are traced in [GAUSSIAN_SPLATS.md](./GAUSSIAN_SPLATS.md#traceability-gs-01-to-gs-34).

@@ -4,7 +4,7 @@ import { useLibrary } from "../state/library";
 import { useTranslation } from "react-i18next";
 import { UPDATE_STATUSES, matchesQuery, type ModelSummary } from "@viewer/shared";
 import { useApp, type Filters } from "../state/store";
-import { Box, Boxes, ChevronDown, FileBox, Search, X } from "./icons";
+import { Box, Boxes, ChevronDown, FileBox, Search, Sparkles, X } from "./icons";
 import { StatusBadge, cx } from "./primitives";
 
 export function filterModels(models: ModelSummary[], f: Filters, classOf: (m: ModelSummary) => string = (m) => m.classificationId): ModelSummary[] {
@@ -168,7 +168,7 @@ export function ModelCard({ m, onOpen, dense }: { m: ModelSummary; onOpen: () =>
   const [ref, near] = useNearView<HTMLButtonElement>();
   // The server's turntable when it has one; the bundled samples otherwise.
   const thumb = m.thumbnail ?? `samples/thumbs/${m.id}.webp`;
-  const Icon = m.sourceFormat === "3dtiles" ? Boxes : m.sourceFormat === "fbx" ? FileBox : Box;
+  const Icon = m.source.splats ? Sparkles : m.sourceFormat === "3dtiles" ? Boxes : m.sourceFormat === "fbx" ? FileBox : Box;
   return (
     <button
       ref={ref}

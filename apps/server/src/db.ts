@@ -3,6 +3,7 @@ import m002 from "./migrations/002_ingest.sql?raw";
 import m003 from "./migrations/003_thumbnails.sql?raw";
 import m004 from "./migrations/004_admin.sql?raw";
 import m005 from "./migrations/005_audit_guard.sql?raw";
+import m006 from "./migrations/006_splats.sql?raw";
 
 /** Migrations in order. Bundled into the build, so the server is one file plus node_modules. */
 export const MIGRATIONS: [string, string][] = [
@@ -11,6 +12,7 @@ export const MIGRATIONS: [string, string][] = [
   ["003_thumbnails.sql", m003],
   ["004_admin.sql", m004],
   ["005_audit_guard.sql", m005],
+  ["006_splats.sql", m006],
 ];
 
 export interface Queryable {

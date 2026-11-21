@@ -115,6 +115,8 @@ export interface NewModel {
   sizeBytes?: number;
   statusChangedAt?: string;
   versions?: number;
+  /** What the first version is, as for later versions (a capture's method, for example). */
+  note?: string;
 }
 
 export async function createModel(q: Queryable, m: NewModel): Promise<string> {
@@ -125,7 +127,7 @@ export async function createModel(q: Queryable, m: NewModel): Promise<string> {
     [id, m.name, m.project ?? "", m.operation ?? "", m.responsibleEntity ?? "", m.description ?? "", m.status, m.statusChangedAt ?? null, m.classificationId, m.sourceFormat, m.centre.lat, m.centre.lon, m.versions ?? 1],
   );
   for (let v = 1; v <= (m.versions ?? 1); v++)
-    await q.query("INSERT INTO versions (model_id, version, source, placement, size_bytes) VALUES ($1,$2,$3,$4,$5)", [id, v, JSON.stringify(m.source), m.placement ? JSON.stringify(m.placement) : null, m.sizeBytes ?? 0]);
+    await q.query("INSERT INTO versions (model_id, version, source, placement, size_bytes, note) VALUES ($1,$2,$3,$4,$5,$6)", [id, v, JSON.stringify(m.source), m.placement ? JSON.stringify(m.placement) : null, m.sizeBytes ?? 0, m.note ?? ""]);
   return id;
 }
 

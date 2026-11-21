@@ -5,7 +5,9 @@ import { ConfigError, loadConfig, type Config } from "./config.ts";
 import { buildApp } from "./app.ts";
 import { AuditForwarder } from "./audit-forward.ts";
 import { migrate, openPglite, openPostgres } from "./db.ts";
-import { ingestHandler } from "./ingest.ts";
+import { ingestHandler, scan, unpackUpload } from "./ingest.ts";
+import { serverHardware } from "./hardware.ts";
+import { reconstructHandler } from "./reconstruct.ts";
 import { Worker, type Handler } from "./jobs.ts";
 import { chromiumRenderer, thumbnailHandler } from "./thumbnails.ts";
 import { PodmanSandbox, probeSandbox, type Sandbox } from "./sandbox.ts";
@@ -67,7 +69,8 @@ const corsOrigins = config.corsOrigins;
 // THUMBNAIL_WEB_URL: where the web app is served, on the same origin as /files (WP 3.5).
 const renderer = config.thumbnailWebUrl ? chromiumRenderer({ webUrl: config.thumbnailWebUrl, executablePath: config.chromium }) : null;
 const thumbnails = !!renderer;
-const app = await buildApp({ db, storage, corsOrigins, thumbnails, reverseDns: true, logger: true, writeRateLimit: config.writeRateLimit });
+const capture = { workers: config.splatWorkers, hardware: serverHardware, timeoutHours: config.splatTimeoutHours, ...(config.clamdscan ? { scan: (dir: string) => scan(config.clamdscan, dir) } : {}) };
+const app = await buildApp({ db, storage, corsOrigins, thumbnails, reverseDns: true, logger: true, writeRateLimit: config.writeRateLimit, capture });
 app.log.info({ db: db.kind, migrations: applied, seeded, storage: storage.root, production: config.production }, "database ready");
 if (!config.databaseUrl && config.production) app.log.warn("EMBEDDED_DB=1: the embedded database is for a single workstation, not a shared server");
 
@@ -85,6 +88,13 @@ const worker =
         // runs out; the lease is renewed every third of it while the job runs.
         { leaseSeconds: config.jobLeaseSeconds, onError: (e, job) => app.log.warn({ err: e, job: job.id }, "job failed") },
       );
+// Splat training has its own worker: one capture at a time per server, so jobs never share a GPU,
+// and long trainings do not hold up ordinary uploads.
+const trainer =
+  config.workers && Object.keys(config.splatWorkers).length
+    ? new Worker(db, { reconstruct: reconstructHandler(db, storage, capture, unpackUpload) }, { leaseSeconds: config.jobLeaseSeconds, pollMs: 3000, onError: (e, job) => app.log.warn({ err: e, job: job.id }, "splat training failed") })
+    : null;
+if (trainer) void serverHardware().then((hw) => app.log.info({ hardware: hw, methods: Object.keys(config.splatWorkers) }, "splat training ready"));
 if (adminPassword === "missing") app.log.warn("No admin password: set ADMIN_PASSWORD and restart to open the admin page");
 if (adminPassword === "kept" && config.adminPassword && !config.adminPasswordReset) app.log.info("ADMIN_PASSWORD is ignored: a password is already stored (ADMIN_PASSWORD_RESET=1 replaces it)");
 if (!config.clamdscan) app.log.warn("CLAMDSCAN is not set: uploads are not scanned for viruses");
@@ -97,6 +107,7 @@ const forwarder = config.auditSyslog
   : null;
 await app.listen({ host: config.host, port: config.port });
 worker?.start();
+trainer?.start();
 forwarder?.start();
 
 // Stop taking work, let running requests and the current job step finish, then close. A stuck
@@ -112,7 +123,7 @@ for (const sig of ["SIGINT", "SIGTERM"] as const)
       app.log.error("shutdown took longer than 30 s; exiting");
       process.exit(1);
     }, 30_000).unref();
-    void Promise.all([worker?.stop(), forwarder?.stop()])
+    void Promise.all([worker?.stop(), trainer?.stop(), forwarder?.stop()])
       .then(() => renderer?.close?.())
       .then(() => app.close())
       .then(() => db.close())

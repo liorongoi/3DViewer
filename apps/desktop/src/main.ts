@@ -124,7 +124,7 @@ async function start(): Promise<void> {
     const r = await dialog.showOpenDialog(win!, {
       properties: ["openFile", "multiSelections"],
       filters: [
-        { name: "3D models", extensions: ["glb", "gltf", "fbx", "zip", "json"] },
+        { name: "3D models", extensions: ["glb", "gltf", "fbx", "spz", "ply", "zip", "json"] },
         { name: "All files", extensions: ["*"] },
       ],
     });

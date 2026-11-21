@@ -15,6 +15,8 @@ export { Viewshed, type ViewshedState, type ViewshedArea } from "./engine/viewsh
 export { UserLayers, type UserLayer, type UserLayerSource, type PickedFeature } from "./engine/user-layers";
 export type { WmtsLayerInfo, WmsLayerInfo } from "./engine/ogc";
 export { LodInspector, type LodStats, type LodSettings } from "./engine/lod-inspector";
+export { splatLoader } from "./loaders";
+export { readSplatFile, splatFileToTiles, splatFormatOf, splatToSpz, tilesetZip, zipFiles, glbToGltf, glbTilesetZip, MAX_SPLATS, compareElevation, readElevationRaster, splatBox, type ElevationComparison, type PlacementSidecar, type SplatSourceInfo, type SplatFormat } from "./splat";
 export { checkFiles, checkItem, prepareFiles, fromBytes, fmtBytes, type CheckReport, type CheckItem, type LocalFile, type Prepared } from "./loaders";
 export { converterForEpsg, epsgDef, type CrsConverter } from "./geo/crs";
 export { gridFactors, placementFrame, placementFromGrid, transformPoint, type GridFactors, type GridPosition, type Placement } from "./geo/place";

@@ -503,3 +503,50 @@ describe("georeference (WP 1.3)", () => {
     expect(m.centre.lat).toBeCloseTo(32.79, 1);
   });
 });
+
+describe("Gaussian splat models (docs/GAUSSIAN_SPLATS.md)", () => {
+  /** A trainer's PLY: n splats on a line, SH degree 0. */
+  function splatPly(n: number): Uint8Array {
+    const props = ["x", "y", "z", "f_dc_0", "f_dc_1", "f_dc_2", "opacity", "scale_0", "scale_1", "scale_2", "rot_0", "rot_1", "rot_2", "rot_3"];
+    const head = enc(`ply\nformat binary_little_endian 1.0\nelement vertex ${n}\n${props.map((p) => `property float ${p}`).join("\n")}\nend_header\n`);
+    const body = new Float32Array(n * props.length);
+    for (let i = 0; i < n; i++) body.set([i * 0.1, 1, 2, 0.5, 0.1, -0.2, 3, -3, -3, -3, 1, 0, 0, 0], i * props.length);
+    const out = new Uint8Array(head.length + body.byteLength);
+    out.set(head);
+    out.set(new Uint8Array(body.buffer), head.length);
+    return out;
+  }
+
+  it("publishes a splat PLY as 3D Tiles, keeps the upload byte for byte, and marks it unscaled when no size is known", async () => {
+    const data = splatPly(400);
+    const floating = { ...placement, scale: 1, modelUnit: 1 };
+    const ing = await upload([{ path: "garden/point_cloud.ply", data }, { path: "garden/cameras.json", data: enc("[]") }], { model: { ...model, name: "Garden" }, placement: floating });
+    const done = await submitAndRun(ing.id);
+    expect(done, JSON.stringify(done.report?.items)).toMatchObject({ state: "ready", report: { ok: true, format: "ply", splat: { count: 400, conversion: "ply-to-spz2" } } });
+    expect(done.report.items.map((i: { key?: string }) => i.key)).toEqual(expect.arrayContaining(["splatPly", "splatSelfChecked"]));
+    const m = (await app.inject(`/api/models/${done.modelId}`)).json();
+    expect(m).toMatchObject({ sourceFormat: "ply", source: { kind: "3dtiles", localFrame: true, splats: true }, placement: { modelUnit: 1 } });
+    expect(m.source.url).toBe(`files/${done.modelId}/${ing.id}/tileset.json`);
+    const ts = (await app.inject(`/${m.source.url}`)).json();
+    expect(ts.extensions["3DTILES_content_gltf"].extensionsRequired).toContain("KHR_gaussian_splatting");
+    expect((await app.inject(`/files/${done.modelId}/${ing.id}/splats.glb`)).statusCode).toBe(200);
+    // The upload, every file of it, as it came.
+    const orig = await app.inject(`/files/${done.modelId}/${ing.id}/original/point_cloud.ply`);
+    expect(orig.statusCode).toBe(200);
+    expect(Buffer.compare(orig.rawPayload, Buffer.from(data))).toBe(0);
+    expect((await app.inject(`/files/${done.modelId}/${ing.id}/original/cameras.json`)).body).toBe("[]");
+    // "Download original" lists every uploaded file with its address.
+    const originals = (await app.inject(`/api/models/${done.modelId}/originals`)).json();
+    expect(originals).toEqual(expect.arrayContaining([{ path: "point_cloud.ply", size: data.length, url: `files/${done.modelId}/${ing.id}/original/point_cloud.ply` }, { path: "cameras.json", size: 2, url: `files/${done.modelId}/${ing.id}/original/cameras.json` }]));
+  });
+
+  it("refuses a damaged SPZ with the reason and publishes nothing", async () => {
+    const bad = new Uint8Array([0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 3, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    const ing = await upload([{ path: "broken.spz", data: bad }], { model: { ...model, name: "Broken" }, placement });
+    const done = await submitAndRun(ing.id);
+    expect(done).toMatchObject({ state: "failed", modelId: null });
+    expect(done.report.items[0]).toMatchObject({ key: "splatUnreadable", severity: "error" });
+    expect(done.report.items[0].detail).toMatch(/damaged|SPZ/);
+    expect(await readdir(storage.files)).not.toContain(expect.stringContaining("Broken"));
+  });
+});

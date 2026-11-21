@@ -58,6 +58,8 @@ export {
   Map,
   Command,
   Sparkles,
+  Building2,
+  Satellite,
   StopCircle,
   Video,
   Wand2,
@@ -78,6 +80,18 @@ export {
   ListTree,
   HardDrive,
   BookOpen,
+  Move3d,
+  Cpu,
+  Images,
+  Film,
+  Columns2,
+  Gauge,
+  Clapperboard,
+  Aperture,
+  GitCompare,
+  Gpu,
+  MemoryStick,
+  ArrowLeftRight,
 } from "lucide-react";
 export { CircleDashed as CircleDraft } from "lucide-react";
 export { CircleHalf } from "./circle-half";

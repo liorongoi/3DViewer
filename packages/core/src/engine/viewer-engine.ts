@@ -21,6 +21,7 @@ import {
   JulianDate,
   LightingModel,
   Math as CMath,
+  Matrix3,
   Matrix4,
   Model,
   type Ray,
@@ -43,6 +44,7 @@ import {
   Entity,
   HeightReference,
   DistanceDisplayCondition,
+  SplitDirection,
 } from "cesium";
 import type { BaseMapConfig, ModelSummary, UpdateStatus } from "@viewer/shared";
 import { CameraController } from "./camera-controller";
@@ -160,6 +162,12 @@ export class ViewerEngine {
   private manifest: LayerManifest | null = null;
   private gltfNodes: { children?: number[] }[] = [];
   readonly loading = signal(false);
+  /** The model shown on the right of a side-by-side comparison (SRS GS-28), or null. */
+  readonly comparing = signal<ModelSummary | null>(null);
+  /** Where the divider of a side-by-side comparison stands, 0 (left edge) to 1 (right edge). */
+  readonly splitAt = signal(0.5);
+  private compareSet: Cesium3DTileset | null = null;
+  private compareSeq = 0;
   readonly error = signal<OpenError | null>(null);
   readonly tileProblems = signal<TileProblems | null>(null);
   readonly current = signal<ModelSummary | null>(null);
@@ -191,6 +199,8 @@ export class ViewerEngine {
 
   private model: Model | null = null;
   private tileset: Cesium3DTileset | null = null;
+  /** A splat tileset's bounds without floaters, in the tileset's own frame (z up). */
+  private splatFocus: BoundingSphere | null = null;
   private edges: PostProcessStageComposite | PostProcessStage | null = null;
   private pins: Entity[] = [];
   private pivotMarker: Entity | null = null;
@@ -378,7 +388,8 @@ export class ViewerEngine {
           // A tileset in local coordinates: placed like a model, from the upload's Place step.
           this.modelBaseHeight = await this.placementHeight(summary.placement);
           this.groundOffset.set(0);
-          tileset.modelMatrix = placeMatrix(summary.placement, this.modelBaseHeight);
+          tileset.modelMatrix = localTilesetMatrix(summary, summary.placement, this.modelBaseHeight);
+          this.splatFocus = summary.source.splats ? splatFocus(tileset) : null;
         } else {
           // The fit samples the surface by drawing it many times over: let the first view out first.
           void this.firstDrawn(tileset)
@@ -442,6 +453,7 @@ export class ViewerEngine {
   }
 
   close(): void {
+    this.stopCompare();
     this.openSeq++;
     this.tour.stop();
     this.measure.cancel();
@@ -455,6 +467,8 @@ export class ViewerEngine {
     if (this.tileset) this.widget.scene.primitives.remove(this.tileset);
     this.model = null;
     this.tileset = null;
+    this.splatFocus = null;
+    this.splatFrames = 0;
     this.layers.set([]);
     this.derivedLayers = [];
     this.manifest = null;
@@ -478,11 +492,142 @@ export class ViewerEngine {
     }
   }
 
+  /** Frames still to draw so the last splat sort is shown (see splatsBusy). */
+  private splatFrames = 0;
+  private splatsSettling(): boolean {
+    // A sort commits during a frame and is drawn by the frames after it: a few more, counted in frames
+    // not milliseconds, because a slow GPU can take longer than any fixed time per frame.
+    if ((this.tileset && splatsBusy(this.tileset)) || (this.compareSet && splatsBusy(this.compareSet))) this.splatFrames = 4;
+    return this.splatFrames > 0;
+  }
+
+  /**
+   * Side by side (SRS GS-28): another version of the open model, or another result of the same
+   * capture, drawn on the right of a divider while the open model stays on the left, from the same
+   * viewpoint. Both must be 3D Tiles in their own frame (splats, or tiled models placed like a GLB).
+   * Stopping removes the second tileset and frees its GPU memory.
+   */
+  async compareWith(other: ModelSummary): Promise<void> {
+    this.stopCompare();
+    const open = this.current.get();
+    if (!this.tileset || !open || other.source.kind !== "3dtiles" || !other.source.localFrame || !other.placement) throw new Error("Only 3D Tiles models in their own frame can be compared side by side.");
+    const seq = ++this.compareSeq;
+    const scene = this.widget.scene;
+    const set = await Cesium3DTileset.fromUrl(other.source.url, { maximumScreenSpaceError: SSE[this.quality], ...this.budgetSplit(), imageBasedLighting: this.makeIbl(), shadows: ShadowMode.ENABLED });
+    if (seq !== this.compareSeq || this.current.get() !== open) return void set.destroy();
+    set.modelMatrix = localTilesetMatrix(other, other.placement, await this.placementHeight(other.placement));
+    if (seq !== this.compareSeq || this.current.get() !== open) return void set.destroy();
+    set.splitDirection = SplitDirection.RIGHT;
+    this.tileset.splitDirection = SplitDirection.LEFT;
+    scene.splitPosition = this.splitAt.get();
+    scene.primitives.add(set);
+    this.compareSet = set;
+    this.comparing.set(other);
+    scene.requestRender();
+  }
+
+  /** Moves the side-by-side divider; 0 is the left edge of the view, 1 the right. */
+  setSplit(at: number): void {
+    const v = Math.min(0.98, Math.max(0.02, at));
+    this.splitAt.set(v);
+    this.widget.scene.splitPosition = v;
+    this.widget.scene.requestRender();
+  }
+
+  stopCompare(): void {
+    this.compareSeq++;
+    if (this.compareSet) this.widget.scene.primitives.remove(this.compareSet);
+    this.compareSet = null;
+    if (this.tileset) this.tileset.splitDirection = SplitDirection.NONE;
+    if (this.comparing.get()) this.comparing.set(null);
+    this.widget.scene.requestRender();
+  }
+
+  /**
+   * For splat models (docs/GAUSSIAN_SPLATS.md): the size of the splats without floaters, in file
+   * units as width, height, depth along the file's x, y, z (glTF frame), and the matrix that places
+   * the tileset on the globe (column-major), for "Set real size" and the 3D Tiles download.
+   */
+  splatInfo(): { size: [number, number, number] | null; modelMatrix: number[] } | null {
+    if (!this.tileset || !this.current.get()?.source.splats) return null;
+    const f = (this.tileset.extras as { holo?: { focus?: { min: number[]; max: number[] } } } | undefined)?.holo?.focus;
+    const size = f && f.min.length === 3 && f.max.length === 3 ? ([0, 1, 2].map((a) => f.max[a]! - f.min[a]!) as [number, number, number]) : null;
+    return { size: size && size.every((v) => Number.isFinite(v) && v >= 0) ? size : null, modelMatrix: Matrix4.toArray(this.tileset.modelMatrix) };
+  }
+
+  /** The open tileset's model matrix (column-major) when it is drawn in its own frame, placed here; else null. */
+  tilesetMatrix(): number[] | null {
+    const m = this.current.get();
+    return this.tileset && m?.source.localFrame ? Matrix4.toArray(this.tileset.modelMatrix) : null;
+  }
+
+  /**
+   * For exporting a placed GLB as 3D Tiles (SRS GS-31): the root transform that draws the GLB
+   * where it stands here (3D Tiles always turn glTF content from y-up to z-up, so a z-up file is
+   * turned back first), and the model's bounding sphere in that root's frame.
+   */
+  glbFrame(): { transform: number[]; sphere: [number, number, number, number] } | null {
+    const m = this.current.get();
+    if (!this.model || !m?.placement || m.source.georeferenced) return null;
+    const p = m.placement;
+    const out = placeMatrix(p, this.modelBaseHeight + this.groundOffset.get());
+    if (p.upAxis === "z") Matrix4.multiply(out, Matrix4.fromRotation(Matrix3.fromRotationX(-CMath.PI_OVER_TWO)), out);
+    const k = p.scale ?? 1;
+    if (k !== 1 && Number.isFinite(k) && k > 0) Matrix4.multiplyByUniformScale(out, k, out);
+    const bs = this.model.boundingSphere;
+    const c = Matrix4.multiplyByPoint(Matrix4.inverse(out, new Matrix4()), bs.center, new Cartesian3());
+    return { transform: Matrix4.toArray(out), sphere: [c.x, c.y, c.z, bs.radius / (k > 0 ? k : 1)] };
+  }
+
   boundingSphere(): BoundingSphere | null {
+    if (this.tileset && this.splatFocus) {
+      // Splats: the bounds without the floaters training leaves around a scene (SRS GS-15).
+      const f = this.splatFocus;
+      const c = Matrix4.multiplyByPoint(this.tileset.modelMatrix, f.center, new Cartesian3());
+      return new BoundingSphere(c, f.radius * Matrix4.getMaximumScale(this.tileset.modelMatrix));
+    }
     return this.model?.boundingSphere ?? this.tileset?.boundingSphere ?? null;
   }
 
   // ---------- camera ----------
+
+  /**
+   * A presentation orbit (SRS GS-24): where the camera stands now, as heading, pitch and distance
+   * around the model's centre. `orbitTo` turns the camera around that centre by a share of a full
+   * turn, and `stillFrame` draws until the tiles and the splat sort have settled.
+   */
+  orbitStart(): { heading: number; pitch: number; range: number } | null {
+    const bs = this.boundingSphere();
+    if (!bs) return null;
+    const cam = this.widget.camera;
+    // Far enough that the whole model stays in frame all the way round.
+    const fov = (cam.frustum as { fov?: number }).fov ?? Math.PI / 3;
+    const range = Math.max(Cartesian3.distance(cam.positionWC, bs.center), (bs.radius / Math.sin(fov / 2)) * 1.1);
+    return { heading: cam.heading, pitch: Math.min(-0.15, cam.pitch), range };
+  }
+
+  orbitTo(start: { heading: number; pitch: number; range: number }, turn: number): void {
+    const bs = this.boundingSphere();
+    if (!bs) return;
+    const cam = this.widget.camera;
+    cam.lookAt(bs.center, new HeadingPitchRange(start.heading + turn * 2 * Math.PI, start.pitch, start.range));
+    cam.lookAtTransform(Matrix4.IDENTITY);
+  }
+
+  /** Draws until the view is complete (tiles loaded, splats sorted), at most `maxFrames` times; returns the canvas. */
+  async stillFrame(maxFrames = 120): Promise<HTMLCanvasElement> {
+    const scene = this.widget.scene;
+    for (let i = 0; i < maxFrames; i++) {
+      this.widget.render();
+      const tilesDone = (!this.tileset || this.tileset.tilesLoaded) && (!this.compareSet || this.compareSet.tilesLoaded);
+      const busy = (this.tileset && splatsBusy(this.tileset)) || (this.compareSet && splatsBusy(this.compareSet));
+      // Returned in the same task as the draw, so the canvas still holds this frame for the caller.
+      if (tilesDone && !busy && i >= 1) return scene.canvas;
+      await new Promise((r) => setTimeout(r, 8));
+    }
+    this.widget.render();
+    return scene.canvas;
+  }
 
   async home(duration = 1.2): Promise<void> {
     const bs = this.boundingSphere();
@@ -988,7 +1133,7 @@ export class ViewerEngine {
     const m = this.current.get();
     const placed = this.model ?? (m?.source.localFrame ? this.tileset : null);
     if (placed && m?.placement) {
-      placed.modelMatrix = placeMatrix(m.placement, this.modelBaseHeight + metres);
+      placed.modelMatrix = this.model ? placeMatrix(m.placement, this.modelBaseHeight + metres) : localTilesetMatrix(m, m.placement, this.modelBaseHeight + metres);
       this.widget.scene.requestRender();
       return;
     }
@@ -1420,6 +1565,7 @@ export class ViewerEngine {
       this.loading.get() ||
       (!!this.model && !this.model.ready) ||
       (!!this.tileset && !this.tileset.tilesLoaded) ||
+      this.splatsSettling() ||
       (scene.globe.show && !scene.globe.tilesLoaded) ||
       !(this.widget as unknown as { dataSourceDisplay: { ready: boolean } }).dataSourceDisplay.ready;
     const more = () => performance.now() < this.drawUntil || loading();
@@ -1428,6 +1574,7 @@ export class ViewerEngine {
       if (more()) request();
     });
     scene.postRender.addEventListener(() => {
+      if (this.splatFrames > 0) this.splatFrames--;
       const next = more();
       if (!next && this.drawing) {
         // Still: no frame rate to show until it draws again.
@@ -1458,7 +1605,7 @@ export class ViewerEngine {
         });
       }
     };
-    commands(this, ["afterFrame", "updatePerf", "keepDrawing", "drawOnDemand", "destroy"]);
+    commands(this, ["afterFrame", "updatePerf", "keepDrawing", "drawOnDemand", "destroy", "splatsSettling"]);
     for (const tool of [this.measure, this.sight, this.viewshed, this.userLayers, this.lod]) commands(tool, ["destroy"]);
     // And every input on the page: the interface changes what is drawn.
     const wake = () => this.keepDrawing();
@@ -1622,6 +1769,43 @@ function placeMatrix(p: NonNullable<ModelSummary["placement"]>, height: number):
   const m = Matrix4.fromArray(placementFrame(p, height));
   const k = p.verticalFactor;
   return k && k !== 1 && Number.isFinite(k) ? Matrix4.multiplyByScale(m, new Cartesian3(1, 1, k), m) : m;
+}
+
+/**
+ * A local-frame tileset's model matrix. Our tiler bakes scale and up axis into its tiles; splat
+ * tiles keep the trainer's frame, so their scale (from a known real dimension) and up axis are
+ * applied here, after the placement.
+ */
+function localTilesetMatrix(m: ModelSummary, p: NonNullable<ModelSummary["placement"]>, height: number): Matrix4 {
+  const out = placeMatrix(p, height);
+  if (!m.source.splats) return out;
+  // Splat content is glTF y-up, drawn by Cesium as z-up; a file whose own z is up turns once more.
+  if (p.upAxis === "z") Matrix4.multiply(out, Matrix4.fromRotation(Matrix3.fromRotationX(-CMath.PI_OVER_TWO)), out);
+  const k = p.scale ?? 1;
+  if (k !== 1 && Number.isFinite(k) && k > 0) Matrix4.multiplyByUniformScale(out, k, out);
+  return out;
+}
+
+/**
+ * Gaussian splats are decoded and depth-sorted off the main thread, and Cesium shows them only
+ * once a sort has been committed in a later frame. Drawn on demand, that frame would never come
+ * once the tiles had loaded (SRS GS-15: the scene stays visible after asynchronous decoding and
+ * sorting), so the engine keeps drawing while a splat primitive has work in flight.
+ */
+function splatsBusy(tileset: Cesium3DTileset): boolean {
+  const p = (tileset as unknown as { gaussianSplatPrimitive?: { _sorterState?: number; _dirty?: boolean; _gaussianSplatTexturePending?: boolean; _pendingSnapshot?: unknown; _needsSnapshotRebuild?: boolean; _hasGaussianSplatTexture?: boolean; _numSplats?: number } }).gaussianSplatPrimitive;
+  if (!p) return false;
+  return !!(p._sorterState || p._dirty || p._gaussianSplatTexturePending || p._pendingSnapshot || p._needsSnapshotRebuild || (p._numSplats && !p._hasGaussianSplatTexture));
+}
+
+/** The floater-free bounds the splat packager writes in tileset extras, as a sphere in the tileset frame. */
+function splatFocus(tileset: Cesium3DTileset): BoundingSphere | null {
+  const f = (tileset.extras as { holo?: { focus?: { min: number[]; max: number[] } } } | undefined)?.holo?.focus;
+  if (!f || f.min.length !== 3 || f.max.length !== 3 || ![...f.min, ...f.max].every(Number.isFinite)) return null;
+  // glTF (x, y, z) is the tileset's (x, −z, y).
+  const c = [0, 1, 2].map((a) => (f.min[a]! + f.max[a]!) / 2);
+  const r = Math.hypot(f.max[0]! - f.min[0]!, f.max[1]! - f.min[1]!, f.max[2]! - f.min[2]!) / 2;
+  return new BoundingSphere(new Cartesian3(c[0], -c[2]!, c[1]), Math.max(r, 0.01));
 }
 
 function friendlyReason(err: Error): string {

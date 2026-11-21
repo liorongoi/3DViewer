@@ -14,6 +14,7 @@ interface Tile {
 }
 interface Tileset {
   asset?: { version?: string };
+  extensions?: { "3DTILES_content_gltf"?: { extensionsRequired?: string[] } };
   geometricError?: number;
   root?: Tile;
 }
@@ -139,7 +140,8 @@ export const tiles3dLoader: LoaderPlugin = {
       items.push(checkItem("content", "error", "tilesDamaged", { count: damaged.length }, damaged.slice(0, 6).join("; ") + (damaged.length > 6 ? ` … +${damaged.length - 6}` : "")));
     else if (kinds.size) items.push(checkItem("content", "ok", "tileKinds", { kinds: [...kinds].map(([k, n]) => `${n} ${k}`).join(", ") }));
 
-    return { items, stats, nodes: [], georef: georefOf(ts) };
+    const splatTiles = !!ts.extensions?.["3DTILES_content_gltf"]?.extensionsRequired?.includes("KHR_gaussian_splatting");
+    return { items, stats, nodes: [], georef: georefOf(ts), ...(splatTiles ? { splatTiles } : {}) };
   },
   async prepare(main, files, url) {
     const done = new Map<string, string>();

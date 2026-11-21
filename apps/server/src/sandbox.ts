@@ -26,6 +26,7 @@ export type Step =
   | { task: "validate"; kind: "3dtiles" | "gltf"; file: string; timeoutMs: number }
   | { task: "tile"; file: string; outDir: string; opts: TileOptions }
   | { task: "optimise"; file: string; outFile: string }
+  | { task: "splat"; file: string; outDir: string }
   | { task: "probe"; work: string };
 
 export interface RunOptions {

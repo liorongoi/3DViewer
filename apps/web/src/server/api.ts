@@ -192,3 +192,47 @@ export async function uploadAndIngest(srv: ServerInfo, files: LocalFile[], req: 
     status = asStatus(must(await api.GET("/api/ingests/{id}", { params: { path: { id: created.id } }, signal })));
   }
 }
+
+export type SplatSetup = paths["/api/splat-methods"]["get"]["responses"]["200"]["content"]["application/json"];
+export type CaptureStatus = paths["/api/captures/{id}"]["get"]["responses"]["200"]["content"]["application/json"];
+
+/** The methods installed on the server and the hardware they would run on. */
+export async function getSplatSetup(srv: ServerInfo): Promise<SplatSetup> {
+  return must(await apiFor(srv).GET("/api/splat-methods"));
+}
+
+/** Uploads a capture (a video, photos or satellite images) and queues the training; returns the capture id. */
+export async function sendCapture(srv: ServerInfo, files: LocalFile[], req: IngestRequest, onProgress: (p: UploadProgress) => void, signal?: AbortSignal): Promise<string> {
+  const total = files.reduce((s, f) => s + f.size, 0);
+  const api = apiFor(srv);
+  const created = must(await api.POST("/api/ingests", { body: { ...req, files: files.map((f) => ({ path: f.path, size: f.size })) }, signal }));
+  let sent = 0;
+  onProgress({ sent, total, step: "upload" });
+  const byPath = new Map(files.map((f) => [f.path, f]));
+  for (const u of created.uploads) await sendFile(srv, u.url, byPath.get(u.path)!, (n) => onProgress({ sent: (sent += n), total, step: "upload" }), signal);
+  must(await api.POST("/api/ingests/{id}/submit", { params: { path: { id: created.id } }, signal }));
+  return created.id;
+}
+
+export async function getCapture(srv: ServerInfo, id: string): Promise<CaptureStatus> {
+  return must(await apiFor(srv).GET("/api/captures/{id}", { params: { path: { id } } }));
+}
+
+/** Stops a capture: methods still waiting end now, and a training method stops within seconds. */
+export async function cancelCapture(srv: ServerInfo, id: string): Promise<CaptureStatus> {
+  return must(await apiFor(srv).POST("/api/captures/{id}/cancel", { params: { path: { id } } }));
+}
+
+export type OriginalFile = { path: string; size: number; url: string };
+/** The files a version was made from, as uploaded, with absolute addresses. */
+export async function listOriginals(srv: ServerInfo, id: string, version?: number): Promise<OriginalFile[]> {
+  const list = must(await apiFor(srv).GET("/api/models/{id}/originals", { params: { path: { id }, query: version ? { version } : {} } }));
+  return list.map((f) => ({ ...f, url: `${srv.base}/${f.url}` }));
+}
+
+/** A new version of a model with the same files and a new placement (a new real size, or floating). */
+export async function addPlacementVersion(srv: ServerInfo, m: ModelSummary, placement: NonNullable<ModelSummary["placement"]>, note: string): Promise<ModelSummary> {
+  const prefix = `${srv.base}/`;
+  const source = { ...m.source, url: m.source.url.startsWith(prefix) ? m.source.url.slice(prefix.length) : m.source.url };
+  return must(await apiFor(srv).POST("/api/models/{id}/versions", { params: { path: { id: m.id } }, body: { source, placement, sizeBytes: m.sizeBytes, note } })) as ModelSummary;
+}

@@ -20,6 +20,8 @@ const TYPES: Record<string, string> = {
   ".cmpt": "application/octet-stream",
   ".subtree": "application/octet-stream",
   ".bin": "application/octet-stream",
+  ".spz": "application/octet-stream",
+  ".ply": "application/octet-stream",
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",

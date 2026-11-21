@@ -26,6 +26,13 @@ describe("server settings", () => {
     expect(p.join("\n")).not.toContain("secret");
   });
 
+  it("reads splat workers as method=/path pairs and refuses unknown methods, relative paths and missing programs", () => {
+    expect(loadConfig({ SPLAT_WORKERS: `gsplat=${process.execPath}, brush=${process.execPath}` }).splatWorkers).toEqual({ gsplat: process.execPath, brush: process.execPath });
+    const p = problems({ SPLAT_WORKERS: `nerf=${process.execPath},gsplat=bin/gsplat,brush=/no/such/brush`, SPLAT_TIMEOUT_HOURS: "0" });
+    expect(p).toHaveLength(4);
+    expect(p.join("\n")).toMatch(/not a known method/);
+  });
+
   it("refuses out-of-range numbers", () => {
     expect(problems({ PORT: "70000" })).toHaveLength(1);
     expect(problems({ JOB_LEASE_SECONDS: "5" })).toHaveLength(1);

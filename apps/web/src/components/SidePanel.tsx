@@ -14,6 +14,9 @@ import { AlertTriangle, Bookmark, Copy, Crosshair, Eye, EyeOff, Info, Orbit, Pen
 import { IconButton, Panel, Segmented, StatusBadge, cx } from "./primitives";
 import { useTabs } from "./useTabs";
 import { AnalysisTab } from "./AnalysisTab";
+import { SplatGeometryNote, SplatPanel } from "./SplatPanel";
+import { PresentationVideo } from "./PresentationVideo";
+import { ModelExport } from "./ModelExport";
 import { errorText } from "../server/error-text";
 
 /** Right panel: Measurements (MSR-04/05), Properties (UPL-04) and Fly-by tours. */
@@ -72,6 +75,7 @@ function MeasurementsTab() {
   const modelUnit = useSignal(engine?.measure.modelUnit, null);
   return (
     <div className="flex flex-col gap-2 p-2">
+      <SplatGeometryNote />
       {modelUnit !== null && (
         <div role="status" data-testid="model-units" className="flex items-start gap-2 rounded-[10px] border border-[var(--status-production)] px-2.5 py-2 text-[12px] text-fg">
           <AlertTriangle size={14} className="mt-0.5 shrink-0 text-[var(--status-production)]" />
@@ -332,6 +336,9 @@ function PropertiesTab() {
           </div>
         ))}
       </dl>
+      {model.source.splats && <SplatPanel key={`${model.id}@${model.version}`} model={model} />}
+      {!model.source.splats && <ModelExport key={`export-${model.id}@${model.version}`} model={model} />}
+      <PresentationVideo key={`video-${model.id}@${model.version}`} model={model} />
       <GroundOffset />
       <LodSection />
       <div className="flex items-start gap-2 rounded-[8px] bg-s2 p-2 text-[12px] text-fg3">

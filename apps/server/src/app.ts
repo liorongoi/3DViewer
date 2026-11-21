@@ -1,5 +1,5 @@
 import { promises as dns } from "node:dns";
-import { rm, writeFile } from "node:fs/promises";
+import { readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import swagger from "@fastify/swagger";
@@ -9,8 +9,10 @@ import { registerAdmin } from "./admin.ts";
 import { audit, auditCsv, verifyAudit, type AuditRow } from "./audit.ts";
 import type { Db } from "./db.ts";
 import { registerIngest } from "./ingest.ts";
+import { serverHardware } from "./hardware.ts";
+import { registerReconstruct, type ReconstructOptions } from "./reconstruct.ts";
 import { enqueue } from "./jobs.ts";
-import { registerFiles, type Storage } from "./storage.ts";
+import { registerFiles, Storage } from "./storage.ts";
 import { addSchemas, arrayOf, bool, closed, int, ref, text, checkContract } from "./schemas.ts";
 import { addVersion, createModel, getManifest, getModel, manifestProblem, setManifest, listModels, listVersions, updateModel, type LibraryFilter, type ModelPatch, type NewModel } from "./library.ts";
 import { problem } from "./errors.ts";
@@ -36,6 +38,8 @@ export interface AppOptions {
    * and Retry-After beyond that. Upload chunks (/api/tus/) do not count. 0 or unset: no limit.
    */
   writeRateLimit?: number;
+  /** Workers that make Gaussian splats from captures, and how to read the hardware (reconstruct.ts). */
+  capture?: ReconstructOptions;
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
@@ -72,13 +76,13 @@ export function writeLimiter(limit: number, now: () => number = Date.now) {
   };
 }
 
-const FORMATS = ["glb", "gltf", "fbx", "3dtiles"];
+const FORMATS = ["glb", "gltf", "fbx", "3dtiles", "spz", "ply"];
 const str = { type: "string", maxLength: 2000 } as const;
 const centre = { type: "object", required: ["lat", "lon"], properties: { lat: { type: "number", minimum: -90, maximum: 90 }, lon: { type: "number", minimum: -180, maximum: 180 } } } as const;
 const source = {
   type: "object",
   required: ["kind", "url"],
-  properties: { kind: { enum: ["glb", "3dtiles"] }, url: { type: "string", maxLength: 4000 }, groundFit: { enum: ["street", "surface", "none"] }, clipTerrain: { type: "boolean" }, localFrame: { type: "boolean" }, georeferenced: { type: "boolean" }, attribution: str },
+  properties: { kind: { enum: ["glb", "3dtiles"] }, url: { type: "string", maxLength: 4000 }, groundFit: { enum: ["street", "surface", "none"] }, clipTerrain: { type: "boolean" }, localFrame: { type: "boolean" }, splats: { type: "boolean" }, georeferenced: { type: "boolean" }, attribution: str },
   additionalProperties: false,
 } as const;
 const placement = {
@@ -222,6 +226,38 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     },
   );
 
+  // The files a version was made from, as uploaded (kept under original/ when the server converted
+  // or tiled them), for "Download original" (docs/GAUSSIAN_SPLATS.md, export).
+  app.get<{ Params: { id: string }; Querystring: { version?: number } }>(
+    "/api/models/:id/originals",
+    {
+      schema: {
+        tags: ["library"],
+        params: idParam,
+        querystring: { type: "object", properties: { version: { type: "integer", minimum: 1 } }, additionalProperties: false },
+        response: { 200: { type: "array", items: closed({ path: text, size: int, url: text }, ["path", "size", "url"]) } },
+      },
+    },
+    async (req, reply) => {
+      const m = await getModel(db, req.params.id, req.query.version);
+      if (!m) return reply.status(404).send(problem("noModel"));
+      const rel = /^files\/(.+)\/[^/]+$/.exec(m.source.url)?.[1];
+      const root = rel && opts.storage ? Storage.inside(opts.storage.files, path.posix.join(decodeURIComponent(rel), "original")) : null;
+      if (!root) return [];
+      const out: { path: string; size: number; url: string }[] = [];
+      const walk = async (dir: string, pre: string): Promise<void> => {
+        for (const e of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
+          if (out.length >= 1000) return;
+          const p = pre ? `${pre}/${e.name}` : e.name;
+          if (e.isDirectory()) await walk(path.join(dir, e.name), p);
+          else if (e.isFile()) out.push({ path: p, size: (await stat(path.join(dir, e.name))).size, url: `files/${rel}/original/${p.split("/").map(encodeURIComponent).join("/")}` });
+        }
+      };
+      await walk(root, "");
+      return out;
+    },
+  );
+
   app.post<{ Body: NewModel }>(
     "/api/models",
     {
@@ -357,6 +393,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     },
   );
 
+  const capture = opts.capture ?? { workers: {}, hardware: serverHardware };
+  registerReconstruct(app, db, capture, opts.storage ? { storage: opts.storage, who } : undefined);
   const admin = registerAdmin(app, db, { storage: opts.storage, who, thumbnails: opts.thumbnails });
 
   // The audit log says who opened what, so reading it is for the administrator (admin page, WP 3.9).
@@ -389,7 +427,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
 
   if (opts.storage) {
     registerFiles(app, opts.storage);
-    registerIngest(app, db, opts.storage, who);
+    registerIngest(app, db, opts.storage, who, capture);
   }
 
   app.get("/api/openapi.json", { schema: { hide: true } }, async () => app.swagger());

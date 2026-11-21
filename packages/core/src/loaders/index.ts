@@ -1,6 +1,7 @@
 import { FileSet, expandFiles, ext, LoadError, type LocalFile } from "./files";
 import { gltfLoader } from "./gltf";
 import { tiles3dLoader } from "./tiles3d";
+import { splatLoader } from "./splat";
 import { readSidecar } from "./sidecar";
 import { checkItem, type CheckItem, type CheckReport, type LoaderPlugin, type Prepared, type UrlMaker } from "./types";
 
@@ -8,6 +9,7 @@ export * from "./types";
 export { fromBytes, expandFiles, resolvePath, type LocalFile } from "./files";
 export { parseGlb, SUPPORTED_GLTF_EXTENSIONS } from "./gltf";
 export { parseMetadataXml } from "./sidecar";
+export { splatLoader } from "./splat";
 export { placementFromGrid, type GridPosition, type Placement } from "../geo/place";
 
 /** FBX is read on the server (FBX2glTF); the browser only recognises it. */
@@ -40,7 +42,7 @@ const fbxLoader: LoaderPlugin = {
   },
 };
 
-const registry: LoaderPlugin[] = [tiles3dLoader, gltfLoader, fbxLoader];
+const registry: LoaderPlugin[] = [tiles3dLoader, gltfLoader, fbxLoader, splatLoader];
 
 export function registerLoader(p: LoaderPlugin): void {
   const i = registry.findIndex((x) => x.id === p.id);
@@ -78,7 +80,7 @@ export async function checkFiles(input: LocalFile[]): Promise<{ report: CheckRep
     }
     if (r.georef) r.items.push(checkItem("georef", "ok", "georeferenced", { lat: r.georef.lat.toFixed(5), lon: r.georef.lon.toFixed(5) }));
     else if (!r.filePosition) r.items.push(checkItem("georef", "warning", "noPosition"));
-    const report: CheckReport = { ...r, loader: p.id, format: p.format === "glb" && ext(main.path) === "gltf" ? "gltf" : p.format, mainFile: main.path, ok: !r.items.some((i) => i.severity === "error") };
+    const report: CheckReport = { ...r, loader: p.id, format: p.format === "glb" && ext(main.path) === "gltf" ? "gltf" : p.format === "spz" && ext(main.path) === "ply" ? "ply" : p.format, mainFile: main.path, ok: !r.items.some((i) => i.severity === "error") };
     return { report, files };
   }
   const exts = [...new Set(files.map((f) => ext(f.path) || "(none)"))].join(", ");
@@ -94,7 +96,8 @@ export async function prepareFiles(files: LocalFile[], report: CheckReport): Pro
   const set = new FileSet(files);
   const main = report.mainFile ? set.get(report.mainFile) : undefined;
   if (!p?.prepare || !main) throw new LoadError("This file cannot be opened in the browser.");
-  const kind = p.format === "3dtiles" ? "3dtiles" : "glb";
+  // Gaussian splats are drawn as 3D Tiles (Cesium draws splats only from tilesets).
+  const kind = p.format === "3dtiles" || p.format === "spz" ? "3dtiles" : "glb";
   // Read in place: tiles, buffers and textures resolve beside it, as on a server.
   if (main.url && (p === tiles3dLoader || p === gltfLoader)) return { kind, url: main.url, release: () => undefined };
   const made: string[] = [];

@@ -47,6 +47,8 @@ interface AppState {
   /** The user manual (WP 6.6). */
   manualOpen: boolean;
   uploadOpen: boolean;
+  /** The "Make a splat" wizard (docs/GAUSSIAN_SPLATS.md). */
+  captureOpen: boolean;
   /** The admin page (WP 3.9). */
   adminOpen: boolean;
   /** Performance overlay (Shift+P). */
@@ -110,6 +112,7 @@ export const useApp = create<AppState>((set) => ({
   helpOpen: false,
   manualOpen: false,
   uploadOpen: false,
+  captureOpen: false,
   adminOpen: false,
   perfOpen: false,
   adaptiveResolution: readPref<string>("adaptiveResolution", "true") === "true",

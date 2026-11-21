@@ -1,4 +1,5 @@
 import { english, hasEnglish, type ModelFormat } from "@viewer/shared";
+import type { SplatSourceInfo } from "../splat";
 import type { FileSet, LocalFile } from "./files";
 
 export type Severity = "ok" | "warning" | "error";
@@ -38,7 +39,10 @@ export interface CheckReport {
     textures?: number;
     tiles?: number;
     contents?: number;
-    /** Extent along the file's x, y, z, in file units (metres for glTF). */
+    /** Gaussian splats in the model, and their spherical harmonics degree. */
+    splats?: number;
+    shDegree?: number;
+    /** Extent along the file's x, y, z, in file units (metres for glTF). For splats, without floaters. */
     size?: [number, number, number];
   };
   /** Node names for the Layers step. */
@@ -50,6 +54,10 @@ export interface CheckReport {
    * the model origin in a coordinate system, with the model's axes along that system's grid.
    */
   filePosition?: { epsg: number; x: number; y: number; height: number; source: string } | null;
+  /** A Gaussian splat model: what the upload was and how it is drawn (SRS GS-14). */
+  splat?: SplatSourceInfo;
+  /** A 3D Tiles tileset whose content is Gaussian splats (KHR_gaussian_splatting). */
+  splatTiles?: boolean;
 }
 
 export interface Prepared {

@@ -33,7 +33,7 @@ const MODEL = {
   classificationId: text,
   version: int,
   versions: int,
-  sourceFormat: { enum: ["glb", "gltf", "fbx", "3dtiles"] },
+  sourceFormat: { enum: ["glb", "gltf", "fbx", "3dtiles", "spz", "ply"] },
   source: { $ref: "ModelSource#" },
   centre: LatLon,
   placement: { $ref: "Placement#" },
@@ -64,7 +64,7 @@ export const SCHEMAS = [
   {
     $id: "ModelSource",
     ...closed(
-      { kind: { enum: ["glb", "3dtiles"] }, url: text, groundFit: { enum: ["street", "surface", "none"] }, clipTerrain: bool, localFrame: bool, georeferenced: bool, attribution: text },
+      { kind: { enum: ["glb", "3dtiles"] }, url: text, groundFit: { enum: ["street", "surface", "none"] }, clipTerrain: bool, localFrame: bool, splats: bool, georeferenced: bool, attribution: text },
       ["kind", "url"],
     ),
   },

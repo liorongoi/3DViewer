@@ -12,11 +12,13 @@ import { ModelHeader } from "../components/ModelHeader";
 import { FeaturePopup } from "../components/FeaturePopup";
 import { PerfHud } from "../components/PerfHud";
 import { Layers, PanelIcon, Ruler, Upload } from "./parts";
+import { Sparkles } from "../components/icons";
 import { HoloMark } from "../brand/HoloMark";
 import { IconButton, cx } from "../components/primitives";
 import { fadeClasses, useChromeFade } from "./useChromeFade";
 import { Guard } from "../components/Guard";
 import { UndoBar } from "../components/UndoBar";
+import { CompareOverlay } from "../components/CompareOverlay";
 import { ServerPill } from "../components/ServerPill";
 
 /**
@@ -60,6 +62,9 @@ export function Workspace() {
                 </div>
                 <IconButton size="sm" label={t("library.upload")} onClick={() => set({ uploadOpen: true })}>
                   <Upload size={16} />
+                </IconButton>
+                <IconButton size="sm" label={t("splat.make.open")} onClick={() => set({ captureOpen: true })} data-testid="open-capture">
+                  <Sparkles size={16} />
                 </IconButton>
                 <IconButton size="sm" label={t("common.close")} shortcut="L" onClick={() => set({ leftOpen: false })}>
                   <PanelIcon size={16} />
@@ -112,6 +117,8 @@ export function Workspace() {
         {route === "viewer" && rightOpen && <SidePanel className={cx("pointer-events-auto min-h-0", fade.panel)} onClose={() => set({ rightOpen: false })} />}
         </Guard>
       </div>
+
+      {route === "viewer" && <CompareOverlay />}
 
       {/* bottom */}
       <div className={cx("pointer-events-none fixed inset-x-0 z-10 flex flex-col items-center gap-2", "bottom-7", fade.ambient)}>
