@@ -117,8 +117,41 @@ jobs:
             out/viewer-server-*-linux-x64.tar.gz.sha256
           compression-level: 0
 
+  # The training add-on for a server in a home folder: Python with pycolmap, ffmpeg and Brush.
+  # Checked on the runner with Mesa's software Vulkan driver (no graphics card there).
+  training:
+    needs: server
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Version
+        run: |
+          v="${VERSION#v}"
+          [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "The version must look like 1.0.0, not '$v'"; exit 1; }
+          echo "VIEWER_VERSION=$v" >> "$GITHUB_ENV"
+      - name: Training bundle
+        run: bash scripts/build-training-bundle.sh
+      - uses: actions/download-artifact@v4
+        with:
+          name: server
+          path: out
+      - name: Software Vulkan for the self-test
+        run: sudo apt-get install -y mesa-vulkan-drivers libvulkan1
+      - name: Install both as an ordinary user and train the sample
+        run: bash scripts/check-training-install.sh "out/viewer-server-$VIEWER_VERSION-linux-x64.tar.gz" "out/holo-training-$VIEWER_VERSION-linux-x64.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: training
+          path: |
+            out/holo-training-*-linux-x64.tar.gz
+            out/holo-training-*-linux-x64.tar.gz.sha256
+          compression-level: 0
+
   publish:
-    needs: [windows, server]
+    needs: [windows, server, training]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -140,8 +173,9 @@ jobs:
           HOLO $v.
 
           - **HOLO-Setup-$v.exe**: the Windows desktop app, $signed. Per-user, no admin rights. Silent install for IT: \`HOLO-Setup-$v.exe /S /SERVER_URL=https://holo.internal\`.
-          - **viewer-server-$v-linux-x64.tar.gz**: the offline server bundle. Install it as docs/INSTALL.md says.
+          - **viewer-server-$v-linux-x64.tar.gz**: the offline server bundle. With no root: unpack it and run \`./install-user.sh\` (README-FIRST.txt inside). For a site server as root: docs/INSTALL.md.
+          - **holo-training-$v-linux-x64.tar.gz**: the tools to make splats on that server (camera poses, video frames, Brush training on the graphics card). Unpack it and run \`./install-training.sh\`; no root, no internet.
 
-          Both include the user manual in English and Hebrew (Help ▸ User manual). Each file has its SHA-256 beside it.
+          The app and the server include the user manual in English and Hebrew (Help ▸ User manual). Each file has its SHA-256 beside it.
           EOF
           gh release create "v$v" dist/* --target "${{ github.sha }}" --title "HOLO $v" --notes-file notes.md
