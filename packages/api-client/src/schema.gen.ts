@@ -1935,6 +1935,20 @@ export type paths = {
                     };
                     content: {
                         "application/json": {
+                            components: {
+                                configured: boolean;
+                                /** @enum {unknown} */
+                                environment: "ok" | "broken" | "failed" | "unchecked";
+                                fixture: boolean;
+                                method: string;
+                                problems: string[];
+                                revision: string | null;
+                                trained: {
+                                    at: string;
+                                    fixture: boolean;
+                                } | null;
+                                version: string | null;
+                            }[];
                             hardware: {
                                 arch: string;
                                 cpuModel: string;

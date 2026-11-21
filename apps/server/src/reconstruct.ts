@@ -9,6 +9,7 @@ import { enqueue, PermanentError, type Handler } from "./jobs.ts";
 import { closed, text } from "./schemas.ts";
 import { Storage } from "./storage.ts";
 import { problem } from "./errors.ts";
+import { componentChecker, componentStates } from "./splat-components.ts";
 
 /**
  * Making Gaussian splats from a capture (docs/GAUSSIAN_SPLATS.md, "Making a splat").
@@ -93,6 +94,17 @@ export interface ReconstructOptions {
   timeoutHours?: number;
   /** Scans the capture for viruses before a worker reads it (CLAMDSCAN); unset: not scanned. */
   scan?: (dir: string) => Promise<{ severity: string; title: string }>;
+  /** Runs a worker's `--check` (splat-components.ts); by default each worker is checked at most every ten minutes. */
+  check?: ReturnType<typeof componentChecker>;
+}
+
+const checkers = new WeakMap<ReconstructOptions, ReturnType<typeof componentChecker>>();
+/** One checker (and so one cache of answers) per set of options. */
+export function checkerFor(opts: ReconstructOptions): ReturnType<typeof componentChecker> {
+  if (opts.check) return opts.check;
+  let c = checkers.get(opts);
+  if (!c) checkers.set(opts, (c = componentChecker(opts.workers)));
+  return c;
 }
 
 /** Why a reconstruct request cannot run here, or null. Checked when the upload is created, before any byte is sent. */
@@ -104,6 +116,8 @@ export async function reconstructProblem(r: ReconstructRequest, files: { path: s
     if (!m.inputs.includes(r.input) || !m.goals.includes(r.goal)) return problem("captureMethodMismatch", { method: m.name });
     if (!opts.workers[id]) return problem("captureMethodNotInstalled", { method: m.name });
     if (cannotRun(m, hw)) return problem("captureMethodCannotRun", { method: m.name });
+    const checked = await checkerFor(opts)(id);
+    if (checked && (checked.environment === "broken" || checked.environment === "failed")) return problem("captureMethodBroken", { method: m.name, problem: checked.problems[0] ?? "" });
   }
   const bad = files.find((f) => !captureFileOk(r.input, f.path));
   if (bad) return problem("captureFileType", { file: bad.path });
@@ -450,13 +464,34 @@ export function registerReconstruct(app: FastifyInstance, db: Db, opts: Reconstr
             {
               hardware: closed({ platform: text, arch: text, cpuModel: text, cpus: { type: "integer" }, ramGb: { type: "number" }, gpus: { type: "array", items: gpu } }, ["platform", "arch", "cpuModel", "cpus", "ramGb", "gpus"]),
               installed: { type: "array", items: text },
+              components: {
+                type: "array",
+                items: closed(
+                  {
+                    method: text,
+                    configured: { type: "boolean" },
+                    environment: { enum: ["ok", "broken", "failed", "unchecked"] },
+                    revision: { anyOf: [text, { type: "null" }] },
+                    version: { anyOf: [text, { type: "null" }] },
+                    problems: { type: "array", items: text },
+                    trained: { anyOf: [closed({ at: text, fixture: { type: "boolean" } }, ["at", "fixture"]), { type: "null" }] },
+                    fixture: { type: "boolean" },
+                  },
+                  ["method", "configured", "environment", "revision", "version", "problems", "trained", "fixture"],
+                ),
+              },
             },
-            ["hardware", "installed"],
+            ["hardware", "installed", "components"],
           ),
         },
       },
     },
-    async () => ({ hardware: await opts.hardware(), installed: Object.keys(opts.workers).filter((id) => !!methodById(id)) }),
+    async () => {
+      const components = await componentStates(db, opts.workers, checkerFor(opts));
+      // Installed: a worker is configured and its own check did not fail.
+      const installed = components.filter((c) => c.configured && (c.environment === "ok" || c.environment === "unchecked")).map((c) => c.method);
+      return { hardware: await opts.hardware(), installed, components };
+    },
   );
   const run = closed(
     {

@@ -1957,11 +1957,79 @@
                       "items": {
                         "type": "string"
                       }
+                    },
+                    "components": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "method": {
+                            "type": "string"
+                          },
+                          "configured": {
+                            "type": "boolean"
+                          },
+                          "environment": {
+                            "enum": [
+                              "ok",
+                              "broken",
+                              "failed",
+                              "unchecked"
+                            ]
+                          },
+                          "revision": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "version": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "problems": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "trained": {
+                            "type": "object",
+                            "properties": {
+                              "at": {
+                                "type": "string"
+                              },
+                              "fixture": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "at",
+                              "fixture"
+                            ],
+                            "additionalProperties": false,
+                            "nullable": true
+                          },
+                          "fixture": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "method",
+                          "configured",
+                          "environment",
+                          "revision",
+                          "version",
+                          "problems",
+                          "trained",
+                          "fixture"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
                     "hardware",
-                    "installed"
+                    "installed",
+                    "components"
                   ],
                   "additionalProperties": false
                 }

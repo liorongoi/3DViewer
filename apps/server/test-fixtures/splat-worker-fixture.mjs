@@ -7,6 +7,11 @@ import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const args = process.argv.slice(2);
+// The component check (splat-components.ts): a fixture says so.
+if (args[0] === "--check") {
+  console.log(JSON.stringify({ ok: true, tool: "holo-test-fixture", version: "1", revision: "test-fixture", problems: [], fixture: true }));
+  process.exit(0);
+}
 const opt = (k) => {
   const i = args.indexOf(`--${k}`);
   return i >= 0 ? args[i + 1] : undefined;

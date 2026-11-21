@@ -296,6 +296,7 @@ export function CaptureWizard() {
                 </select>
               </label>
               {method && <MethodHelp id={method} />}
+              {setup && <MethodSetup setup={setup} ids={SPLAT_METHODS.filter((m) => m.inputs.includes(input) && m.goals.includes(goal)).map((m) => m.id)} />}
               {rec && rec.alternatives.filter((a) => a !== method).length > 0 && (
                 <fieldset className="grid gap-1">
                   <legend className="text-[12px] text-fg3">{t("splat.make.compare")}</legend>
@@ -402,6 +403,43 @@ function MethodHelp({ id }: { id: string }) {
         {t("splat.make.licence", { licence: m.licence === "research" ? t("splat.make.why.research") : m.licence })} ·{" "}
         <a className="underline" href={m.url} target="_blank" rel="noreferrer noopener">{m.url.replace(/^https:\/\//, "")}</a>
       </p>
+    </details>
+  );
+}
+
+/** Each method's install states on this server, kept apart (SRS GS-33): source, environment, worker, a finished training. */
+function MethodSetup({ setup, ids }: { setup: SplatSetup; ids: string[] }) {
+  const { t } = useTranslation();
+  const rows = setup.components.filter((c) => ids.includes(c.method));
+  if (!rows.length) return null;
+  const Mark = ({ ok, label, detail }: { ok: boolean; label: string; detail?: string }) => (
+    <li className="flex items-start gap-1.5">
+      {ok ? <Check size={13} className="mt-0.5 shrink-0 text-[var(--status-current)]" /> : <span aria-hidden className="mt-1 size-2.5 shrink-0 rounded-full border border-fg3" />}
+      <span className={ok ? "text-fg2" : "text-fg3"}>
+        {label}
+        {detail && <span className="text-fg3"> · {detail}</span>}
+      </span>
+      <span className="sr-only">{ok ? t("splat.make.setupYes") : t("splat.make.setupNo")}</span>
+    </li>
+  );
+  return (
+    <details className="rounded-[10px] bg-s2 px-3 py-2 text-[12px]" data-testid="capture-setup">
+      <summary className="cursor-pointer text-fg2">{t("splat.make.setupTitle")}</summary>
+      <div className="mt-2 grid gap-3">
+        {rows.map((c) => (
+          <div key={c.method} data-testid={`setup-${c.method}`}>
+            <p className="font-medium text-fg">{methodById(c.method)?.name ?? c.method}</p>
+            <ul className="mt-1 grid gap-0.5">
+              <Mark ok={!!c.revision} label={t("splat.make.setupSource")} detail={c.revision ? `${c.version ? `${c.version}, ` : ""}${c.revision}` : undefined} />
+              <Mark ok={c.environment === "ok"} label={t("splat.make.setupEnvironment")} detail={c.environment === "broken" || c.environment === "failed" ? c.problems[0] : undefined} />
+              <Mark ok={c.configured} label={t("splat.make.setupWorker")} />
+              <Mark ok={!!c.trained && !c.trained.fixture} label={t("splat.make.setupTrained")} detail={c.trained ? (c.trained.fixture ? t("splat.make.setupFixtureOnly") : new Date(c.trained.at).toLocaleDateString()) : undefined} />
+            </ul>
+            {c.fixture && <p className="mt-1 text-[var(--status-production)]">{t("splat.make.setupFixture")}</p>}
+          </div>
+        ))}
+        <p className="text-fg3">{t("splat.make.setupHint")}</p>
+      </div>
     </details>
   );
 }

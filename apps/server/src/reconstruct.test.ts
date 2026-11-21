@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { chmod, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -108,9 +108,27 @@ describe("making splats from a capture", () => {
   };
   const photos = () => zipSync({ "IMG_0001.jpg": new Uint8Array([0xff, 0xd8, 1]), "IMG_0002.jpg": new Uint8Array([0xff, 0xd8, 2]), "cameras.txt": new TextEncoder().encode("#") });
 
-  it("lists the methods installed and the hardware", async () => {
+  it("lists the methods installed, the hardware, and each method's separate install states", async () => {
     const r = (await app.inject("/api/splat-methods")).json();
-    expect(r).toEqual({ hardware: rtx, installed: ["gsplat", "brush"] });
+    expect(r).toMatchObject({ hardware: rtx, installed: ["gsplat", "brush"] });
+    const gs = r.components.find((c: { method: string }) => c.method === "gsplat");
+    expect(gs).toEqual({ method: "gsplat", configured: true, environment: "ok", revision: "test-fixture", version: "1", problems: [], trained: null, fixture: true });
+    expect(r.components.find((c: { method: string }) => c.method === "opensplat")).toMatchObject({ configured: false, environment: "unchecked", revision: null, trained: null });
+  });
+
+  it("does not offer a method whose worker's own check fails, and says why", async () => {
+    const broken = path.join(dir, "broken-worker.mjs");
+    await writeFile(broken, `#!/usr/bin/env node\nconsole.log(JSON.stringify({ ok: false, tool: "opensplat", revision: "v1.1.4", problems: ["libtorch was not found."] }));\n`);
+    await chmod(broken, 0o755);
+    const opts: ReconstructOptions = { workers: { opensplat: broken }, hardware: async () => rtx };
+    const app2 = await buildApp({ db, storage, capture: opts });
+    const r = (await app2.inject("/api/splat-methods")).json();
+    expect(r.installed).toEqual([]);
+    expect(r.components.find((c: { method: string }) => c.method === "opensplat")).toMatchObject({ configured: true, environment: "broken", revision: "v1.1.4", problems: ["libtorch was not found."] });
+    const res = await app2.inject({ method: "POST", url: "/api/ingests", payload: { files: [{ path: "photos.zip", size: 3 }], model, placement, reconstruct: { input: "photos", goal: "scene", methods: ["opensplat"], preset: "fast" } } });
+    expect(res.json()).toMatchObject({ key: "captureMethodBroken" });
+    expect(res.json().error).toMatch(/libtorch was not found/);
+    await app2.close();
   });
 
   it("refuses, before any upload, a method that is not installed, does not fit, or files that are not pictures", async () => {
@@ -148,6 +166,9 @@ describe("making splats from a capture", () => {
     expect(await readdir(storage.ingests)).toEqual([]);
     const audit = await db.query<{ action: string }>("SELECT action FROM audit_events WHERE target = $1 ORDER BY at", [ing.id]);
     expect(audit.map((x) => x.action)).toEqual(expect.arrayContaining(["reconstruct.submit", "reconstruct.done"]));
+    // A finished run counts as a training on this server, marked as a fixture run.
+    const comps = (await app.inject("/api/splat-methods")).json().components;
+    expect(comps.find((c: { method: string }) => c.method === "gsplat").trained).toMatchObject({ fixture: true });
   });
 
   it("cancels a capture: queued methods end at once, the running worker is stopped, and its files are removed", async () => {
