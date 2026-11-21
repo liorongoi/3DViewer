@@ -27,3 +27,4 @@ export function selectFrames(triggers: number[], n: number, blur: Map<number, nu
 export function parseFrameScores(text: string): { blur: Map<number, number>; times: number[] };
 export function loadConfig(file?: string): Record<string, unknown>;
 export function videoFrames(cfg: Record<string, unknown>, video: string, dir: string, o: { resolution: number; videoFps: number }): Promise<{ name: string; time: number }[]>;
+export function jpegSplitter(onImage: (jpg: Buffer, n: number) => void): (chunk: Buffer) => void;
