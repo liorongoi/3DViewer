@@ -18,6 +18,10 @@ const enSplatChecks = {
   splatFixture: { title: "Made by a test worker, not a real reconstruction", detail: "This model only shows that the pipeline works. Do not use it as data." },
   splatGenerative: { title: "Partly generated", detail: "Some of what you see was invented by a generative model to fill places no image showed. It is not measured." },
   splatResearchLicence: { title: "Made with research code", detail: "{{method}} has a research licence. Check it before any commercial use." },
+  splatPlaced: { title: "Placed and sized from {{source}}", detail: "{{controls}} camera positions fit it to {{controlH}} m across and {{controlV}} m in height (RMS). Heights: {{datum}}. These are camera positions, not surveyed points: accuracy follows the GPS used." },
+  splatPlacedChecked: { title: "Checked against {{checks}} camera positions held back from the fit", detail: "{{checkH}} m across and {{checkV}} m in height (RMS), {{max}} m at most. Survey use still needs checkpoints measured on the ground." },
+  splatPlacedUnchecked: { title: "No independent check of the placement", detail: "Fewer than 10 camera positions, so none could be held back to check the fit." },
+  splatNotPlaced: { title: "Not placed from camera positions", detail: "{{reason}} It opens floating; you can give it a place and a real size in Properties." },
 };
 
 const heSplatChecks: { [K in keyof typeof enSplatChecks]: { [P in keyof (typeof enSplatChecks)[K]]: string } } = {
@@ -37,6 +41,10 @@ const heSplatChecks: { [K in keyof typeof enSplatChecks]: { [P in keyof (typeof 
   splatFixture: { title: "נוצר בידי עובד בדיקה, לא שחזור אמיתי", detail: "המודל הזה רק מראה שהתהליך עובד. אין להשתמש בו כנתונים." },
   splatGenerative: { title: "נוצר בחלקו", detail: "חלק ממה שרואים הומצא בידי מודל גנרטיבי כדי למלא מקומות שאף תמונה לא הראתה. הוא לא נמדד." },
   splatResearchLicence: { title: "נוצר בקוד מחקרי", detail: "ל-{{method}} יש רישיון מחקר. יש לבדוק אותו לפני כל שימוש מסחרי." },
+  splatPlaced: { title: "מוקם וקיבל גודל לפי {{source}}", detail: "{{controls}} מיקומי מצלמה מתאימים אותו בדיוק של {{controlH}} מ' לרוחב ו-{{controlV}} מ' בגובה (RMS). גבהים: {{datum}}. אלה מיקומי מצלמה ולא נקודות מדודות: הדיוק תלוי ב-GPS ששימש." },
+  splatPlacedChecked: { title: "נבדק מול {{checks}} מיקומי מצלמה שלא שימשו להתאמה", detail: "{{checkH}} מ' לרוחב ו-{{checkV}} מ' בגובה (RMS), לכל היותר {{max}} מ'. לשימוש מדידתי עדיין נדרשות נקודות בקרה שנמדדו בשטח." },
+  splatPlacedUnchecked: { title: "אין בדיקה בלתי תלויה של המיקום", detail: "פחות מ-10 מיקומי מצלמה, ולכן לא היה אפשר להשאיר אף אחד בצד לבדיקה." },
+  splatNotPlaced: { title: "לא מוקם לפי מיקומי המצלמה", detail: "{{reason}} הוא נפתח צף; אפשר לתת לו מקום וגודל אמיתי במאפיינים." },
 };
 
 const enSplatErrors = {

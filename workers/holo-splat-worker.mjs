@@ -1,0 +1,665 @@
+#!/usr/bin/env node
+// HOLO splat training worker (docs/GAUSSIAN_SPLATS.md, "Installing a method"; SRS GS-03, GS-08).
+//
+// One program for every ground-capture method. HOLO's server starts it with discrete arguments
+// (apps/server/src/reconstruct.ts, worker contract); it
+//   1. takes frames from a video (a fixed rate, near-duplicate frames dropped so views stay
+//      diverse) or uses the photos as they are,
+//   2. recovers camera poses with COLMAP (or GLOMAP for the global step, or pycolmap),
+//   3. when the capture carries camera positions (photo EXIF GPS, a drone .SRT, or
+//      camera-gnss.csv beside a video), fits the reconstruction to them and moves it into a local
+//      east-north-up frame in metres, holding every fifth camera back as an independent check,
+//   4. runs the method's trainer (gsplat, gsplat 2DGS, Brush or OpenSplat) with the preset HOLO
+//      chose, and
+//   5. writes out/splats.ply, out/provenance.json and, when placed, out/georef.json.
+// It installs nothing. Where each program is comes from holo-worker.json next to this file
+// (see holo-worker.example.json); `--check` reports what is missing.
+//
+// Exit 0: done. Exit 2: the capture cannot be used (said on stderr in plain words). Exit 1: a tool
+// failed; HOLO retries once.
+import { spawn, spawnSync } from "node:child_process";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+
+// ---------------------------------------------------------------------------------------------
+// Configuration
+
+/** Defaults; holo-worker.json overrides any of them. Templates use {name} for the values below. */
+export const DEFAULTS = {
+  ffmpeg: "ffmpeg",
+  /** "colmap" (the colmap program), "glomap" (colmap for features, glomap for the global mapper), or "pycolmap" (python with pycolmap). */
+  sfm: "colmap",
+  colmap: "colmap",
+  glomap: "glomap",
+  python: "python3",
+  /** Use the GPU for SIFT features and matching (COLMAP built with CUDA). */
+  sfmGpu: true,
+  /** Above this many photos, matching uses a vocabulary tree instead of every pair. */
+  exhaustiveUpTo: 250,
+  vocabTree: "",
+  methods: {
+    gsplat: {
+      repo: "",
+      revision: "",
+      train: ["{python}", "{repo}/examples/simple_trainer.py", "mcmc", "--data_dir", "{data}", "--data_factor", "1", "--result_dir", "{train}", "--max_steps", "{iterations}", "--strategy.cap-max", "{maxSplats}", "--sh_degree", "{shDegree}", "--save_ply", "--ply_steps", "{iterations}", "--disable_viewer"],
+      check: ["{python}", "-c", "import gsplat, torch; print(gsplat.__version__); assert torch.cuda.is_available(), 'PyTorch cannot see a CUDA GPU'"],
+    },
+    "gsplat-2dgs": {
+      repo: "",
+      revision: "",
+      train: ["{python}", "{repo}/examples/simple_trainer_2dgs.py", "--data_dir", "{data}", "--data_factor", "1", "--result_dir", "{train}", "--max_steps", "{iterations}", "--sh_degree", "{shDegree}", "--disable_viewer"],
+      check: ["{python}", "-c", "import gsplat, torch; print(gsplat.__version__); assert torch.cuda.is_available(), 'PyTorch cannot see a CUDA GPU'"],
+    },
+    brush: {
+      program: "brush_app",
+      revision: "",
+      train: ["{program}", "{data}", "--total-steps", "{iterations}", "--max-splats", "{maxSplats}", "--sh-degree", "{shDegree}", "--max-resolution", "{resolution}", "--export-every", "{iterations}", "--export-path", "{train}", "--export-name", "splats.ply"],
+      check: ["{program}", "--version"],
+    },
+    opensplat: {
+      program: "opensplat",
+      revision: "",
+      train: ["{program}", "{data}", "-n", "{iterations}", "--sh-degree", "{shDegree}", "-o", "{train}/splats.ply"],
+      check: ["{program}", "--version"],
+    },
+  },
+};
+
+export function loadConfig(file = path.join(HERE, "holo-worker.json")) {
+  const user = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
+  const methods = { ...DEFAULTS.methods };
+  for (const [k, v] of Object.entries(user.methods ?? {})) methods[k] = { ...(methods[k] ?? {}), ...v };
+  return { ...DEFAULTS, ...user, methods };
+}
+
+/** Fills {name} in each argument; an argument is never split or passed to a shell. */
+export const fill = (argv, values) => argv.map((a) => a.replace(/\{(\w+)\}/g, (m, k) => (values[k] !== undefined ? String(values[k]) : m)));
+
+// ---------------------------------------------------------------------------------------------
+// Geometry: WGS 84, local east-north-up, and a similarity fit (Horn's quaternion method)
+
+const A = 6378137;
+const F = 1 / 298.257223563;
+const E2 = F * (2 - F);
+const D2R = Math.PI / 180;
+
+export function toEcef(lat, lon, h) {
+  const p = lat * D2R;
+  const l = lon * D2R;
+  const n = A / Math.sqrt(1 - E2 * Math.sin(p) ** 2);
+  return [(n + h) * Math.cos(p) * Math.cos(l), (n + h) * Math.cos(p) * Math.sin(l), (n * (1 - E2) + h) * Math.sin(p)];
+}
+
+export function toGeodetic([x, y, z]) {
+  const lon = Math.atan2(y, x);
+  const p = Math.hypot(x, y);
+  let lat = Math.atan2(z, p * (1 - E2));
+  let h = 0;
+  for (let i = 0; i < 8; i++) {
+    const n = A / Math.sqrt(1 - E2 * Math.sin(lat) ** 2);
+    h = p / Math.cos(lat) - n;
+    lat = Math.atan2(z, p * (1 - (E2 * n) / (n + h)));
+  }
+  return { lat: lat / D2R, lon: lon / D2R, height: h };
+}
+
+/** East-north-up coordinates of a point, in metres, at an origin. */
+export function toEnu(origin, lat, lon, h) {
+  const o = toEcef(origin.lat, origin.lon, origin.height);
+  const q = toEcef(lat, lon, h);
+  const d = [q[0] - o[0], q[1] - o[1], q[2] - o[2]];
+  const p = origin.lat * D2R;
+  const l = origin.lon * D2R;
+  return [
+    -Math.sin(l) * d[0] + Math.cos(l) * d[1],
+    -Math.sin(p) * Math.cos(l) * d[0] - Math.sin(p) * Math.sin(l) * d[1] + Math.cos(p) * d[2],
+    Math.cos(p) * Math.cos(l) * d[0] + Math.cos(p) * Math.sin(l) * d[1] + Math.sin(p) * d[2],
+  ];
+}
+
+function jacobiEigen(m) {
+  const n = m.length;
+  const a = m.map((r) => [...r]);
+  const v = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)));
+  for (let sweep = 0; sweep < 100; sweep++) {
+    let off = 0;
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) off += a[i][j] ** 2;
+    if (off < 1e-22) break;
+    for (let p = 0; p < n; p++)
+      for (let q = p + 1; q < n; q++) {
+        if (Math.abs(a[p][q]) < 1e-300) continue;
+        const theta = (a[q][q] - a[p][p]) / (2 * a[p][q]);
+        const t = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+        const c = 1 / Math.sqrt(t * t + 1);
+        const s = t * c;
+        for (let k = 0; k < n; k++) {
+          const akp = a[k][p];
+          const akq = a[k][q];
+          a[k][p] = c * akp - s * akq;
+          a[k][q] = s * akp + c * akq;
+        }
+        for (let k = 0; k < n; k++) {
+          const apk = a[p][k];
+          const aqk = a[q][k];
+          a[p][k] = c * apk - s * aqk;
+          a[q][k] = s * apk + c * aqk;
+        }
+        for (let k = 0; k < n; k++) {
+          const vkp = v[k][p];
+          const vkq = v[k][q];
+          v[k][p] = c * vkp - s * vkq;
+          v[k][q] = s * vkp + c * vkq;
+        }
+      }
+  }
+  return { values: a.map((r, i) => r[i]), vectors: v };
+}
+
+/**
+ * The similarity y = s R x + t that best fits point pairs (least squares, Horn 1987).
+ * Returns null when the points are too few or nearly on one line, where rotation is not fixed.
+ */
+export function fitSimilarity(xs, ys) {
+  const n = xs.length;
+  if (n < 3) return null;
+  const mean = (ps) => [0, 1, 2].map((k) => ps.reduce((s, p) => s + p[k], 0) / n);
+  const mx = mean(xs);
+  const my = mean(ys);
+  const X = xs.map((p) => [p[0] - mx[0], p[1] - mx[1], p[2] - mx[2]]);
+  const Y = ys.map((p) => [p[0] - my[0], p[1] - my[1], p[2] - my[2]]);
+  // Spread of the model points: the second-largest axis must not vanish (collinear).
+  const cov = [0, 1, 2].map((i) => [0, 1, 2].map((j) => X.reduce((s, p) => s + p[i] * p[j], 0) / n));
+  const spread = jacobiEigen(cov).values.sort((a, b) => b - a);
+  if (!(spread[0] > 0) || spread[1] / spread[0] < 1e-6) return null;
+  const S = [0, 1, 2].map((i) => [0, 1, 2].map((j) => X.reduce((s, p, k) => s + p[i] * Y[k][j], 0)));
+  const [[sxx, sxy, sxz], [syx, syy, syz], [szx, szy, szz]] = S;
+  const N = [
+    [sxx + syy + szz, syz - szy, szx - sxz, sxy - syx],
+    [syz - szy, sxx - syy - szz, sxy + syx, szx + sxz],
+    [szx - sxz, sxy + syx, -sxx + syy - szz, syz + szy],
+    [sxy - syx, szx + sxz, syz + szy, -sxx - syy + szz],
+  ];
+  const e = jacobiEigen(N);
+  const best = e.values.indexOf(Math.max(...e.values));
+  const [w, x, y, z] = e.vectors.map((r) => r[best]);
+  const R = [
+    [w * w + x * x - y * y - z * z, 2 * (x * y - w * z), 2 * (x * z + w * y)],
+    [2 * (x * y + w * z), w * w - x * x + y * y - z * z, 2 * (y * z - w * x)],
+    [2 * (x * z - w * y), 2 * (y * z + w * x), w * w - x * x - y * y + z * z],
+  ];
+  const rx = X.map((p) => mulMV(R, p));
+  const s = rx.reduce((acc, p, k) => acc + p[0] * Y[k][0] + p[1] * Y[k][1] + p[2] * Y[k][2], 0) / X.reduce((acc, p) => acc + p[0] ** 2 + p[1] ** 2 + p[2] ** 2, 0);
+  const rm = mulMV(R, mx);
+  const t = [my[0] - s * rm[0], my[1] - s * rm[1], my[2] - s * rm[2]];
+  return { s, R, t };
+}
+
+const mulMV = (M, v) => [0, 1, 2].map((i) => M[i][0] * v[0] + M[i][1] * v[1] + M[i][2] * v[2]);
+export const applySim = (T, p) => {
+  const r = mulMV(T.R, p);
+  return [T.s * r[0] + T.t[0], T.s * r[1] + T.t[1], T.s * r[2] + T.t[2]];
+};
+
+/** Horizontal and vertical RMS of fitted positions against their references, in metres. */
+export function residuals(T, xs, ys) {
+  if (!xs.length) return null;
+  let h = 0;
+  let v = 0;
+  let worst = 0;
+  xs.forEach((x, i) => {
+    const p = applySim(T, x);
+    const dh2 = (p[0] - ys[i][0]) ** 2 + (p[1] - ys[i][1]) ** 2;
+    const dv = p[2] - ys[i][2];
+    h += dh2;
+    v += dv * dv;
+    worst = Math.max(worst, Math.sqrt(dh2 + dv * dv));
+  });
+  const r = (x) => Math.round(Math.sqrt(x / xs.length) * 1000) / 1000;
+  return { count: xs.length, horizontalRms: r(h), verticalRms: r(v), max: Math.round(worst * 1000) / 1000 };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Camera positions: photo EXIF GPS, drone .SRT, camera-gnss.csv
+
+/** Latitude, longitude and altitude from a JPEG's EXIF GPS block, or null. */
+export function exifGps(buf) {
+  if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) return null;
+  let o = 2;
+  while (o + 4 < buf.length) {
+    if (buf[o] !== 0xff) return null;
+    const marker = buf[o + 1];
+    const len = buf.readUInt16BE(o + 2);
+    if (marker === 0xe1 && buf.toString("latin1", o + 4, o + 10) === "Exif\0\0") return tiffGps(buf.subarray(o + 10, o + 2 + len));
+    if (marker === 0xda) return null;
+    o += 2 + len;
+  }
+  return null;
+}
+
+function tiffGps(t) {
+  if (t.length < 8) return null;
+  const le = t.toString("latin1", 0, 2) === "II";
+  const u16 = (i) => (le ? t.readUInt16LE(i) : t.readUInt16BE(i));
+  const u32 = (i) => (le ? t.readUInt32LE(i) : t.readUInt32BE(i));
+  const entries = (ifd) => {
+    if (ifd + 2 > t.length) return [];
+    const n = u16(ifd);
+    const out = [];
+    for (let k = 0; k < n && ifd + 2 + k * 12 + 12 <= t.length; k++) {
+      const e = ifd + 2 + k * 12;
+      out.push({ tag: u16(e), type: u16(e + 2), count: u32(e + 4), at: e + 8 });
+    }
+    return out;
+  };
+  const gpsPtr = entries(u32(4)).find((e) => e.tag === 0x8825);
+  if (!gpsPtr) return null;
+  const g = new Map(entries(u32(gpsPtr.at)).map((e) => [e.tag, e]));
+  const rational = (e, k) => {
+    const off = u32(e.at) + k * 8;
+    if (off + 8 > t.length) return NaN;
+    return u32(off) / u32(off + 4);
+  };
+  const ascii = (e) => String.fromCharCode(t[e.at]);
+  const dms = (e) => (e && e.type === 5 && e.count >= 3 ? rational(e, 0) + rational(e, 1) / 60 + rational(e, 2) / 3600 : NaN);
+  let lat = dms(g.get(2));
+  let lon = dms(g.get(4));
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  if (g.get(1) && ascii(g.get(1)) === "S") lat = -lat;
+  if (g.get(3) && ascii(g.get(3)) === "W") lon = -lon;
+  const altE = g.get(6);
+  let alt = altE && altE.type === 5 ? rational(altE, 0) : NaN;
+  if (Number.isFinite(alt) && g.get(5) && t[g.get(5).at] === 1) alt = -alt;
+  return { lat, lon, height: Number.isFinite(alt) ? alt : null };
+}
+
+/** Per-frame positions from a DJI-style .SRT: times in seconds and WGS 84 positions. */
+export function parseSrt(text) {
+  const out = [];
+  for (const block of text.replace(/\r/g, "").split(/\n\s*\n/)) {
+    const time = /(\d\d):(\d\d):(\d\d)[,.](\d{3})\s*-->/.exec(block);
+    if (!time) continue;
+    const t = +time[1] * 3600 + +time[2] * 60 + +time[3] + +time[4] / 1000;
+    const lat = /latitude\s*:\s*(-?[\d.]+)/i.exec(block)?.[1];
+    const lon = /longitude\s*:\s*(-?[\d.]+)/i.exec(block)?.[1];
+    const alt = /abs_alt\s*:\s*(-?[\d.]+)/i.exec(block)?.[1];
+    const gps = /GPS\s*\(\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)/i.exec(block);
+    if (lat && lon) out.push({ t, lat: +lat, lon: +lon, height: alt !== undefined ? +alt : null });
+    else if (gps) out.push({ t, lon: +gps[1], lat: +gps[2], height: +gps[3] });
+  }
+  return out.filter((p) => Math.abs(p.lat) <= 90 && Math.abs(p.lon) <= 180 && !(p.lat === 0 && p.lon === 0));
+}
+
+/** camera-gnss.csv: time_s,longitude,latitude,ellipsoidal_height_m, times increasing. */
+export function parseGnssCsv(text) {
+  const rows = text.replace(/\r/g, "").split("\n").map((l) => l.trim()).filter(Boolean);
+  const head = rows.shift()?.toLowerCase().split(",").map((s) => s.trim()) ?? [];
+  const col = (n) => head.indexOf(n);
+  const [ti, lo, la, h] = [col("time_s"), col("longitude"), col("latitude"), col("ellipsoidal_height_m")];
+  if ([ti, lo, la, h].some((i) => i < 0)) throw new Error("camera-gnss.csv needs the header time_s,longitude,latitude,ellipsoidal_height_m.");
+  const out = rows.map((r) => r.split(",").map(Number)).map((c) => ({ t: c[ti], lon: c[lo], lat: c[la], height: c[h] }));
+  if (out.some((p, i) => ![p.t, p.lon, p.lat, p.height].every(Number.isFinite) || (i > 0 && p.t <= out[i - 1].t))) throw new Error("camera-gnss.csv has a row that is not four numbers, or times that do not increase.");
+  return out;
+}
+
+/** The position at a time, interpolated between the two fixes around it; null outside the track. */
+export function positionAt(track, t) {
+  if (!track.length || t < track[0].t || t > track[track.length - 1].t) return null;
+  let i = 1;
+  while (i < track.length && track[i].t < t) i++;
+  const a = track[Math.max(0, i - 1)];
+  const b = track[Math.min(track.length - 1, i)];
+  const f = b.t === a.t ? 0 : (t - a.t) / (b.t - a.t);
+  if (a.height === null || b.height === null) return null;
+  return { lat: a.lat + (b.lat - a.lat) * f, lon: a.lon + (b.lon - a.lon) * f, height: a.height + (b.height - a.height) * f };
+}
+
+// ---------------------------------------------------------------------------------------------
+// COLMAP binary model: read camera centres, and move the whole model by a similarity
+
+/** Quaternion (w, x, y, z) to a rotation matrix. */
+const quatToR = ([w, x, y, z]) => [
+  [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+  [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+  [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)],
+];
+function rToQuat(R) {
+  const tr = R[0][0] + R[1][1] + R[2][2];
+  let w, x, y, z;
+  if (tr > 0) {
+    const s = Math.sqrt(tr + 1) * 2;
+    w = s / 4;
+    x = (R[2][1] - R[1][2]) / s;
+    y = (R[0][2] - R[2][0]) / s;
+    z = (R[1][0] - R[0][1]) / s;
+  } else if (R[0][0] > R[1][1] && R[0][0] > R[2][2]) {
+    const s = Math.sqrt(1 + R[0][0] - R[1][1] - R[2][2]) * 2;
+    w = (R[2][1] - R[1][2]) / s;
+    x = s / 4;
+    y = (R[0][1] + R[1][0]) / s;
+    z = (R[0][2] + R[2][0]) / s;
+  } else if (R[1][1] > R[2][2]) {
+    const s = Math.sqrt(1 + R[1][1] - R[0][0] - R[2][2]) * 2;
+    w = (R[0][2] - R[2][0]) / s;
+    x = (R[0][1] + R[1][0]) / s;
+    y = s / 4;
+    z = (R[1][2] + R[2][1]) / s;
+  } else {
+    const s = Math.sqrt(1 + R[2][2] - R[0][0] - R[1][1]) * 2;
+    w = (R[1][0] - R[0][1]) / s;
+    x = (R[0][2] + R[2][0]) / s;
+    y = (R[1][2] + R[2][1]) / s;
+    z = s / 4;
+  }
+  return [w, x, y, z];
+}
+const transpose = (M) => [0, 1, 2].map((i) => [0, 1, 2].map((j) => M[j][i]));
+const mulMM = (P, Q) => [0, 1, 2].map((i) => [0, 1, 2].map((j) => P[i][0] * Q[0][j] + P[i][1] * Q[1][j] + P[i][2] * Q[2][j]));
+
+/** Each registered image of a COLMAP images.bin: name, pose, centre, and where its record sits. */
+export function readImages(buf) {
+  const out = [];
+  let o = 8;
+  const n = Number(buf.readBigUInt64LE(0));
+  for (let k = 0; k < n; k++) {
+    const at = o;
+    const q = [0, 1, 2, 3].map((i) => buf.readDoubleLE(o + 4 + i * 8));
+    const t = [0, 1, 2].map((i) => buf.readDoubleLE(o + 36 + i * 8));
+    let e = o + 64;
+    while (buf[e] !== 0) e++;
+    const name = buf.toString("utf8", o + 64, e);
+    const pts = Number(buf.readBigUInt64LE(e + 1));
+    o = e + 9 + pts * 24;
+    const R = quatToR(q);
+    const c = mulMV(transpose(R), t).map((v) => -v);
+    out.push({ at, name, q, t, centre: c });
+  }
+  return out;
+}
+
+/** Moves a COLMAP binary model (images.bin and points3D.bin in a folder) by y = s R x + t, in place. */
+export function transformModel(dir, T) {
+  const imgPath = path.join(dir, "images.bin");
+  const ib = readFileSync(imgPath);
+  const Rt = transpose(T.R);
+  for (const im of readImages(ib)) {
+    // Camera from world: x_c = Rc X + tc. With X = R^T (Y - t) / s and the camera frame scaled by s:
+    // Rc' = Rc R^T and tc' = s tc - Rc' t.
+    const Rc = mulMM(quatToR(im.q), Rt);
+    const Rct = mulMV(Rc, T.t);
+    const tc = [0, 1, 2].map((i) => T.s * im.t[i] - Rct[i]);
+    rToQuat(Rc).forEach((v, i) => ib.writeDoubleLE(v, im.at + 4 + i * 8));
+    tc.forEach((v, i) => ib.writeDoubleLE(v, im.at + 36 + i * 8));
+  }
+  writeFileSync(imgPath, ib);
+  const ptPath = path.join(dir, "points3D.bin");
+  const pb = readFileSync(ptPath);
+  const n = Number(pb.readBigUInt64LE(0));
+  let o = 8;
+  for (let k = 0; k < n; k++) {
+    const p = applySim(T, [0, 1, 2].map((i) => pb.readDoubleLE(o + 8 + i * 8)));
+    p.forEach((v, i) => pb.writeDoubleLE(v, o + 8 + i * 8));
+    const track = Number(pb.readBigUInt64LE(o + 43));
+    o += 51 + track * 8;
+  }
+  writeFileSync(ptPath, pb);
+}
+
+/**
+ * Fits the model to camera positions. Every fifth camera is held back as a check when there are
+ * at least ten; the rest fix the transform. The local frame's origin is the cameras' mean position.
+ */
+export function georeference(cameras, fixes, source) {
+  const pairs = cameras.map((c) => ({ c, f: fixes.get(c.name) })).filter((p) => p.f && p.f.height !== null);
+  if (pairs.length < 3) return { reason: `Only ${pairs.length} camera${pairs.length === 1 ? "" : "s"} with a pose also had a position; at least 3 are needed.` };
+  const mean = (k) => pairs.reduce((s, p) => s + p.f[k], 0) / pairs.length;
+  const origin = { lat: mean("lat"), lon: mean("lon"), height: mean("height") };
+  const enu = pairs.map((p) => toEnu(origin, p.f.lat, p.f.lon, p.f.height));
+  const holdOut = pairs.length >= 10;
+  const ctl = pairs.map((_, i) => i).filter((i) => !holdOut || i % 5 !== 2);
+  const chk = holdOut ? pairs.map((_, i) => i).filter((i) => i % 5 === 2) : [];
+  const T = fitSimilarity(ctl.map((i) => pairs[i].c.centre), ctl.map((i) => enu[i]));
+  if (!T) return { reason: "The camera positions lie nearly on one line, so the model's turn cannot be fixed from them." };
+  return {
+    T,
+    georef: {
+      frame: "enu",
+      origin,
+      source,
+      horizontalCrs: "EPSG:4326",
+      verticalDatum: source === "camera-gnss.csv" ? "WGS 84 ellipsoid (as camera-gnss.csv declares)" : "as recorded by the camera (EXIF and drone logs usually give height above sea level)",
+      metresPerModelUnit: Math.round(T.s * 1e6) / 1e6,
+      controls: residuals(T, ctl.map((i) => pairs[i].c.centre), ctl.map((i) => enu[i])),
+      checks: chk.length ? residuals(T, chk.map((i) => pairs[i].c.centre), chk.map((i) => enu[i])) : null,
+      note: "Camera positions, not surveyed ground points: accuracy follows the GPS used.",
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Running the steps
+
+class InputError extends Error {}
+
+function run(argv, opts = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(argv[0], argv.slice(1), { cwd: opts.cwd, stdio: ["ignore", "pipe", "pipe"] });
+    let tail = "";
+    const onData = (chunk) => {
+      const s = String(chunk);
+      tail = (tail + s).slice(-4000);
+      if (opts.onLine) for (const line of s.split(/\r?\n|\r/)) opts.onLine(line);
+    };
+    child.stdout.on("data", onData);
+    child.stderr.on("data", onData);
+    // HOLO stops a cancelled training with SIGTERM: pass it on to the tool.
+    const stop = () => child.kill("SIGTERM");
+    process.once("SIGTERM", stop);
+    child.on("error", (e) => reject(new Error(`${path.basename(argv[0])} did not start: ${e.message}`)));
+    child.on("close", (code) => {
+      process.off("SIGTERM", stop);
+      if (code === 0) resolve(tail);
+      // A helper of this worker (sfm_pycolmap.py) says "this capture cannot be used" with exit 2.
+      else if (code === 2 && opts.inputErrors) reject(new InputError(tail.trim().split("\n").slice(-1)[0] ?? "The capture cannot be used."));
+      else reject(new Error(`${path.basename(argv[0])} ${argv[1] ?? ""} stopped (exit ${code}): ${tail.trim().split("\n").slice(-3).join(" ").slice(0, 400)}`));
+    });
+  });
+}
+
+const progress = (f, stage) => console.log(`progress ${f.toFixed(3)} ${stage}`);
+const listFiles = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? listFiles(path.join(d, e.name)) : [path.join(d, e.name)]));
+const VIDEO = /\.(mp4|mov|m4v|lrv|ts|mts|avi|mkv|webm)$/i;
+const PHOTO = /\.(jpe?g|png|tiff?|webp)$/i;
+
+/** Frames from a video at a fixed rate, dropping frames that barely differ (a camera standing still). */
+async function videoFrames(cfg, video, dir, o) {
+  mkdirSync(dir, { recursive: true });
+  const scale = `scale='if(gt(iw,ih),min(${o.resolution},iw),-2)':'if(gt(iw,ih),-2,min(${o.resolution},ih))'`;
+  await run([cfg.ffmpeg, "-hide_banner", "-loglevel", "error", "-i", video, "-vf", `fps=${o.videoFps},mpdecimate=hi=64*24:lo=64*12:frac=0.5,${scale}`, "-fps_mode", "passthrough", "-frame_pts", "1", "-q:v", "2", path.join(dir, "frame_%06d.jpg")]);
+  const frames = readdirSync(dir).filter((f) => f.endsWith(".jpg")).sort();
+  // With -frame_pts the number in a name counts 1/fps steps from the start of the video.
+  return frames.map((f) => ({ name: f, time: Number(/(\d+)\.jpg$/.exec(f)[1]) / o.videoFps }));
+}
+
+async function sfm(cfg, images, work, o, video) {
+  const db = path.join(work, "colmap.db");
+  const sparse = path.join(work, "sparse");
+  const undist = path.join(work, "data");
+  mkdirSync(sparse, { recursive: true });
+  const count = readdirSync(images).length;
+  if (cfg.sfm === "pycolmap") {
+    await run([cfg.python, path.join(HERE, "sfm_pycolmap.py"), "--images", images, "--work", work, "--matcher", video ? "sequential" : count <= cfg.exhaustiveUpTo ? "exhaustive" : "vocabtree", "--vocab-tree", cfg.vocabTree || "", "--threads", String(o.threads)], { inputErrors: true, onLine: (l) => /progress/.test(l) && console.log(l) });
+  } else {
+    const gpu = cfg.sfmGpu ? "1" : "0";
+    await run([cfg.colmap, "feature_extractor", "--database_path", db, "--image_path", images, "--ImageReader.camera_model", "OPENCV", "--ImageReader.single_camera", video ? "1" : "0", "--SiftExtraction.use_gpu", gpu, "--SiftExtraction.num_threads", String(o.threads)]);
+    progress(0.12, "features");
+    if (video) await run([cfg.colmap, "sequential_matcher", "--database_path", db, "--SiftMatching.use_gpu", gpu, "--SequentialMatching.overlap", "15", "--SequentialMatching.loop_detection", cfg.vocabTree ? "1" : "0", ...(cfg.vocabTree ? ["--SequentialMatching.vocab_tree_path", cfg.vocabTree] : [])]);
+    else if (count <= cfg.exhaustiveUpTo || !cfg.vocabTree) await run([cfg.colmap, "exhaustive_matcher", "--database_path", db, "--SiftMatching.use_gpu", gpu]);
+    else await run([cfg.colmap, "vocab_tree_matcher", "--database_path", db, "--SiftMatching.use_gpu", gpu, "--VocabTreeMatching.vocab_tree_path", cfg.vocabTree]);
+    progress(0.2, "matching");
+    if (cfg.sfm === "glomap") await run([cfg.glomap, "mapper", "--database_path", db, "--image_path", images, "--output_path", sparse]);
+    else await run([cfg.colmap, "mapper", "--database_path", db, "--image_path", images, "--output_path", sparse, "--Mapper.num_threads", String(o.threads)]);
+    progress(0.28, "poses");
+    const models = existsSync(sparse) ? readdirSync(sparse).filter((d) => existsSync(path.join(sparse, d, "images.bin"))) : [];
+    if (!models.length) throw new InputError("No camera poses could be found: the pictures do not overlap enough, or are too blurred or too plain.");
+    // The largest model is the one to keep.
+    const best = models.map((d) => ({ d, n: readImages(readFileSync(path.join(sparse, d, "images.bin"))).length })).sort((a, b) => b.n - a.n)[0].d;
+    await run([cfg.colmap, "image_undistorter", "--image_path", images, "--input_path", path.join(sparse, best), "--output_path", undist, "--output_type", "COLMAP"]);
+  }
+  const model = path.join(undist, "sparse");
+  // Trainers read data/sparse/0; image_undistorter writes data/sparse.
+  const zero = path.join(model, "0");
+  if (!existsSync(path.join(zero, "images.bin"))) {
+    mkdirSync(zero, { recursive: true });
+    for (const f of ["cameras.bin", "images.bin", "points3D.bin"]) copyFileSync(path.join(model, f), path.join(zero, f));
+  }
+  return { data: undist, model: zero, total: count };
+}
+
+function parseArgs(argv) {
+  const o = {};
+  for (let i = 0; i < argv.length; i += 2) {
+    if (!argv[i].startsWith("--")) throw new Error(`Unexpected argument ${argv[i]}`);
+    o[argv[i].slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = argv[i + 1];
+  }
+  for (const k of ["method", "input", "inputKind", "goal", "output", "iterations", "maxSplats", "resolution", "shDegree", "videoFps", "threads"]) if (o[k] === undefined) throw new Error(`Missing --${k}`);
+  for (const k of ["iterations", "maxSplats", "resolution", "shDegree", "threads"]) o[k] = Number.parseInt(o[k], 10);
+  o.videoFps = Number(o.videoFps);
+  return o;
+}
+
+/** `--check`: can this method run here? Nothing is installed or changed. */
+function check(cfg, method) {
+  const m = cfg.methods[method];
+  const problems = [];
+  const values = { ...cfg, ...m };
+  const tryRun = (argv, what) => {
+    const r = spawnSync(argv[0], argv.slice(1), { encoding: "utf8", timeout: 45_000 });
+    if (r.error || r.status !== 0) {
+      problems.push(`${what} did not run (${(r.error?.message ?? r.stderr ?? "").trim().split("\n").slice(-1)[0]?.slice(0, 160) || `exit ${r.status}`}).`);
+      return null;
+    }
+    return `${r.stdout}${r.stderr}`.trim();
+  };
+  if (!m) return { ok: false, problems: [`No settings for ${method} in holo-worker.json.`] };
+  if (method !== "eogs-plus") {
+    tryRun([cfg.ffmpeg, "-version"], "ffmpeg");
+    if (cfg.sfm === "pycolmap") tryRun([cfg.python, "-c", "import pycolmap"], "pycolmap");
+    else tryRun([cfg.colmap, "help"], "COLMAP");
+    if (cfg.sfm === "glomap") tryRun([cfg.glomap, "-h"], "GLOMAP");
+  }
+  if (!m.train) problems.push(`Set the training command for ${method} in holo-worker.json.`);
+  if (m.train?.some((a) => a.includes("{repo}")) && !(m.repo && existsSync(m.repo))) problems.push(`Set "repo" for ${method} in holo-worker.json to its source folder.`);
+  const out = m.check ? tryRun(fill(m.check, values), method) : null;
+  let revision = m.revision || "";
+  if (!revision && m.repo && existsSync(path.join(m.repo, ".git"))) revision = spawnSync("git", ["-C", m.repo, "rev-parse", "--short=12", "HEAD"], { encoding: "utf8" }).stdout?.trim() ?? "";
+  const version = out ? out.split("\n").map((l) => l.trim()).filter(Boolean).pop()?.slice(0, 60) : undefined;
+  return { ok: problems.length === 0, tool: method, version, revision: revision || undefined, problems };
+}
+
+async function main() {
+  const argv = process.argv.slice(2);
+  const cfg = loadConfig();
+  if (argv[0] === "--check") {
+    // HOLO asks `--check --method <id>`: one worker program serves several methods.
+    const method = argv[1] === "--method" ? argv[2] : undefined;
+    console.log(JSON.stringify(method ? check(cfg, method) : { ok: false, problems: ["--check needs --method <id>."] }));
+    return;
+  }
+  const o = parseArgs(argv);
+  const m = cfg.methods[o.method];
+  if (!m?.train) throw new Error(`No training command for ${o.method} in holo-worker.json.`);
+  if (o.inputKind === "satellite") throw new InputError("This worker makes splats from ground captures. Satellite images need the satellite worker.");
+  const work = path.join(path.dirname(o.output), "work");
+  const images = path.join(work, "images");
+  mkdirSync(images, { recursive: true });
+  const all = listFiles(o.input);
+  const videos = all.filter((f) => VIDEO.test(f));
+  const fixes = new Map();
+  let source = null;
+  let frames = 0;
+  progress(0.01, "frames");
+  if (o.inputKind === "video") {
+    if (videos.length !== 1) throw new InputError(videos.length ? "Send one video per capture." : "The capture has no video.");
+    const list = await videoFrames(cfg, videos[0], images, o);
+    frames = list.length;
+    if (frames < 8) throw new InputError(`Only ${frames} different frames came out of the video: it is too short or the camera hardly moved.`);
+    const csv = all.find((f) => path.basename(f).toLowerCase() === "camera-gnss.csv");
+    const srt = all.find((f) => /\.srt$/i.test(f));
+    const track = csv ? parseGnssCsv(readFileSync(csv, "utf8")) : srt ? parseSrt(readFileSync(srt, "utf8")) : [];
+    if (track.length) {
+      source = csv ? "camera-gnss.csv" : "drone .SRT log";
+      for (const f of list) {
+        const p = positionAt(track, f.time);
+        if (p) fixes.set(f.name, p);
+      }
+    }
+  } else {
+    const photos = all.filter((f) => PHOTO.test(f));
+    if (photos.length < 3) throw new InputError("At least 3 photos are needed, from different places around the subject.");
+    const seen = new Set();
+    for (const f of photos) {
+      let name = path.basename(f);
+      while (seen.has(name)) name = `x${name}`;
+      seen.add(name);
+      copyFileSync(f, path.join(images, name));
+      if (/\.jpe?g$/i.test(name)) {
+        const gps = exifGps(readFileSync(f));
+        if (gps) fixes.set(name, gps);
+      }
+    }
+    frames = photos.length;
+    if (fixes.size) source = "photo EXIF GPS";
+  }
+  progress(0.05, "features");
+
+  const { data, model } = await sfm(cfg, images, work, o, o.inputKind === "video");
+  const cams = readImages(readFileSync(path.join(model, "images.bin")));
+  if (cams.length < Math.max(3, Math.ceil(frames * 0.2))) throw new InputError(`Only ${cams.length} of ${frames} pictures got a camera pose: they do not overlap enough, or are blurred.`);
+
+  let georef = null;
+  let georefNote = null;
+  if (source && o.goal !== "satellite") {
+    const g = georeference(cams, fixes, source);
+    if (g.reason) georefNote = g.reason;
+    else {
+      transformModel(model, g.T);
+      georef = g.georef;
+    }
+  }
+  progress(0.3, "train");
+
+  const train = path.join(work, "train");
+  mkdirSync(train, { recursive: true });
+  const values = { ...cfg, ...m, data, train, iterations: o.iterations, maxSplats: o.maxSplats, resolution: o.resolution, shDegree: o.shDegree, threads: o.threads };
+  await run(fill(m.train, values), {
+    cwd: m.repo || work,
+    onLine: (line) => {
+      // Trainers print "1234/30000" or "step 1234": map that onto the training share of the bar.
+      const hit = /(\d+)\s*\/\s*(\d+)/.exec(line) ?? /step[^\d]{0,3}(\d+)/i.exec(line);
+      if (!hit) return;
+      const done = Number(hit[1]);
+      const total = hit[2] ? Number(hit[2]) : o.iterations;
+      if (total === o.iterations && done <= total) progress(0.3 + 0.65 * (done / total), "train");
+    },
+  });
+  const plys = listFiles(train).filter((f) => f.endsWith(".ply")).sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
+  if (!plys.length) throw new Error(`${o.method} finished without writing a PLY in ${train}.`);
+  mkdirSync(o.output, { recursive: true });
+  copyFileSync(plys[0], path.join(o.output, "splats.ply"));
+  writeFileSync(
+    path.join(o.output, "provenance.json"),
+    JSON.stringify({ tool: o.method, version: check(cfg, o.method).version, poses: cfg.sfm === "glomap" ? "COLMAP features, GLOMAP mapper" : cfg.sfm === "pycolmap" ? "pycolmap" : "COLMAP", frames, registeredViews: cams.length, georefNote }),
+  );
+  if (georef) writeFileSync(path.join(o.output, "georef.json"), JSON.stringify(georef));
+  progress(1, "done");
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((e) => {
+    console.error(e instanceof Error ? e.message : String(e));
+    process.exit(e instanceof InputError ? 2 : 1);
+  });
+}

@@ -487,6 +487,16 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
           if (pv.fixture) report.items.unshift(checkItem("conversion", "warning", "splatFixture"));
           if (pv.generative) report.items.push(checkItem("conversion", "warning", "splatGenerative"));
           if (pv.licence === "research") report.items.push(checkItem("conversion", "warning", "splatResearchLicence", { method: pv.methodName }));
+          const g = pv.georef;
+          if (g) {
+            const m = (x: number) => x.toFixed(2);
+            report.items.push(checkItem("georef", "ok", "splatPlaced", { source: g.source, controls: g.controls.count, controlH: m(g.controls.horizontalRms), controlV: m(g.controls.verticalRms), datum: g.verticalDatum }));
+            report.items.push(
+              g.checks
+                ? checkItem("georef", "ok", "splatPlacedChecked", { checks: g.checks.count, checkH: m(g.checks.horizontalRms), checkV: m(g.checks.verticalRms), max: m(g.checks.max) })
+                : checkItem("georef", "warning", "splatPlacedUnchecked"),
+            );
+          } else if (pv.georefNote) report.items.push(checkItem("georef", "warning", "splatNotPlaced", { reason: pv.georefNote }));
         }
       }
 

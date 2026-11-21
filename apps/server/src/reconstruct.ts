@@ -61,8 +61,51 @@ export interface SplatProvenance {
   /** Frames or images the worker used, and how many got a camera pose, when it says so. */
   frames?: number;
   registeredViews?: number;
+  /** Placed from camera positions by the worker (georef.json), with its fit residuals. */
+  georef?: SplatGeoref;
+  /** Why the worker could not place it although the capture had camera positions. */
+  georefNote?: string;
   startedAt: string;
   finishedAt: string;
+}
+
+export interface Residuals {
+  count: number;
+  horizontalRms: number;
+  verticalRms: number;
+  max: number;
+}
+export interface SplatGeoref {
+  source: string;
+  origin: { lat: number; lon: number; height: number };
+  horizontalCrs: string;
+  verticalDatum: string;
+  metresPerModelUnit: number;
+  controls: Residuals;
+  checks: Residuals | null;
+}
+
+/**
+ * The worker's georef.json, checked: the splats are in metres east, north and up of `origin`
+ * (worker contract). Anything out of range or missing means the model is not placed.
+ */
+export async function readGeoref(file: string): Promise<SplatGeoref | null> {
+  const s = await stat(file).catch(() => null);
+  if (!s || s.size > 64 * 1024) return null;
+  try {
+    const j = JSON.parse(await readFile(file, "utf8")) as Record<string, any>;
+    const num = (v: unknown, lo: number, hi: number) => typeof v === "number" && Number.isFinite(v) && v >= lo && v <= hi;
+    const res = (r: any): Residuals | null =>
+      r && Number.isInteger(r.count) && r.count > 0 && num(r.horizontalRms, 0, 1e5) && num(r.verticalRms, 0, 1e5) && num(r.max, 0, 1e5) ? { count: r.count, horizontalRms: r.horizontalRms, verticalRms: r.verticalRms, max: r.max } : null;
+    const o = j.origin;
+    if (j.frame !== "enu" || !o || !num(o.lat, -90, 90) || !num(o.lon, -180, 180) || !num(o.height, -1000, 10000) || !num(j.metresPerModelUnit, 1e-9, 1e9)) return null;
+    const controls = res(j.controls);
+    if (!controls) return null;
+    const str = (v: unknown, d: string) => (typeof v === "string" && v.trim() ? v.trim().slice(0, 200) : d);
+    return { source: str(j.source, "camera positions"), origin: { lat: o.lat, lon: o.lon, height: o.height }, horizontalCrs: str(j.horizontalCrs, "EPSG:4326"), verticalDatum: str(j.verticalDatum, "not stated"), metresPerModelUnit: j.metresPerModelUnit, controls, checks: res(j.checks) };
+  } catch {
+    return null;
+  }
 }
 
 const VIDEO = /\.(mp4|mov|m4v|lrv|ts|mts|avi|mkv|webm)$/i;
@@ -198,14 +241,14 @@ export function runWorker(bin: string, args: string[], cwd: string, timeoutMs: n
 }
 
 /** The worker's provenance.json, reduced to the fields HOLO records; anything else is ignored. */
-async function readProvenance(file: string): Promise<{ tool?: string; toolVersion?: string; poses?: string; frames?: number; registeredViews?: number; fixture: boolean }> {
+async function readProvenance(file: string): Promise<{ tool?: string; toolVersion?: string; poses?: string; frames?: number; registeredViews?: number; georefNote?: string; fixture: boolean }> {
   const s = await stat(file).catch(() => null);
   if (!s || s.size > 64 * 1024) return { fixture: false };
   try {
     const j = JSON.parse(await readFile(file, "utf8")) as Record<string, unknown>;
     const str = (v: unknown) => (typeof v === "string" ? v.slice(0, 200) : undefined);
     const count = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : undefined);
-    return { tool: str(j.tool), toolVersion: str(j.version), poses: str(j.poses), frames: count(j.frames), registeredViews: count(j.registeredViews), fixture: j.fixture === true };
+    return { tool: str(j.tool), toolVersion: str(j.version), poses: str(j.poses), frames: count(j.frames), registeredViews: count(j.registeredViews), georefNote: str(j.georefNote), fixture: j.fixture === true };
   } catch {
     return { fixture: false };
   }
@@ -351,6 +394,7 @@ export function reconstructHandler(
       const outFile = path.join(output, made[0]!);
       const size = (await stat(outFile)).size;
       const prov = await readProvenance(path.join(output, "provenance.json"));
+      const georef = await readGeoref(path.join(output, "georef.json"));
       const gpu = [...hw.gpus].sort((a, b) => b.memoryGb - a.memoryGb)[0];
       const provenance: SplatProvenance = {
         method: method.id,
@@ -367,6 +411,8 @@ export function reconstructHandler(
         ...(prov.poses ? { poses: prov.poses } : {}),
         ...(prov.frames !== undefined ? { frames: prov.frames } : {}),
         ...(prov.registeredViews !== undefined ? { registeredViews: prov.registeredViews } : {}),
+        ...(georef ? { georef } : {}),
+        ...(prov.georefNote ? { georefNote: prov.georefNote } : {}),
         startedAt,
         finishedAt: new Date().toISOString(),
       };
@@ -382,9 +428,11 @@ export function reconstructHandler(
       const childReq = {
         files: [{ path: fileName, size }],
         ...(req.model ? { model: { ...req.model, name: many ? `${req.model.name} (${method.name})` : req.model.name } } : {}),
-        ...(req.placement ? { placement: req.placement } : {}),
-        ...(req.centre ? { centre: req.centre } : {}),
-        note: `${prov.fixture ? "TEST FIXTURE, not a real reconstruction. " : ""}Made with ${method.name} (${r.preset})${method.generative ? ", partly generated" : ""}.`,
+        // Placed by the worker from camera positions: metres east, north and up of its origin, a real size.
+        ...(georef
+          ? { placement: { lat: georef.origin.lat, lon: georef.origin.lon, height: georef.origin.height, scale: 1, upAxis: "z" as const, headingDeg: 0 }, centre: { lat: georef.origin.lat, lon: georef.origin.lon } }
+          : { ...(req.placement ? { placement: req.placement } : {}), ...(req.centre ? { centre: req.centre } : {}) }),
+        note: `${prov.fixture ? "TEST FIXTURE, not a real reconstruction. " : ""}Made with ${method.name} (${r.preset})${method.generative ? ", partly generated" : ""}${georef ? `, placed from ${georef.source}` : ""}.`,
         parentIngest: ingestId,
         method: method.id,
         provenance,

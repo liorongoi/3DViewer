@@ -198,6 +198,21 @@ describe("making splats from a capture", () => {
     expect((await app.inject({ method: "POST", url: "/api/captures/i-nothing/cancel" })).statusCode).toBe(404);
   }, 30_000);
 
+  it("places and sizes the result from the worker's camera-position fit, with its residuals as checks", async () => {
+    const zip = zipSync({ "gps_1.jpg": new Uint8Array([0xff, 0xd8, 1]), "gps_2.jpg": new Uint8Array([0xff, 0xd8, 2]) });
+    const ing = (await send([{ path: "photos.zip", data: zip }], { input: "photos", goal: "scene", methods: ["gsplat"], preset: "fast" })) as { id: string };
+    await drain();
+    const status = (await app.inject(`/api/captures/${ing.id}`)).json();
+    expect(status.state).toBe("ready");
+    const m = (await app.inject(`/api/models/${status.methods[0].modelId}`)).json();
+    // Metres east, north and up of the fit's origin: a real size, not floating.
+    expect(m.placement).toEqual({ lat: 31.7683, lon: 35.2137, height: 780.5, scale: 1, upAxis: "z", headingDeg: 0 });
+    const [kid] = await db.query<{ report: { items: { key?: string; params?: Record<string, unknown> }[] } }>("SELECT report FROM ingests WHERE request->>'parentIngest' = $1", [ing.id]);
+    const keys = kid!.report.items.map((i) => i.key);
+    expect(keys).toEqual(expect.arrayContaining(["splatPlaced", "splatPlacedChecked"]));
+    expect(kid!.report.items.find((i) => i.key === "splatPlacedChecked")!.params).toMatchObject({ checks: 4, checkH: "1.50", checkV: "2.90" });
+  });
+
   it("ends with the worker's reason when a capture cannot be used, without retrying it", async () => {
     const zip = zipSync({ "unusable_1.jpg": new Uint8Array([0xff, 0xd8, 1]) });
     const ing = (await send([{ path: "photos.zip", data: zip }], { input: "photos", goal: "scene", methods: ["gsplat"], preset: "fast" })) as { id: string };

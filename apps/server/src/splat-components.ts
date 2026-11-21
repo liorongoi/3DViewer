@@ -13,7 +13,7 @@ import type { Queryable } from "./db.ts";
  *   trained      a training with this method finished and was published on this server
  * HOLO never installs anything itself: GPU libraries stay out of the application's runtime.
  *
- * `<worker> --check` prints one JSON object on stdout:
+ * `<worker> --check --method <id>` prints one JSON object on stdout:
  *   { "ok": true|false, "tool": "...", "version": "...", "revision": "<git sha or release>",
  *     "problems": ["what is missing, in plain words"], "fixture": true when it is a test worker }
  */
@@ -52,12 +52,12 @@ export function parseCheck(stdout: string): CheckResult {
   }
 }
 
-function runCheck(bin: string, timeoutMs: number): Promise<CheckResult> {
+function runCheck(bin: string, method: string, timeoutMs: number): Promise<CheckResult> {
   return new Promise((resolve) => {
     // Same rules as a training run: no shell, a minimal environment, a time limit.
     const env: Record<string, string> = { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: tmpdir(), LANG: "C.UTF-8" };
     if (process.env.CUDA_VISIBLE_DEVICES) env.CUDA_VISIBLE_DEVICES = process.env.CUDA_VISIBLE_DEVICES;
-    execFile(bin, ["--check"], { timeout: timeoutMs, maxBuffer: 64 * 1024, env, cwd: tmpdir(), windowsHide: true }, (err, stdout) => {
+    execFile(bin, ["--check", "--method", method], { timeout: timeoutMs, maxBuffer: 64 * 1024, env, cwd: tmpdir(), windowsHide: true }, (err, stdout) => {
       const r = parseCheck(String(stdout ?? ""));
       if (err && r.environment === "failed") r.problems = [`The worker's check did not run: ${err.message.slice(0, 200)}`];
       resolve(r);
@@ -73,7 +73,7 @@ export function componentChecker(workers: Record<string, string>, opts: { timeou
     if (!bin) return null;
     const hit = cache.get(method);
     if (hit && Date.now() - hit.at < (opts.maxAgeMs ?? 600_000)) return hit.result;
-    const result = runCheck(bin, opts.timeoutMs ?? 60_000);
+    const result = runCheck(bin, method, opts.timeoutMs ?? 60_000);
     cache.set(method, { at: Date.now(), result });
     return result;
   };

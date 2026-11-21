@@ -48,4 +48,10 @@ rows.forEach((r, i) => r.forEach((v, k) => body.writeFloatLE(v, (i * props.lengt
 mkdirSync(opt("output"), { recursive: true });
 writeFileSync(path.join(opt("output"), "splats.ply"), Buffer.concat([head, body]));
 writeFileSync(path.join(opt("output"), "provenance.json"), JSON.stringify({ tool: "holo-test-fixture", version: "1", poses: "none (fixture)", frames: pictures.length, registeredViews: 0, fixture: true, args }));
+// A capture with a picture named gps* stands for one whose camera positions placed it (georef.json).
+if (pictures.some((f) => /^gps/.test(f)))
+  writeFileSync(
+    path.join(opt("output"), "georef.json"),
+    JSON.stringify({ frame: "enu", origin: { lat: 31.7683, lon: 35.2137, height: 780.5 }, source: "photo EXIF GPS", horizontalCrs: "EPSG:4326", verticalDatum: "as recorded by the camera", metresPerModelUnit: 2.5, controls: { count: 16, horizontalRms: 1.2, verticalRms: 2.4, max: 4.1 }, checks: { count: 4, horizontalRms: 1.5, verticalRms: 2.9, max: 4.4 } }),
+  );
 console.log("progress 1 done");
