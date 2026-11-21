@@ -139,7 +139,7 @@ jobs:
           name: server
           path: out
       - name: Software Vulkan for the self-test
-        run: sudo apt-get install -y mesa-vulkan-drivers libvulkan1
+        run: sudo apt-get update -q && sudo apt-get install -y mesa-vulkan-drivers libvulkan1
       - name: Install both as an ordinary user and train the sample
         run: bash scripts/check-training-install.sh "out/viewer-server-$VIEWER_VERSION-linux-x64.tar.gz" "out/holo-training-$VIEWER_VERSION-linux-x64.tar.gz"
       - uses: actions/upload-artifact@v4
