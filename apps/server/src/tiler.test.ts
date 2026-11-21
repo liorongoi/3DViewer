@@ -181,7 +181,8 @@ describe("tiler (WP 3.4)", () => {
     if (process.env.TILER_TIMING) console.log(`worker: ${took.toFixed(0)} ms, main thread held at most ${worst.toFixed(0)} ms`);
     expect(r.triangles).toBe(720_000);
     expect(progress.length).toBeGreaterThan(0);
-    expect(took).toBeGreaterThan(1000); // long enough to mean something
+    // Long enough to mean something against the 150 ms bound below; fast CI runners finish in under a second.
+    expect(took).toBeGreaterThan(500);
     // On the main thread the same job held it for over a second at a time.
     expect(worst).toBeLessThan(150);
     // Same tiles as on the main thread.
