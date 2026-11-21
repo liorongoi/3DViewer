@@ -555,6 +555,30 @@ export class ViewerEngine {
     return { size: size && size.every((v) => Number.isFinite(v) && v >= 0) ? size : null, modelMatrix: Matrix4.toArray(this.tileset.modelMatrix) };
   }
 
+  /** The open tileset's model matrix (column-major) when it is drawn in its own frame, placed here; else null. */
+  tilesetMatrix(): number[] | null {
+    const m = this.current.get();
+    return this.tileset && m?.source.localFrame ? Matrix4.toArray(this.tileset.modelMatrix) : null;
+  }
+
+  /**
+   * For exporting a placed GLB as 3D Tiles (SRS GS-31): the root transform that draws the GLB
+   * where it stands here (3D Tiles always turn glTF content from y-up to z-up, so a z-up file is
+   * turned back first), and the model's bounding sphere in that root's frame.
+   */
+  glbFrame(): { transform: number[]; sphere: [number, number, number, number] } | null {
+    const m = this.current.get();
+    if (!this.model || !m?.placement || m.source.georeferenced) return null;
+    const p = m.placement;
+    const out = placeMatrix(p, this.modelBaseHeight + this.groundOffset.get());
+    if (p.upAxis === "z") Matrix4.multiply(out, Matrix4.fromRotation(Matrix3.fromRotationX(-CMath.PI_OVER_TWO)), out);
+    const k = p.scale ?? 1;
+    if (k !== 1 && Number.isFinite(k) && k > 0) Matrix4.multiplyByUniformScale(out, k, out);
+    const bs = this.model.boundingSphere;
+    const c = Matrix4.multiplyByPoint(Matrix4.inverse(out, new Matrix4()), bs.center, new Cartesian3());
+    return { transform: Matrix4.toArray(out), sphere: [c.x, c.y, c.z, bs.radius / (k > 0 ? k : 1)] };
+  }
+
   boundingSphere(): BoundingSphere | null {
     if (this.tileset && this.splatFocus) {
       // Splats: the bounds without the floaters training leaves around a scene (SRS GS-15).

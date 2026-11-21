@@ -49,7 +49,7 @@ export interface PlacementSidecar {
   note: string;
 }
 
-type Tile = { content?: { uri?: string; url?: string }; children?: Tile[]; transform?: number[] };
+type Tile = { content?: { uri?: string; url?: string }; contents?: unknown[]; children?: Tile[]; transform?: number[]; implicitTiling?: unknown };
 
 const mul4 = (a: number[], b: number[]): number[] => {
   const o = new Array<number>(16).fill(0);
@@ -71,6 +71,9 @@ export async function tilesetZip(tilesetUrl: string, get: (url: string) => Promi
   const files: Record<string, Uint8Array> = {};
   let n = 0;
   const visit = async (t: Tile) => {
+    // What this cannot copy whole is refused, never downloaded in part (SRS GS-31).
+    if (t.implicitTiling) throw new Error("Tilesets with implicit tiling are not downloaded yet: the tiles are not all listed in tileset.json.");
+    if (t.contents) throw new Error("Tiles with several contents are not downloaded yet.");
     const c = t.content;
     const uri = c?.uri ?? c?.url;
     if (c && uri) {
@@ -78,7 +81,8 @@ export async function tilesetZip(tilesetUrl: string, get: (url: string) => Promi
       let name = plain ? decodeURIComponent(uri.split(/[?#]/)[0]!) : "";
       // A decoded name must still be a plain relative path, so the zip never holds "../" entries.
       if (name.split(/[\\/]/).some((p) => p === ".." || p === "") || /^[a-z]:/i.test(name)) name = "";
-      while (!name || files[name]) name = `local/${n++}.glb`;
+      const ext = /\.(glb|b3dm|i3dm|pnts|cmpt)(?=$|[?#])/i.exec(uri)?.[1]?.toLowerCase() ?? "glb";
+      while (!name || files[name]) name = `local/${n++}.${ext}`;
       if (/\.json$/i.test(name)) throw new Error("External tilesets inside a tileset are not downloaded.");
       files[name] = await get(new URL(uri, tilesetUrl).href);
       t.content = { uri: name.split("/").map(encodeURIComponent).join("/") };
@@ -95,5 +99,42 @@ export async function tilesetZip(tilesetUrl: string, get: (url: string) => Promi
 /** Several files as one uncompressed zip (the contents are compressed already). */
 export async function zipFiles(files: Record<string, Uint8Array>): Promise<Uint8Array> {
   const { zipSync } = await import("fflate");
+  return zipSync(files, { level: 0 });
+}
+
+/** Splits a GLB into a .gltf (JSON) and its .bin, the images staying inside the .bin as buffer views. */
+export function glbToGltf(glb: Uint8Array, name: string): Record<string, Uint8Array> {
+  const dv = new DataView(glb.buffer, glb.byteOffset, glb.byteLength);
+  if (glb.byteLength < 20 || dv.getUint32(0, true) !== 0x46546c67 || dv.getUint32(4, true) !== 2) throw new Error("This is not a glTF 2.0 binary (GLB) file.");
+  let o = 12;
+  let json: Record<string, unknown> | null = null;
+  let bin: Uint8Array | null = null;
+  while (o + 8 <= glb.byteLength) {
+    const len = dv.getUint32(o, true);
+    const type = dv.getUint32(o + 4, true);
+    const chunk = glb.subarray(o + 8, o + 8 + len);
+    if (type === 0x4e4f534a) json = JSON.parse(new TextDecoder().decode(chunk)) as Record<string, unknown>;
+    else if (type === 0x004e4942) bin = chunk;
+    o += 8 + len;
+  }
+  if (!json) throw new Error("The GLB has no JSON part.");
+  const buffers = (json.buffers as { uri?: string; byteLength: number }[] | undefined) ?? [];
+  if (buffers.some((b, i) => (i === 0 ? !!b.uri : !b.uri))) throw new Error("The GLB refers to buffers outside itself, so it cannot be split exactly.");
+  const out: Record<string, Uint8Array> = {};
+  if (bin && buffers[0]) {
+    buffers[0].uri = `${encodeURIComponent(name)}.bin`;
+    out[`${name}.bin`] = bin.slice(0, buffers[0].byteLength);
+  }
+  out[`${name}.gltf`] = new TextEncoder().encode(JSON.stringify(json));
+  return out;
+}
+
+/** A GLB as a one-tile 3D Tiles set, placed by `transform` (column-major), with its bounding sphere in that frame. */
+export async function glbTilesetZip(glb: Uint8Array, name: string, transform: number[], sphere: [number, number, number, number], sidecar?: PlacementSidecar): Promise<Uint8Array> {
+  const { zipSync } = await import("fflate");
+  const uri = `${name}.glb`;
+  const tileset = { asset: { version: "1.1", generator: "HOLO" }, geometricError: sphere[3] * 2, root: { transform, boundingVolume: { sphere }, geometricError: 0, refine: "ADD", content: { uri: encodeURIComponent(uri) } } };
+  const files: Record<string, Uint8Array> = { "tileset.json": new TextEncoder().encode(JSON.stringify(tileset)), [uri]: glb };
+  if (sidecar) files["holo-placement.json"] = new TextEncoder().encode(JSON.stringify(sidecar, null, 2));
   return zipSync(files, { level: 0 });
 }

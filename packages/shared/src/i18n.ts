@@ -383,6 +383,21 @@ type SplatShape<T> = { [K in keyof T]: T[K] extends string ? string : SplatShape
 
 export const en = {
   splat: enSplat,
+  exportModel: {
+    title: "Download",
+    original: "Original file",
+    glb: "GLB",
+    gltf: "glTF (zip)",
+    fbx: "FBX",
+    tiles: "3D Tiles (zip)",
+    preparing: "Preparing…",
+    placedNote: "Placed on the globe: the downloads carry the position in holo-placement.json.",
+    floatingNote: "Not placed: the downloads are in the model's own units.",
+    noFbx: "HOLO does not write FBX. FBX is offered only when the original was an FBX; Blender can turn the GLB into one.",
+    noTiles: "3D Tiles need the model to be placed on the globe first.",
+    noOriginal: "The original file is not kept for this model.",
+    failed: "The download did not finish: {{reason}}",
+  },
   video: {
     open: "Make a presentation video",
     title: "Presentation video (MP4)",
@@ -1394,6 +1409,21 @@ type Shape<T> = { [K in keyof T]: T[K] extends string ? string : Shape<T[K]> } &
 
 export const he: Shape<typeof en> = {
   splat: heSplat,
+  exportModel: {
+    title: "הורדה",
+    original: "הקובץ המקורי",
+    glb: "GLB",
+    gltf: "glTF (zip)",
+    fbx: "FBX",
+    tiles: "3D Tiles (zip)",
+    preparing: "מכין…",
+    placedNote: "ממוקם על הגלובוס: ההורדות כוללות את המיקום ב-holo-placement.json.",
+    floatingNote: "לא ממוקם: ההורדות ביחידות של המודל עצמו.",
+    noFbx: "HOLO לא כותב FBX. FBX מוצע רק כשהמקור היה FBX; Blender יכול להפוך את ה-GLB ל-FBX.",
+    noTiles: "כדי להוריד 3D Tiles צריך קודם למקם את המודל על הגלובוס.",
+    noOriginal: "הקובץ המקורי לא נשמר למודל הזה.",
+    failed: "ההורדה לא הסתיימה: {{reason}}",
+  },
   video: {
     open: "יצירת סרטון הצגה",
     title: "סרטון הצגה (MP4)",

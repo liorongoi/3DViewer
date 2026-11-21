@@ -16,6 +16,7 @@ import { useTabs } from "./useTabs";
 import { AnalysisTab } from "./AnalysisTab";
 import { SplatGeometryNote, SplatPanel } from "./SplatPanel";
 import { PresentationVideo } from "./PresentationVideo";
+import { ModelExport } from "./ModelExport";
 import { errorText } from "../server/error-text";
 
 /** Right panel: Measurements (MSR-04/05), Properties (UPL-04) and Fly-by tours. */
@@ -336,6 +337,7 @@ function PropertiesTab() {
         ))}
       </dl>
       {model.source.splats && <SplatPanel key={`${model.id}@${model.version}`} model={model} />}
+      {!model.source.splats && <ModelExport key={`export-${model.id}@${model.version}`} model={model} />}
       <PresentationVideo key={`video-${model.id}@${model.version}`} model={model} />
       <GroundOffset />
       <LodSection />
