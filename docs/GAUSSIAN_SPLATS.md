@@ -119,7 +119,7 @@ HOLO then puts the splats through a normal ingest: checked, scanned, tiled and p
 
 ## Installing a method
 
-HOLO installs nothing: GPU libraries stay out of the application. `workers/holo-splat-worker.mjs` is one worker program for every ground-capture method (Node only, no packages). It takes frames from a video (the sharpest of each three candidates, near-duplicates dropped), recovers camera poses with COLMAP, GLOMAP or pycolmap (`workers/sfm_pycolmap.py`), places the result when the capture carries camera positions, and runs the method's trainer.
+HOLO installs nothing: GPU libraries stay out of the application. `workers/holo-splat-worker.mjs` is one worker program for every ground-capture method (Node only, no packages). It takes frames from a video by how far the view has moved, not on a fixed clock (a frame each time the image has shifted 3% of its width, `frameStep` in holo-worker.json, and at least `--video-fps` a second; of the frames around each point the sharpest), so a car at 40 km/h gets nearly every frame and a slow walk a few a second, recovers camera poses with COLMAP, GLOMAP or pycolmap (`workers/sfm_pycolmap.py`), places the result when the capture carries camera positions, and runs the method's trainer.
 
 1. Install the trainer of each method you want (gsplat with PyTorch and CUDA, Brush, OpenSplat), ffmpeg, and COLMAP (with GLOMAP, or pycolmap in the same Python).
 2. Copy `workers/holo-worker.example.json` to `workers/holo-worker.json` and set the paths of this machine. EOGS++ has no fixed command: set its `train` (and `check`) from the release you install.

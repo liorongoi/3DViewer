@@ -3,8 +3,8 @@
 //
 // One program for every ground-capture method. HOLO's server starts it with discrete arguments
 // (apps/server/src/reconstruct.ts, worker contract); it
-//   1. takes frames from a video (a fixed rate, near-duplicate frames dropped so views stay
-//      diverse) or uses the photos as they are,
+//   1. takes frames from a video by how far the view moved (dense when the camera moves fast,
+//      sparse when slow, the sharpest near each point) or uses the photos as they are,
 //   2. recovers camera poses with COLMAP (or GLOMAP for the global step, or pycolmap),
 //   3. when the capture carries camera positions (photo EXIF GPS, a drone .SRT, or
 //      camera-gnss.csv beside a video), fits the reconstruction to them and moves it into a local
@@ -30,6 +30,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 /** Defaults; holo-worker.json overrides any of them. Templates use {name} for the values below. */
 export const DEFAULTS = {
   ffmpeg: "ffmpeg",
+  /** A video frame is kept once the view has moved this share of the image width (3%). */
+  frameStep: 0.03,
   /** "colmap" (the colmap program), "glomap" (colmap for features, glomap for the global mapper), or "pycolmap" (python with pycolmap). */
   sfm: "colmap",
   colmap: "colmap",
@@ -478,48 +480,153 @@ const VIDEO = /\.(mp4|mov|m4v|lrv|ts|mts|avi|mkv|webm)$/i;
 const PHOTO = /\.(jpe?g|png|tiff?|webp)$/i;
 
 /**
- * Frames from a video: three candidates per wanted frame, near-duplicates dropped (a camera
- * standing still), and of each three the sharpest kept, so that motion blur from a fast turn does
- * not cost a view. ffmpeg's blurdetect scores each candidate (lower is sharper).
+ * Frames from a video, picked by how far the view has moved, not by a fixed clock: a walk at
+ * 1 m/s and a car at 40 km/h need very different rates. Every frame is looked at small; a frame is
+ * kept once the image has moved `frameStep` of its width since the last kept one (or after
+ * 1/videoFps seconds at most), and of the frames around that point the sharpest is kept, by
+ * ffmpeg's blurdetect (lower is sharper). Then only the kept frames are written, at full size.
  */
-async function videoFrames(cfg, video, dir, o) {
-  const cand = path.join(dir, "..", "candidates");
-  mkdirSync(cand, { recursive: true });
+export async function videoFrames(cfg, video, dir, o) {
   mkdirSync(dir, { recursive: true });
-  const rate = o.videoFps * 3;
+  const work = path.join(dir, "..", "candidates");
+  mkdirSync(work, { recursive: true });
+  const scores = path.join(work, "blur.txt");
+  const W = 192;
+  const H = 108;
+  // Pass 1: blur score of every frame at 640 px, and a 192×108 grey copy for motion.
+  const motion = [];
+  let prev = null;
+  await new Promise((resolve, reject) => {
+    const child = spawn(cfg.ffmpeg, ["-hide_banner", "-loglevel", "error", "-i", video, "-an", "-vf", `scale=640:-2,blurdetect,metadata=mode=print:key=lavfi.blurdetect.blur:file=${scores.replace(/([\\:'])/g, "\\$1")},scale=${W}:${H},format=gray`, "-fps_mode", "passthrough", "-f", "rawvideo", "pipe:1"], { stdio: ["ignore", "pipe", "pipe"] });
+    const stop = () => child.kill("SIGTERM");
+    process.once("SIGTERM", stop);
+    let buf = Buffer.alloc(0);
+    let err = "";
+    child.stdout.on("data", (chunk) => {
+      buf = Buffer.concat([buf, chunk]);
+      while (buf.length >= W * H) {
+        const f = new Uint8Array(buf.subarray(0, W * H));
+        buf = buf.subarray(W * H);
+        motion.push(prev ? frameMotion(prev, f, W, H) : 0);
+        prev = f;
+      }
+    });
+    child.stderr.on("data", (c) => (err = (err + c).slice(-2000)));
+    child.on("error", reject);
+    child.on("close", (code) => {
+      process.off("SIGTERM", stop);
+      code === 0 ? resolve() : reject(new Error(`ffmpeg stopped (exit ${code}): ${err.trim().slice(-300)}`));
+    });
+  });
+  const { blur, times } = parseFrameScores(existsSync(scores) ? readFileSync(scores, "utf8") : "");
+  const fps = times.length > 1 ? (times.length - 1) / (times[times.length - 1] - times[0] || 1) : 30;
+  const keep = selectByMotion(motion, blur, { step: (cfg.frameStep ?? 0.03) * W, maxGap: Math.max(1, Math.round(fps / Math.max(0.5, o.videoFps))) });
+  // Pass 2: only those frames, at the training size.
   const scale = `scale='if(gt(iw,ih),min(${o.resolution},iw),-2)':'if(gt(iw,ih),-2,min(${o.resolution},ih))'`;
-  const scores = path.join(cand, "blur.txt");
-  await run([cfg.ffmpeg, "-hide_banner", "-loglevel", "error", "-i", video, "-vf", `fps=${rate},mpdecimate=hi=64*24:lo=64*12:frac=0.5,${scale},blurdetect,metadata=mode=print:key=lavfi.blurdetect.blur:file=${scores.replace(/([\\:'])/g, "\\$1")}`, "-fps_mode", "passthrough", "-frame_pts", "1", "-q:v", "2", path.join(cand, "frame_%06d.jpg")]);
-  const blur = parseBlur(existsSync(scores) ? readFileSync(scores, "utf8") : "", rate);
-  // With -frame_pts the number in a name counts 1/rate steps from the start of the video.
-  const all = readdirSync(cand).filter((f) => f.endsWith(".jpg")).map((f) => ({ name: f, step: Number(/(\d+)\.jpg$/.exec(f)[1]) }));
-  const out = pickSharpest(all, blur, 3).map((f) => ({ name: f.name, time: f.step / rate }));
-  for (const f of out) copyFileSync(path.join(cand, f.name), path.join(dir, f.name));
-  return out;
+  const script = path.join(work, "select.txt");
+  writeFileSync(script, `select='${keep.map((n) => `eq(n\\,${n})`).join("+")}',${scale}`);
+  await run([cfg.ffmpeg, "-hide_banner", "-loglevel", "error", "-i", video, "-an", "-filter_script:v", script, "-fps_mode", "passthrough", "-q:v", "2", path.join(work, "k_%06d.jpg")]);
+  const written = readdirSync(work).filter((f) => /^k_\d+\.jpg$/.test(f)).sort();
+  if (written.length !== keep.length) throw new Error(`ffmpeg wrote ${written.length} of the ${keep.length} frames picked.`);
+  return written.map((f, i) => {
+    const n = keep[i];
+    const name = `frame_${String(n).padStart(6, "0")}.jpg`;
+    copyFileSync(path.join(work, f), path.join(dir, name));
+    return { name, time: times[n] ?? n / fps };
+  });
 }
 
-/** blurdetect scores by frame step, from ffmpeg's metadata print ("pts_time:T" then "lavfi.blurdetect.blur=X"). */
-export function parseBlur(text, rate) {
-  const out = new Map();
-  let t = null;
+/**
+ * How far the view moved between two small grey frames, in pixels: block matching on a grid,
+ * textured blocks only (a dashboard or a blank wall says nothing), and the 75th percentile of the
+ * block shifts, so that forward motion (which spreads outwards) counts as well as a pan.
+ */
+export function frameMotion(a, b, w, h, block = 16, search = 6) {
+  const shifts = [];
+  for (let by = search; by + block + search <= h; by += block)
+    for (let bx = search; bx + block + search <= w; bx += block) {
+      let s = 0;
+      let s2 = 0;
+      for (let y = 0; y < block; y++)
+        for (let x = 0; x < block; x++) {
+          const v = a[(by + y) * w + bx + x];
+          s += v;
+          s2 += v * v;
+        }
+      const n = block * block;
+      if (s2 / n - (s / n) ** 2 < 40) continue;
+      let best = Infinity;
+      let bdx = 0;
+      let bdy = 0;
+      for (let dy = -search; dy <= search; dy++)
+        for (let dx = -search; dx <= search; dx++) {
+          let sad = 0;
+          // Stop early once this shift is already worse than the best one (ties still count).
+          for (let y = 0; y < block && sad <= best; y++) {
+            const ra = (by + y) * w + bx;
+            const rb = (by + y + dy) * w + bx + dx;
+            for (let x = 0; x < block; x++) sad += Math.abs(a[ra + x] - b[rb + x]);
+          }
+          if (sad < best || (sad === best && dx * dx + dy * dy < bdx * bdx + bdy * bdy)) {
+            best = sad;
+            bdx = dx;
+            bdy = dy;
+          }
+        }
+      shifts.push(Math.hypot(bdx, bdy));
+    }
+  if (shifts.length < 4) return 0;
+  shifts.sort((x, y) => x - y);
+  return shifts[Math.floor(shifts.length * 0.75)];
+}
+
+/**
+ * Which frames to keep: one whenever the motion since the last kept frame reaches `step` pixels,
+ * or `maxGap` frames have passed; around that point (±window) the sharpest frame wins.
+ * motion[i] is the movement from frame i-1 to frame i.
+ */
+export function selectByMotion(motion, blur, { step, maxGap, window = 2 }) {
+  const n = motion.length;
+  if (!n) return [];
+  // The sharpest frame in lo..hi; on a tie (or no scores) the one nearest `at`.
+  const sharpest = (lo, hi, at) => {
+    let best = Math.min(hi, Math.max(lo, at));
+    for (let j = lo; j <= hi; j++) {
+      const d = (blur.get(j) ?? Infinity) - (blur.get(best) ?? Infinity);
+      if (d < 0 || (d === 0 && Math.abs(j - at) < Math.abs(best - at))) best = j;
+    }
+    return best;
+  };
+  const keep = [sharpest(0, Math.min(n - 1, window), 0)];
+  let acc = 0;
+  for (let i = keep[0] + 1; i < n; i++) {
+    acc += motion[i] ?? 0;
+    if (acc >= step || i - keep[keep.length - 1] >= maxGap) {
+      const j = sharpest(Math.max(keep[keep.length - 1] + 1, i - window), Math.min(n - 1, i + window), i);
+      keep.push(j);
+      acc = 0;
+      for (let k = i + 1; k <= j; k++) acc += motion[k] ?? 0;
+      i = Math.max(i, j);
+    }
+  }
+  return keep;
+}
+
+/** blurdetect scores and times by frame number, from ffmpeg's metadata print ("frame:N ... pts_time:T" then "lavfi.blurdetect.blur=X"). */
+export function parseFrameScores(text) {
+  const blur = new Map();
+  const times = [];
+  let n = -1;
   for (const line of text.split(/\r?\n/)) {
-    const m = /pts_time:([\d.]+)/.exec(line);
-    if (m) t = Number(m[1]);
+    const m = /^frame:(\d+)\s.*pts_time:([\d.]+)/.exec(line);
+    if (m) {
+      n = Number(m[1]);
+      times[n] = Number(m[2]);
+    }
     const b = /lavfi\.blurdetect\.blur=([\d.]+)/.exec(line);
-    if (b && t !== null) out.set(Math.round(t * rate), Number(b[1]));
+    if (b && n >= 0) blur.set(n, Number(b[1]));
   }
-  return out;
-}
-
-/** Of each run of `group` consecutive steps, the frame with the lowest blur score (the first when unscored). */
-export function pickSharpest(frames, blur, group) {
-  const best = new Map();
-  for (const f of frames) {
-    const g = Math.floor(f.step / group);
-    const cur = best.get(g);
-    if (!cur || (blur.get(f.step) ?? Infinity) < (blur.get(cur.step) ?? Infinity)) best.set(g, f);
-  }
-  return [...best.values()].sort((a, b) => a.step - b.step);
+  return { blur, times };
 }
 
 async function sfm(cfg, images, work, o, video) {
