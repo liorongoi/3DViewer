@@ -1419,7 +1419,7 @@ export const he: Shape<typeof en> = {
     preparing: "מכין…",
     placedNote: "ממוקם על הגלובוס: ההורדות כוללות את המיקום ב-holo-placement.json.",
     floatingNote: "לא ממוקם: ההורדות ביחידות של המודל עצמו.",
-    noFbx: "HOLO לא כותב FBX. FBX מוצע רק כשהמקור היה FBX; Blender יכול להפוך את ה-GLB ל-FBX.",
+    noFbx: "HOLO לא כותב FBX. FBX מוצע רק כשהמקור היה FBX; תוכנת בלנדר יכולה להפוך את ה-GLB ל-FBX.",
     noTiles: "כדי להוריד 3D Tiles צריך קודם למקם את המודל על הגלובוס.",
     noOriginal: "הקובץ המקורי לא נשמר למודל הזה.",
     failed: "ההורדה לא הסתיימה: {{reason}}",
