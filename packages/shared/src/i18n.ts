@@ -383,6 +383,25 @@ type SplatShape<T> = { [K in keyof T]: T[K] extends string ? string : SplatShape
 
 export const en = {
   splat: enSplat,
+  video: {
+    open: "Make a presentation video",
+    title: "Presentation video (MP4)",
+    how: "One slow turn around the model from the view you see now. It is a separate file for showing people; the model here stays the reference.",
+    size: "Size",
+    length: "Length",
+    seconds: "{{n}} seconds",
+    declared: "{{w}} × {{h}}, {{fps}} frames a second, {{s}} seconds, one full turn",
+    making: "Drawing frames… {{p}}%",
+    make: "Make the video",
+    stop: "Stop",
+    stopped: "Stopped before the end. No video was saved.",
+    close: "Close",
+    done: "Saved {{name}}.",
+    saveDeclaration: "Save the camera path (JSON)",
+    noEncoder: "This browser cannot encode video. Use a current Chrome or Edge.",
+    noModel: "Open a model first.",
+    blank: "Frame {{frame}} stayed blank after drawing it again, so no video was saved. Wait for the model to load fully, then try again.",
+  },
   elev: {
     open: "Check heights against a DSM or DTM",
     title: "Heights against an elevation model",
@@ -1375,6 +1394,25 @@ type Shape<T> = { [K in keyof T]: T[K] extends string ? string : Shape<T[K]> } &
 
 export const he: Shape<typeof en> = {
   splat: heSplat,
+  video: {
+    open: "יצירת סרטון הצגה",
+    title: "סרטון הצגה (MP4)",
+    how: "סיבוב איטי אחד סביב המודל מהמבט שרואים עכשיו. זה קובץ נפרד להצגה לאנשים; המודל כאן נשאר המקור.",
+    size: "גודל",
+    length: "אורך",
+    seconds: "{{n}} שניות",
+    declared: "{{w}} × {{h}}, {{fps}} פריימים בשנייה, {{s}} שניות, סיבוב שלם אחד",
+    making: "מצייר פריימים… {{p}}%",
+    make: "יצירת הסרטון",
+    stop: "עצירה",
+    stopped: "נעצר לפני הסוף. לא נשמר סרטון.",
+    close: "סגירה",
+    done: "נשמר {{name}}.",
+    saveDeclaration: "שמירת מסלול המצלמה (JSON)",
+    noEncoder: "הדפדפן הזה לא יכול לקודד וידאו. השתמשו ב-Chrome או Edge עדכניים.",
+    noModel: "קודם פותחים מודל.",
+    blank: "פריים {{frame}} נשאר ריק גם אחרי ציור נוסף, ולכן לא נשמר סרטון. חכו שהמודל ייטען במלואו ונסו שוב.",
+  },
   elev: {
     open: "בדיקת גבהים מול DSM או DTM",
     title: "גבהים מול מודל גבהים",

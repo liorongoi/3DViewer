@@ -162,6 +162,34 @@ function geotiff4326(west, north, cell, w, h, value) {
   check(/Cells compared/.test(elevText), `heights compared with a DSM (${elevText.replace(/\s+/g, " ").slice(0, 200)})`);
   await page.screenshot({ path: path.join(out, "8b-elevation.png") });
 
+  // A presentation video (SRS GS-24): 4 seconds, played back outside HOLO with ffprobe/ffmpeg.
+  // A software GPU draws a full window slowly: draw the frames small (they are scaled to the video's size).
+  await page.setViewportSize({ width: 800, height: 450 });
+  await page.getByTestId("video-open").click();
+  await page.getByTestId("video-seconds").selectOption("4");
+  const [vid] = await Promise.all([page.waitForEvent("download", { timeout: 300000 }), page.getByTestId("video-make").click()]);
+  const mp4 = path.join(out, vid.suggestedFilename());
+  await vid.saveAs(mp4);
+  const { execFileSync } = require("child_process");
+  try {
+    const probe = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries", "stream=width,height,codec_name,nb_read_frames,avg_frame_rate:format=duration", "-of", "json", mp4]).toString());
+    const st = probe.streams[0];
+    check(st.width === 1280 && st.height === 720 && Number(st.nb_read_frames) === 120 && Math.abs(Number(probe.format.duration) - 4) < 0.1, `the MP4 plays outside HOLO: ${st.codec_name} ${st.width}x${st.height}, ${st.nb_read_frames} frames, ${Number(probe.format.duration).toFixed(2)} s`);
+    const gray = execFileSync("ffmpeg", ["-v", "error", "-i", mp4, "-vf", "scale=32:18,format=gray", "-f", "rawvideo", "-"], { maxBuffer: 1 << 26 });
+    let blank = 0;
+    for (let f = 0; f < gray.length / 576; f++) {
+      const px = gray.subarray(f * 576, (f + 1) * 576);
+      const mean = px.reduce((a, b) => a + b, 0) / 576;
+      const sd = Math.sqrt(px.reduce((a, b) => a + (b - mean) ** 2, 0) / 576);
+      if (sd < 1.5) blank++;
+    }
+    check(blank === 0, `no blank frames (${blank} of ${gray.length / 576})`);
+    execFileSync("ffmpeg", ["-v", "error", "-y", "-i", mp4, "-vf", "select=eq(n\\,0)+eq(n\\,60),scale=640:-2,tile=2x1", "-frames:v", "1", path.join(out, "10-video-frames.png")]);
+  } catch (e) {
+    check(false, `ffprobe/ffmpeg could read the video (${e.message.slice(0, 200)})`);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+
   // Side by side: the sized version on the left, the floating first version on the right.
   await page.getByTestId("splat-panel").getByTestId("compare-pick").selectOption("1");
   await page.getByTestId("compare-overlay").waitFor({ timeout: 60000 });

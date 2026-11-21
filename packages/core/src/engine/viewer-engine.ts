@@ -567,6 +567,44 @@ export class ViewerEngine {
 
   // ---------- camera ----------
 
+  /**
+   * A presentation orbit (SRS GS-24): where the camera stands now, as heading, pitch and distance
+   * around the model's centre. `orbitTo` turns the camera around that centre by a share of a full
+   * turn, and `stillFrame` draws until the tiles and the splat sort have settled.
+   */
+  orbitStart(): { heading: number; pitch: number; range: number } | null {
+    const bs = this.boundingSphere();
+    if (!bs) return null;
+    const cam = this.widget.camera;
+    // Far enough that the whole model stays in frame all the way round.
+    const fov = (cam.frustum as { fov?: number }).fov ?? Math.PI / 3;
+    const range = Math.max(Cartesian3.distance(cam.positionWC, bs.center), (bs.radius / Math.sin(fov / 2)) * 1.1);
+    return { heading: cam.heading, pitch: Math.min(-0.15, cam.pitch), range };
+  }
+
+  orbitTo(start: { heading: number; pitch: number; range: number }, turn: number): void {
+    const bs = this.boundingSphere();
+    if (!bs) return;
+    const cam = this.widget.camera;
+    cam.lookAt(bs.center, new HeadingPitchRange(start.heading + turn * 2 * Math.PI, start.pitch, start.range));
+    cam.lookAtTransform(Matrix4.IDENTITY);
+  }
+
+  /** Draws until the view is complete (tiles loaded, splats sorted), at most `maxFrames` times; returns the canvas. */
+  async stillFrame(maxFrames = 120): Promise<HTMLCanvasElement> {
+    const scene = this.widget.scene;
+    for (let i = 0; i < maxFrames; i++) {
+      this.widget.render();
+      const tilesDone = (!this.tileset || this.tileset.tilesLoaded) && (!this.compareSet || this.compareSet.tilesLoaded);
+      const busy = (this.tileset && splatsBusy(this.tileset)) || (this.compareSet && splatsBusy(this.compareSet));
+      // Returned in the same task as the draw, so the canvas still holds this frame for the caller.
+      if (tilesDone && !busy && i >= 1) return scene.canvas;
+      await new Promise((r) => setTimeout(r, 8));
+    }
+    this.widget.render();
+    return scene.canvas;
+  }
+
   async home(duration = 1.2): Promise<void> {
     const bs = this.boundingSphere();
     if (!bs) return this.flyHome(duration);
