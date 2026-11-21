@@ -11,6 +11,7 @@ export { parseGlb, SUPPORTED_GLTF_EXTENSIONS } from "./gltf";
 export { parseMetadataXml } from "./sidecar";
 export { splatLoader } from "./splat";
 export { placementFromGrid, type GridPosition, type Placement } from "../geo/place";
+export { converter, converterForEpsg, epsgDef, type CrsConverter } from "../geo/crs";
 
 /** FBX is read on the server (FBX2glTF); the browser only recognises it. */
 const fbxLoader: LoaderPlugin = {

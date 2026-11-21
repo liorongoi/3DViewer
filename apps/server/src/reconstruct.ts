@@ -12,6 +12,7 @@ import { problem } from "./errors.ts";
 import { writeTrainingLog } from "./training-log.ts";
 import { componentChecker, componentStates } from "./splat-components.ts";
 import { satellitePreflight } from "./satellite.ts";
+import { prepareGroundControl } from "./ground-control.ts";
 
 /**
  * Making Gaussian splats from a capture (docs/GAUSSIAN_SPLATS.md, "Making a splat").
@@ -26,7 +27,7 @@ import { satellitePreflight } from "./satellite.ts";
  * Worker contract: the worker is started without a shell, with discrete arguments
  *   --method <id> --input <dir> --input-kind video|photos|satellite --goal <goal> --output <dir>
  *   --preset fast|balanced|high --iterations N --max-splats N --resolution N --sh-degree N
- *   --video-fps N --threads N
+ *   --video-fps N --threads N [--ground-control <file>]
  * and a minimal environment (PATH, HOME, LANG, CUDA_VISIBLE_DEVICES). It prints lines
  * "progress <0..1> <stage>" on stdout, writes exactly one of output/splats.ply or
  * output/splats.spz, and may write output/provenance.json ({ tool, version, poses, frames,
@@ -383,6 +384,16 @@ export function reconstructHandler(
         if (scanned.severity === "error") throw new PermanentError(scanned.title);
       }
 
+      // Surveyed ground control (gcp_list.txt): checked now, so a bad file fails before training.
+      const gcpFile = path.join(work, "ground-control.json");
+      let gcp: Awaited<ReturnType<typeof prepareGroundControl>> = null;
+      try {
+        gcp = await prepareGroundControl(input, await listFiles(input), gcpFile);
+      } catch (e) {
+        throw new PermanentError(e instanceof Error ? e.message : String(e));
+      }
+      if (gcp) note(`ground control: ${gcp.points.length} points, ${gcp.points.reduce((s, p) => s + p.observations.length, 0)} sightings, ${gcp.crs}`);
+
       const hw = await opts.hardware();
       const settings = presetSettings(method, r.preset, hw);
       const args = [
@@ -398,6 +409,7 @@ export function reconstructHandler(
         "--sh-degree", String(settings.shDegree),
         "--video-fps", String(settings.videoFps),
         "--threads", String(settings.threads),
+        ...(gcp ? ["--ground-control", gcpFile] : []),
       ];
       const startedAt = new Date().toISOString();
       const g = [...hw.gpus].sort((a, b) => b.memoryGb - a.memoryGb)[0];

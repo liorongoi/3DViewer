@@ -6,7 +6,9 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   applySim,
+  controlPlacement,
   DEFAULTS,
+  pixelRay,
   exifGps,
   exportStep,
   fill,
@@ -537,5 +539,104 @@ fs.writeFileSync(p.join(train, "holo-eogs.json"), JSON.stringify({ views: 3 }));
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("surveyed ground control points", () => {
+  // A small rotation matrix and its quaternion (w, x, y, z), as COLMAP stores camera poses.
+  const lookAt = (c: V3, target: V3): number[][] => {
+    const z = target.map((v, i) => v - c[i]!);
+    const n = Math.hypot(...z);
+    const zz = z.map((v) => v / n);
+    let x = [zz[1]! * 1 - zz[2]! * 0, zz[2]! * 0 - zz[0]! * 1, 0];
+    const xn = Math.hypot(...x);
+    x = x.map((v) => v / xn);
+    const y = [zz[1]! * x[2]! - zz[2]! * x[1]!, zz[2]! * x[0]! - zz[0]! * x[2]!, zz[0]! * x[1]! - zz[1]! * x[0]!];
+    return [x, y, zz];
+  };
+  const quat = (R: number[][]): number[] => {
+    const w = Math.sqrt(Math.max(0, 1 + R[0]![0]! + R[1]![1]! + R[2]![2]!)) / 2;
+    return [w, (R[2]![1]! - R[1]![2]!) / (4 * w), (R[0]![2]! - R[2]![0]!) / (4 * w), (R[1]![0]! - R[0]![1]!) / (4 * w)];
+  };
+  // An OPENCV camera with real lens distortion: fx, fy, cx, cy, k1, k2, p1, p2.
+  const cam = { model: 4, width: 4000, height: 3000, params: [3000, 3010, 2001, 1498, -0.12, 0.05, 0.001, -0.0007] };
+  const project = (R: number[][], c: V3, X: V3): [number, number] => {
+    const d = [X[0] - c[0], X[1] - c[1], X[2] - c[2]];
+    const p = R.map((r) => r[0]! * d[0]! + r[1]! * d[1]! + r[2]! * d[2]!);
+    const u = p[0]! / p[2]!;
+    const v = p[1]! / p[2]!;
+    const [fx, fy, cx, cy, k1, k2, p1, p2] = cam.params as [number, number, number, number, number, number, number, number];
+    const r2 = u * u + v * v;
+    const rad = 1 + k1 * r2 + k2 * r2 * r2;
+    const ud = u * rad + 2 * p1 * u * v + p2 * (r2 + 2 * u * u);
+    const vd = v * rad + 2 * p2 * u * v + p1 * (r2 + 2 * v * v);
+    return [fx * ud + cx, fy * vd + cy];
+  };
+
+  it("undoes the lens distortion of a pixel", () => {
+    const [px, py] = project([[1, 0, 0], [0, 1, 0], [0, 0, 1]], [0, 0, 0], [0.31, -0.22, 1]);
+    const ray = pixelRay(cam, px, py)!;
+    expect(ray[0]).toBeCloseTo(0.31, 9);
+    expect(ray[1]).toBeCloseTo(-0.22, 9);
+  });
+
+  it("places a model from points surveyed on the ground, with leave-one-out checks", () => {
+    // The model's frame: the ground turned, shrunk to a third and moved, as pose software leaves it.
+    const truth: Sim = { s: 3, R: [[0, -1, 0], [0.6, 0, -0.8], [0.8, 0, 0.6]], t: [12, -4, 30] };
+    const origin = { lat: 31.77, lon: 35.21, height: 760 };
+    const enuPts: V3[] = [[-20, -15, 0.4], [25, -18, 1.2], [22, 20, -0.3], [-18, 24, 2.1], [2, 3, 6.5]];
+    // Model coordinates of a ground point: the inverse of the truth.
+    const inv = (y: V3): V3 => {
+      const d = [y[0] - truth.t[0], y[1] - truth.t[1], y[2] - truth.t[2]];
+      return [0, 1, 2].map((i) => (truth.R[0]![i]! * d[0]! + truth.R[1]![i]! * d[1]! + truth.R[2]![i]! * d[2]!) / truth.s) as V3;
+    };
+    const ground = enuPts;
+    // Survey positions of the points, from their east-north-up offsets around the origin.
+    const surveyed = ground.map((e) => {
+      const o = toEcef(origin.lat, origin.lon, origin.height);
+      const p = (origin.lat * Math.PI) / 180;
+      const l = (origin.lon * Math.PI) / 180;
+      const ecef: V3 = [
+        o[0] - Math.sin(l) * e[0] - Math.sin(p) * Math.cos(l) * e[1] + Math.cos(p) * Math.cos(l) * e[2],
+        o[1] + Math.cos(l) * e[0] - Math.sin(p) * Math.sin(l) * e[1] + Math.cos(p) * Math.sin(l) * e[2],
+        o[2] + Math.cos(p) * e[1] + Math.sin(p) * e[2],
+      ];
+      return toGeodetic(ecef);
+    });
+    const centres: V3[] = [0, 1, 2, 3, 4, 5].map((k) => {
+      const a = (2 * Math.PI * k) / 6;
+      return inv([40 * Math.cos(a), 40 * Math.sin(a), 25]);
+    });
+    const middle = inv([0, 0, 0]);
+    const images = centres.map((c, k) => {
+      const R = lookAt(c, middle);
+      return { name: `IMG_${k}.JPG`, q: quat(R), centre: c, cameraId: 1, R };
+    });
+    const points = surveyed.map((g, j) => ({
+      name: `gcp${j}`,
+      lat: g.lat,
+      lon: g.lon,
+      height: g.height,
+      observations: images.map((im) => {
+        const [x, y] = project(im.R, im.centre, inv(ground[j]!));
+        return { image: im.name, x, y };
+      }),
+    }));
+    const got = controlPlacement(images, new Map([[1, cam]]), { crs: "EPSG:2039", points });
+    if ("reason" in got) throw new Error(got.reason);
+    expect(got.georef.source).toBe("surveyed ground control points (5)");
+    expect(got.georef.metresPerModelUnit).toBeCloseTo(3, 4);
+    expect(got.georef.controls.horizontalRms).toBeLessThan(0.002);
+    expect(got.georef.checks!.count).toBe(5);
+    expect(got.georef.checks!.horizontalRms).toBeLessThan(0.002);
+    // A model point goes to where it was surveyed.
+    const back = applySim(got.T, inv(ground[2]!));
+    const want = toEnu(got.georef.origin, surveyed[2]!.lat, surveyed[2]!.lon, surveyed[2]!.height);
+    expect(Math.hypot(back[0] - want[0], back[1] - want[1], back[2] - want[2])).toBeLessThan(0.002);
+  });
+
+  it("says why when too few points are seen twice", () => {
+    const got = controlPlacement([], new Map(), { crs: "EPSG:4326", points: [{ name: "a", lat: 0, lon: 0, height: 0, observations: [{ image: "x.jpg", x: 1, y: 1 }] }] });
+    expect("reason" in got && got.reason).toMatch(/Only 0 ground control points/);
   });
 });
