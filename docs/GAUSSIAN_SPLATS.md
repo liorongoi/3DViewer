@@ -101,7 +101,11 @@ What the worker does:
 
 - It prints `progress <0..1> <stage>` lines on stdout.
 - It writes exactly one of `output/splats.ply` or `output/splats.spz`.
-- It may write `output/provenance.json` with `{ tool, version, poses, frames, registeredViews, fixture }`. Anything it leaves out is recorded as unknown, never guessed.
+- It may write `output/provenance.json` with `{ tool, version, poses, frames, registeredViews, fixture, georefNote }`. Anything it leaves out is recorded as unknown, never guessed.
+- It may write `output/georef.json` when it placed the splats from measured camera positions: `{ source, origin: {lat, lon, height}, horizontalCrs, verticalDatum, metresPerModelUnit, controls: {count, horizontalRms, verticalRms, max}, checks: {...} | null }`. The splats are then in metres east, north and up of `origin`. HOLO places the model there and shows the control and check residuals in the report; anything out of range means the model stays floating.
+- `--check --method <id>` prints one JSON line `{ ok, tool, version, revision, problems, fixture }` and exits. HOLO asks at most every ten minutes and shows the answer under "Set up" in Make a splat.
+
+A training can be stopped from Make a splat. HOLO marks the job cancelled, sends the worker SIGTERM (SIGKILL 10 s later), publishes nothing from it and removes its folders.
 
 How HOLO reads the exit code:
 
@@ -113,6 +117,19 @@ HOLO then puts the splats through a normal ingest: checked, scanned, tiled and p
 
 `apps/server/test-fixtures/splat-worker-fixture.mjs` is a **test fixture**, not a reconstruction. It writes a small box of splats and says `fixture: true`. Everything it makes is labelled "TEST FIXTURE, not a real reconstruction" in the version note, and carries a warning at the top of the check report.
 
+## Installing a method
+
+HOLO installs nothing: GPU libraries stay out of the application. `workers/holo-splat-worker.mjs` is one worker program for every ground-capture method (Node only, no packages). It takes frames from a video (the sharpest of each three candidates, near-duplicates dropped), recovers camera poses with COLMAP, GLOMAP or pycolmap (`workers/sfm_pycolmap.py`), places the result when the capture carries camera positions, and runs the method's trainer.
+
+1. Install the trainer of each method you want (gsplat with PyTorch and CUDA, Brush, OpenSplat), ffmpeg, and COLMAP (with GLOMAP, or pycolmap in the same Python).
+2. Copy `workers/holo-worker.example.json` to `workers/holo-worker.json` and set the paths of this machine. EOGS++ has no fixed command: set its `train` (and `check`) from the release you install.
+3. Point HOLO at the worker, one entry per method: `SPLAT_WORKERS=gsplat=/opt/viewer/workers/holo-splat-worker.mjs,brush=/opt/viewer/workers/holo-splat-worker.mjs`.
+4. Open Make a splat, then "Set up". Each method shows four states, each from its own evidence: **source** (the revision the worker reports), **environment** (its own check passed), **configured** (named in `SPLAT_WORKERS`) and **trained** (a training with it finished on this server; test-fixture runs are labelled). A method whose check fails cannot be chosen, and the problems it reported are shown.
+
+Camera positions it uses, in this order: GPS in the photos' EXIF, a drone `.SRT` beside the video, or `camera-gnss.csv` (`time,lat,lon,height` in seconds from the start of the video). Every fifth camera is held back and reported as an independent check. Heights are ellipsoidal (WGS 84) as the camera reports them; ground control points measured on the ground are not used yet.
+
+Satellite captures are checked before training (`apps/server/src/satellite.ts`): every image needs an RPC model (`.RPB`, `_RPC.TXT` or inside the TIFF), at least two views are needed, and when the metadata gives the view angles they must be at least 5° apart. A satellite video alone is refused: its frames are needed as images, each with its RPC.
+
 ## Traceability, GS-01 to GS-34
 
 Status: **Built** (code and tests named), **Partly** (what is missing is named), **Open** (not built), **Gate open** (built, but acceptance needs a run HOLO cannot do here).
@@ -121,14 +138,14 @@ Status: **Built** (code and tests named), **Partly** (what is missing is named),
 |---|---|---|---|---|
 | GS-01 | Partly | Make a splat accepts video (MP4, MOV, M4V, LRV, TS, MTS, AVI, MKV, WEBM), images (JPG, PNG, TIFF, HEIC, WEBP, DNG), sidecars and ZIP; a dropped folder is read with its files. Uses the existing resumable (tus) upload. | `reconstruct.test.ts` (zip of photos, refused file types); `scripts/check-capture.cjs` | A folder button in the wizard (drop works); folder vs ZIP equivalence test |
 | GS-02 | Built | Input family and goal are chosen in the wizard, checked against each method and stored with the capture and in each result's provenance. | `reconstruct.test.ts` (goal mismatch refused) | — |
-| GS-03 | Gate open | Workers per method; HOLO packages the splats as SPZ v2 in 3D Tiles and Cesium opens them. | Fixture worker end to end in tests and in the browser | Worker programs wrapping gsplat, Brush, OpenSplat with COLMAP/GLOMAP; a real CUDA training run |
+| GS-03 | Gate open | `workers/holo-splat-worker.mjs` wraps gsplat, gsplat 2DGS, Brush and OpenSplat with COLMAP, GLOMAP or pycolmap; HOLO packages the splats as SPZ v2 in 3D Tiles and Cesium opens them. | `splat-worker.test.ts`; fixture worker end to end in tests and in the browser; a 128 s 1080p phone video posed 159 of 256 frames with pycolmap (training not run: no GPU here) | A real CUDA training run on a target machine |
 | GS-04 | Partly | A result opens floating where the map is: model units, scale unverified. A real size can be set afterwards. | `check-capture.cjs` (floating, then 5 m width → scale 5.000) | A worker-supplied georeference overriding the preview placement |
 | GS-05 | Built | Same upload, quota, progress, retry and failure path; discrete arguments; failures publish nothing; the capture is scanned before a worker reads it. | `reconstruct.test.ts` (runner without a shell, timeout, exit 2 not retried) | A manual "try again" that reuses the upload |
-| GS-06 | Open | gsplat 2DGS is in the method list and chosen for surfaces. | `splat-methods.test.ts` | Its worker; pairing with a checked DSM/DTM; vertical error report |
+| GS-06 | Partly | gsplat 2DGS is chosen for surfaces. Properties of a splat model compare its heights with a GeoTIFF DSM or DTM (EPSG code required): mean, RMS, RMS after a vertical shift, 95th percentile and maximum, per raster cell, with floaters left out. | `elevation.test.ts`; `check-capture.cjs` (synthetic DSM) | A 2DGS run on real data against a checked DSM |
 | GS-07 | Partly | HOLO tiles large clouds into level-of-detail 3D Tiles (median splits, replace refinement, every splat kept in the leaves). CityGaussianV2 is listed. | `splat.test.ts` (tiling keeps every splat) | A multi-flight run; seams; memory budget |
-| GS-08 | Open | — | — | Camera GNSS or ground control fitting with CRS, datum and accuracy provenance |
-| GS-09 | Open | EOGS++ is listed; satellite captures accept RPC sidecars. | `splat-methods.test.ts` | Its worker; calibration preflight; elevation comparison |
-| GS-10 | Open | — | — | Satellite video calibration and baseline checks |
+| GS-08 | Partly | The worker fits the reconstruction to camera GNSS (EXIF, SRT or CSV) with a similarity transform, holds every fifth camera back as a check, trains in local ENU metres and writes `georef.json`; HOLO places the model and reports CRS, datum and residuals. | `splat-worker.test.ts`; `reconstruct.test.ts` (georef placement) | Ground control points measured on the ground; a real drone flight |
+| GS-09 | Partly | EOGS++ is listed; satellite captures are checked before training for an RPC model per image, two views or more, and view angles at least 5° apart; the result is recorded in provenance. | `satellite.test.ts`; `reconstruct.test.ts` | EOGS++ command on a real install; placing satellite output on the globe |
+| GS-10 | Partly | A satellite video without per-frame RPCs is refused with what to send instead; a video next to RPC images is ignored and said so. | `satellite.test.ts` | Satellite video frames with RPCs on real data |
 | GS-11 | Built | `.spz` and splat `.ply` upload in the browser, through the server and in the desktop open dialog; the original is kept byte for byte; local files are read, never changed. | `ingest.test.ts` (original byte for byte); `check-splats.cjs` | Reopen after a desktop restart on the target machine |
 | GS-12 | Built (adapted) | v2/v3 read; v4 recognised and refused; corrupt header, cut short, bytes after the splats, too many splats and gzip bombs refused before publishing. | `splat.test.ts` | v4 decoding (needs Zstandard) |
 | GS-13 | Built | v1 and SH degree 4 refused; PLY converted from the trainer's frame (COLMAP) to glTF consistently. | `splat.test.ts` (orientation by covariance) | — |
@@ -141,17 +158,17 @@ Status: **Built** (code and tests named), **Partly** (what is missing is named),
 | GS-20 | Partly | Measurements and Analysis show that splats are not a measured surface. | Browser (note shown for splat models) | Naming the geometric source on each result |
 | GS-21 | Built (existing) | Splat models use the same library lifecycle (status, versions, admin delete). | Existing library tests | A splat-specific delete test |
 | GS-22 | Partly | The splat decoder ships inside the app (no network); methods without a worker are labelled "Not installed on this server" and cannot be chosen; no credentials in URLs. | Wizard screenshot | Offline reopen test on the desktop build |
-| GS-23 | Partly | `SPLAT_WORKERS` and `SPLAT_TIMEOUT_HOURS` in `docs/OPERATIONS.md` and `deploy/viewer.env.example`. | — | A worker installation guide per method and platform |
-| GS-24 | Open | — | — | Presentation MP4 export |
+| GS-23 | Built | `SPLAT_WORKERS` and `SPLAT_TIMEOUT_HOURS` in `docs/OPERATIONS.md` and `deploy/viewer.env.example`; "Installing a method" above; `workers/holo-worker.example.json`. | — | Per-platform install notes once run on the target machines |
+| GS-24 | Built | Properties, "Make a presentation video": one turn around the model as an MP4 (H.264, or VP9 where no H.264 encoder), 720p or 1080p, 4 to 20 s at 30 fps, each frame drawn only when the view is complete and refused when blank, with a "not a measurement" caption; the camera path can be saved as JSON. | `check-capture.cjs` (ffprobe size, frame count, no blank frames) | — |
 | GS-25 | Built | Cards for input and goal, a method dropdown with short labels, an "About" note for each, Fast/Balanced/High. | `check-capture.cjs` screenshots | Small-screen review |
 | GS-26 | Built | Deterministic recommendation by input, goal, hardware and installed workers, with reasons; an uninstalled better method is named, never claimed runnable. | `splat-methods.test.ts` (8 cases) | — |
 | GS-27 | Built | Up to three methods per capture, queued in one transaction; incompatible or uninstalled ones refused before any byte is sent; each result has its own method, preset, job and version. A rerun of a method that already handed over only tidies up. | `reconstruct.test.ts` | — |
-| GS-28 | Partly | Versions compared with the version picker from the same viewpoint; the previous scene is closed. | Existing version tests | Side-by-side view |
+| GS-28 | Built | Side by side: a splat model is compared with another version through a draggable divider, both from the same viewpoint, labelled with method and version. | `check-capture.cjs` (screenshot) | — |
 | GS-29 | Built (gate open) | CPU, RAM, NVIDIA name, total and free memory and driver, Apple silicon; presets fitted to free memory. | `reconstruct.test.ts`, `splat-methods.test.ts` | RTX A4000, RTX 4000 Ada and L40S on real machines |
-| GS-30 | Partly | One training at a time per server; each job's temporary folders are removed. | `reconstruct.test.ts` | Cancelling a training; memory measurements |
-| GS-31 | Partly | Splats: original, SPZ, 3D Tiles zip. | `check-capture.cjs` downloads | One export module for GLB, glTF and FBX models |
+| GS-30 | Built | One training at a time per server; a training can be stopped (SIGTERM, then SIGKILL), publishes nothing, and its folders are removed. | `reconstruct.test.ts` (cancel) | Memory measurements on target machines |
+| GS-31 | Built | Splats: original, SPZ, 3D Tiles zip. Meshes and tilesets: original, GLB and glTF zips with `holo-model.json`, 3D Tiles (a placed GLB in a one-tile tileset; a tileset copied whole or refused). FBX only when the original was FBX: HOLO does not write FBX. | `export-models.test.ts`; `check-capture.cjs` downloads | — |
 | GS-32 | Built | The 3D Tiles zip keeps the tiles as published (Gaussian extensions intact); a placed model has its placement in the root transform once, plus `holo-placement.json`; a floating model has none. No mesh is invented from splats. | `splat.test.ts` (3D Tiles download) | — |
-| GS-33 | Partly | Each method records its upstream URL and licence; "installed" means a worker is configured. | `splat-methods.ts` | Exact source revision and separate download/install/validated states |
+| GS-33 | Built | Each method records its upstream URL and licence; "Set up" shows source revision, environment check, configured and trained as four separate states. | `reconstruct.test.ts` (install states, broken worker) | — |
 | GS-34 | Built | This table, the browser walkthroughs and the audit below. | This document | Native target-machine checks |
 
 ## Safety audit (20 November 2026)
@@ -196,5 +213,13 @@ Status: **Built** (code and tests named), **Partly** (what is missing is named),
 
 ## Checks to run again
 
-- `npx vitest run` in `packages/core`, `packages/shared` and `apps/server` (220, 23 and 127 tests at the time of writing), and `npx tsc --noEmit -p .` in each package and in `apps/web`.
-- `node scripts/check-splats.cjs` (a splat file through upload, size and framing) and `node scripts/check-capture.cjs` (Make a splat with the fixture worker, then a real size and the three downloads), in a real browser. How to start each is at the top of the script.
+- `npx vitest run` in `packages/core`, `packages/shared` and `apps/server` , and `npx tsc --noEmit -p .` in each package and in `apps/web`.
+- `node scripts/check-splats.cjs` (a splat file through upload, size and framing) and `node scripts/check-capture.cjs` (Make a splat with the fixture worker, a real size, the downloads, set-up states, the DSM check, the MP4 and side by side), in a real browser. How to start each is at the top of the script.
+
+## What is still open
+
+- No real GPU training has run yet: this environment has no GPU. The worker was run on a real 1080p phone video up to the poses (159 of 256 frames posed with pycolmap); the trainer step needs a CUDA machine or Brush on a Mac.
+- EOGS++ needs its training command set from the release installed.
+- Satellite results open floating; placing them on the globe from the RPCs is not done.
+- Placement uses camera GNSS only; ground control points measured on the ground are not used yet.
+- Frame rate, memory and training times on the target machines (RTX A4000, RTX 4000 Ada, L40S, Apple silicon) are not measured.
