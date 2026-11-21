@@ -222,4 +222,4 @@ Status: **Built** (code and tests named), **Partly** (what is missing is named),
 - EOGS++ needs its training command set from the release installed.
 - Satellite results open floating; placing them on the globe from the RPCs is not done.
 - Placement uses camera GNSS only; ground control points measured on the ground are not used yet.
-- Frame rate, memory and training times on the target machines (RTX A4000, RTX 4000 Ada, L40S, Apple silicon) are not measured.
+- Checks on the target machines (RTX A4000, RTX 4000 Ada, L40S, Apple silicon) are run by the owner on those machines, not tracked here.
