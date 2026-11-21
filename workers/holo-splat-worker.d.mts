@@ -22,3 +22,5 @@ export function georeference(
   fixes: Map<string, Fix>,
   source: string,
 ): { reason: string } | { T: Sim; georef: { origin: { lat: number; lon: number; height: number }; metresPerModelUnit: number; controls: Res; checks: Res | null; source: string } };
+export function parseBlur(text: string, rate: number): Map<number, number>;
+export function pickSharpest<F extends { step: number }>(frames: F[], blur: Map<number, number>, group: number): F[];

@@ -9,8 +9,10 @@ import {
   fill,
   fitSimilarity,
   georeference,
+  parseBlur,
   parseGnssCsv,
   parseSrt,
+  pickSharpest,
   positionAt,
   readImages,
   toEnu,
@@ -239,6 +241,17 @@ describe("COLMAP model", () => {
     expect(g.georef.checks!.horizontalRms).toBeLessThan(0.01);
     expect(g.georef.checks!.verticalRms).toBeLessThan(0.01);
     expect(georeference(cams.slice(0, 2), fixes, "x")).toEqual({ reason: expect.stringMatching(/at least 3/) });
+  });
+});
+
+describe("video frames", () => {
+  it("keeps the sharpest frame of each three, by ffmpeg's blur scores", () => {
+    const text = "frame:0    pts:0       pts_time:0\nlavfi.blurdetect.blur=5.2\nframe:1    pts:1       pts_time:0.166667\nlavfi.blurdetect.blur=2.1\nframe:2    pts:2       pts_time:0.333333\nlavfi.blurdetect.blur=3.9\nframe:3    pts:3       pts_time:0.5\nlavfi.blurdetect.blur=1.0\nframe:4    pts:5       pts_time:0.833333\nlavfi.blurdetect.blur=0.5\n";
+    const blur = parseBlur(text, 6);
+    expect([...blur.entries()]).toEqual([[0, 5.2], [1, 2.1], [2, 3.9], [3, 1], [5, 0.5]]);
+    const frames = [0, 1, 2, 3, 5, 7].map((step) => ({ name: `frame_${step}.jpg`, step }));
+    // Steps 0-2: step 1 is sharpest; 3-5: step 5; 6-8: step 7 has no score but is the only one.
+    expect(pickSharpest(frames, blur, 3).map((f) => f.step)).toEqual([1, 5, 7]);
   });
 });
 

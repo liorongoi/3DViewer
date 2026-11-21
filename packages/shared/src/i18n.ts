@@ -22,6 +22,10 @@ const enSplatChecks = {
   splatPlacedChecked: { title: "Checked against {{checks}} camera positions held back from the fit", detail: "{{checkH}} m across and {{checkV}} m in height (RMS), {{max}} m at most. Survey use still needs checkpoints measured on the ground." },
   splatPlacedUnchecked: { title: "No independent check of the placement", detail: "Fewer than 10 camera positions, so none could be held back to check the fit." },
   splatNotPlaced: { title: "Not placed from camera positions", detail: "{{reason}} It opens floating; you can give it a place and a real size in Properties." },
+  satViews: { title: "{{views}} satellite views, each with its camera model (RPC)" },
+  satViewsAngle: { title: "{{views}} satellite views, each with its camera model (RPC)", detail: "The widest angle between two views is {{angle}}°." },
+  satVideoIgnored: { title: "The video itself was not used", detail: "The frames sent with it, each with its RPC file, were." },
+  satNoAngles: { title: "The angle between the views was not checked", detail: "Their metadata (.IMD or .XML) does not say where the satellite looked from. Views from almost one direction give poor heights." },
 };
 
 const heSplatChecks: { [K in keyof typeof enSplatChecks]: { [P in keyof (typeof enSplatChecks)[K]]: string } } = {
@@ -45,6 +49,10 @@ const heSplatChecks: { [K in keyof typeof enSplatChecks]: { [P in keyof (typeof 
   splatPlacedChecked: { title: "נבדק מול {{checks}} מיקומי מצלמה שלא שימשו להתאמה", detail: "{{checkH}} מ' לרוחב ו-{{checkV}} מ' בגובה (RMS), לכל היותר {{max}} מ'. לשימוש מדידתי עדיין נדרשות נקודות בקרה שנמדדו בשטח." },
   splatPlacedUnchecked: { title: "אין בדיקה בלתי תלויה של המיקום", detail: "פחות מ-10 מיקומי מצלמה, ולכן לא היה אפשר להשאיר אף אחד בצד לבדיקה." },
   splatNotPlaced: { title: "לא מוקם לפי מיקומי המצלמה", detail: "{{reason}} הוא נפתח צף; אפשר לתת לו מקום וגודל אמיתי במאפיינים." },
+  satViews: { title: "{{views}} צילומי לוויין, לכל אחד מודל מצלמה (RPC)" },
+  satViewsAngle: { title: "{{views}} צילומי לוויין, לכל אחד מודל מצלמה (RPC)", detail: "הזווית הרחבה ביותר בין שני צילומים היא {{angle}}°." },
+  satVideoIgnored: { title: "הווידאו עצמו לא שימש", detail: "שימשו הפריימים שנשלחו איתו, כל אחד עם קובץ ה-RPC שלו." },
+  satNoAngles: { title: "הזווית בין הצילומים לא נבדקה", detail: "המטא-דאטה שלהם (.IMD או .XML) לא מציין מאיפה הלוויין צילם. צילומים כמעט מאותו כיוון נותנים גבהים חלשים." },
 };
 
 const enSplatErrors = {

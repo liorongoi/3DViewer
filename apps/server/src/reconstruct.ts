@@ -10,6 +10,7 @@ import { closed, text } from "./schemas.ts";
 import { Storage } from "./storage.ts";
 import { problem } from "./errors.ts";
 import { componentChecker, componentStates } from "./splat-components.ts";
+import { satellitePreflight } from "./satellite.ts";
 
 /**
  * Making Gaussian splats from a capture (docs/GAUSSIAN_SPLATS.md, "Making a splat").
@@ -65,6 +66,8 @@ export interface SplatProvenance {
   georef?: SplatGeoref;
   /** Why the worker could not place it although the capture had camera positions. */
   georefNote?: string;
+  /** What the satellite check found: calibrated views and the widest angle between them. */
+  satellite?: { views: number; convergenceDeg: number | null; warnings: ("satVideoIgnored" | "satNoAngles")[] };
   startedAt: string;
   finishedAt: string;
 }
@@ -110,7 +113,8 @@ export async function readGeoref(file: string): Promise<SplatGeoref | null> {
 
 const VIDEO = /\.(mp4|mov|m4v|lrv|ts|mts|avi|mkv|webm)$/i;
 const PHOTO = /\.(jpe?g|png|tiff?|heic|webp|dng)$/i;
-const SATELLITE = /\.(tiff?|ntf|nitf|jp2|rpb|rpc|xml|txt|json|geojson)$/i;
+// Satellite video is accepted so that the check can say what it needs (frames with RPC files).
+const SATELLITE = /\.(tiff?|ntf|nitf|jp2|rpb|rpc|imd|xml|txt|json|geojson|mp4|mov|m4v|ts|mts|avi|mkv|webm)$/i;
 const ACCEPT: Record<CaptureInput, RegExp> = { video: VIDEO, photos: PHOTO, satellite: SATELLITE };
 /** Files in a capture that are not the pictures themselves but may come with them (camera data, notes). */
 const SIDECAR = /\.(txt|json|csv|xml|srt|gpx|kml)$/i;
@@ -346,6 +350,13 @@ export function reconstructHandler(
       for (const u of ups) await unpack(storage.uploadPart(u.id), u.path, input);
       const pictures = (await listFiles(input)).filter((f) => ACCEPT[r.input].test(f) && !SIDECAR.test(f));
       if (!pictures.length) throw new PermanentError(`The upload has no ${r.input === "video" ? "video" : "images"} to make splats from.`);
+      // Satellite views need camera models and different directions: checked before any training.
+      let satellite: SplatProvenance["satellite"];
+      if (r.input === "satellite") {
+        const pf = await satellitePreflight(input, await listFiles(input));
+        if (pf.problem) throw new PermanentError(pf.problem);
+        satellite = { views: pf.views.length, convergenceDeg: pf.convergenceDeg === null ? null : Math.round(pf.convergenceDeg * 10) / 10, warnings: pf.warnings };
+      }
       // The capture is scanned before a worker opens it; the splats it makes are scanned again when published.
       if (opts.scan) {
         const scanned = await opts.scan(input);
@@ -412,6 +423,7 @@ export function reconstructHandler(
         ...(prov.frames !== undefined ? { frames: prov.frames } : {}),
         ...(prov.registeredViews !== undefined ? { registeredViews: prov.registeredViews } : {}),
         ...(georef ? { georef } : {}),
+        ...(satellite ? { satellite } : {}),
         ...(prov.georefNote ? { georefNote: prov.georefNote } : {}),
         startedAt,
         finishedAt: new Date().toISOString(),

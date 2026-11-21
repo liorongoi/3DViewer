@@ -59,6 +59,10 @@ export const DEFAULTS = {
       train: ["{program}", "{data}", "--total-steps", "{iterations}", "--max-splats", "{maxSplats}", "--sh-degree", "{shDegree}", "--max-resolution", "{resolution}", "--export-every", "{iterations}", "--export-path", "{train}", "--export-name", "splats.ply"],
       check: ["{program}", "--version"],
     },
+    // EOGS++ for satellite views: its command depends on the release installed, so the operator sets
+    // "train" (and "check") in holo-worker.json. {data} is the capture folder with the images and
+    // their RPC files, already checked by HOLO (apps/server/src/satellite.ts).
+    "eogs-plus": { repo: "", revision: "", train: null, check: null },
     opensplat: {
       program: "opensplat",
       revision: "",
@@ -473,14 +477,49 @@ const listFiles = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => 
 const VIDEO = /\.(mp4|mov|m4v|lrv|ts|mts|avi|mkv|webm)$/i;
 const PHOTO = /\.(jpe?g|png|tiff?|webp)$/i;
 
-/** Frames from a video at a fixed rate, dropping frames that barely differ (a camera standing still). */
+/**
+ * Frames from a video: three candidates per wanted frame, near-duplicates dropped (a camera
+ * standing still), and of each three the sharpest kept, so that motion blur from a fast turn does
+ * not cost a view. ffmpeg's blurdetect scores each candidate (lower is sharper).
+ */
 async function videoFrames(cfg, video, dir, o) {
+  const cand = path.join(dir, "..", "candidates");
+  mkdirSync(cand, { recursive: true });
   mkdirSync(dir, { recursive: true });
+  const rate = o.videoFps * 3;
   const scale = `scale='if(gt(iw,ih),min(${o.resolution},iw),-2)':'if(gt(iw,ih),-2,min(${o.resolution},ih))'`;
-  await run([cfg.ffmpeg, "-hide_banner", "-loglevel", "error", "-i", video, "-vf", `fps=${o.videoFps},mpdecimate=hi=64*24:lo=64*12:frac=0.5,${scale}`, "-fps_mode", "passthrough", "-frame_pts", "1", "-q:v", "2", path.join(dir, "frame_%06d.jpg")]);
-  const frames = readdirSync(dir).filter((f) => f.endsWith(".jpg")).sort();
-  // With -frame_pts the number in a name counts 1/fps steps from the start of the video.
-  return frames.map((f) => ({ name: f, time: Number(/(\d+)\.jpg$/.exec(f)[1]) / o.videoFps }));
+  const scores = path.join(cand, "blur.txt");
+  await run([cfg.ffmpeg, "-hide_banner", "-loglevel", "error", "-i", video, "-vf", `fps=${rate},mpdecimate=hi=64*24:lo=64*12:frac=0.5,${scale},blurdetect,metadata=mode=print:key=lavfi.blurdetect.blur:file=${scores.replace(/([\\:'])/g, "\\$1")}`, "-fps_mode", "passthrough", "-frame_pts", "1", "-q:v", "2", path.join(cand, "frame_%06d.jpg")]);
+  const blur = parseBlur(existsSync(scores) ? readFileSync(scores, "utf8") : "", rate);
+  // With -frame_pts the number in a name counts 1/rate steps from the start of the video.
+  const all = readdirSync(cand).filter((f) => f.endsWith(".jpg")).map((f) => ({ name: f, step: Number(/(\d+)\.jpg$/.exec(f)[1]) }));
+  const out = pickSharpest(all, blur, 3).map((f) => ({ name: f.name, time: f.step / rate }));
+  for (const f of out) copyFileSync(path.join(cand, f.name), path.join(dir, f.name));
+  return out;
+}
+
+/** blurdetect scores by frame step, from ffmpeg's metadata print ("pts_time:T" then "lavfi.blurdetect.blur=X"). */
+export function parseBlur(text, rate) {
+  const out = new Map();
+  let t = null;
+  for (const line of text.split(/\r?\n/)) {
+    const m = /pts_time:([\d.]+)/.exec(line);
+    if (m) t = Number(m[1]);
+    const b = /lavfi\.blurdetect\.blur=([\d.]+)/.exec(line);
+    if (b && t !== null) out.set(Math.round(t * rate), Number(b[1]));
+  }
+  return out;
+}
+
+/** Of each run of `group` consecutive steps, the frame with the lowest blur score (the first when unscored). */
+export function pickSharpest(frames, blur, group) {
+  const best = new Map();
+  for (const f of frames) {
+    const g = Math.floor(f.step / group);
+    const cur = best.get(g);
+    if (!cur || (blur.get(f.step) ?? Infinity) < (blur.get(cur.step) ?? Infinity)) best.set(g, f);
+  }
+  return [...best.values()].sort((a, b) => a.step - b.step);
 }
 
 async function sfm(cfg, images, work, o, video) {
@@ -516,6 +555,21 @@ async function sfm(cfg, images, work, o, video) {
     for (const f of ["cameras.bin", "images.bin", "points3D.bin"]) copyFileSync(path.join(model, f), path.join(zero, f));
   }
   return { data: undist, model: zero, total: count };
+}
+
+/** Satellite views go to the trainer as they are: it reads the RPC cameras itself, so there is no pose step. */
+async function satellite(cfg, m, o, work) {
+  const train = path.join(work, "train");
+  mkdirSync(train, { recursive: true });
+  progress(0.05, "train");
+  await run(fill(m.train, { ...cfg, ...m, data: o.input, train, iterations: o.iterations, maxSplats: o.maxSplats, resolution: o.resolution, shDegree: o.shDegree, threads: o.threads }), { cwd: m.repo || work, inputErrors: true });
+  const plys = listFiles(train).filter((f) => f.endsWith(".ply")).sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
+  if (!plys.length) throw new Error(`${o.method} finished without writing a PLY in ${train}.`);
+  mkdirSync(o.output, { recursive: true });
+  copyFileSync(plys[0], path.join(o.output, "splats.ply"));
+  const views = listFiles(o.input).filter((f) => /\.(tiff?|ntf|nitf|jp2)$/i.test(f)).length;
+  writeFileSync(path.join(o.output, "provenance.json"), JSON.stringify({ tool: o.method, version: check(cfg, o.method).version, poses: "RPC camera models", frames: views, registeredViews: views }));
+  progress(1, "done");
 }
 
 function parseArgs(argv) {
@@ -571,7 +625,6 @@ async function main() {
   const o = parseArgs(argv);
   const m = cfg.methods[o.method];
   if (!m?.train) throw new Error(`No training command for ${o.method} in holo-worker.json.`);
-  if (o.inputKind === "satellite") throw new InputError("This worker makes splats from ground captures. Satellite images need the satellite worker.");
   const work = path.join(path.dirname(o.output), "work");
   const images = path.join(work, "images");
   mkdirSync(images, { recursive: true });
@@ -581,6 +634,7 @@ async function main() {
   let source = null;
   let frames = 0;
   progress(0.01, "frames");
+  if (o.inputKind === "satellite") return satellite(cfg, m, o, work);
   if (o.inputKind === "video") {
     if (videos.length !== 1) throw new InputError(videos.length ? "Send one video per capture." : "The capture has no video.");
     const list = await videoFrames(cfg, videos[0], images, o);

@@ -497,6 +497,11 @@ export function ingestHandler(db: Db, storage: Storage, opts: IngestOptions): Ha
                 : checkItem("georef", "warning", "splatPlacedUnchecked"),
             );
           } else if (pv.georefNote) report.items.push(checkItem("georef", "warning", "splatNotPlaced", { reason: pv.georefNote }));
+          if (pv.satellite) {
+            const sat = pv.satellite;
+            report.items.push(checkItem("conversion", "ok", sat.convergenceDeg === null ? "satViews" : "satViewsAngle", { views: sat.views, angle: sat.convergenceDeg?.toFixed(1) ?? "" }));
+            for (const w of sat.warnings) report.items.push(checkItem("conversion", "warning", w));
+          }
         }
       }
 
