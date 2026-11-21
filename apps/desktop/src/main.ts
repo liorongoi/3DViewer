@@ -1,6 +1,7 @@
 import { BrowserWindow, app, dialog, ipcMain, protocol, session } from "electron";
 import path from "node:path";
 import fs from "node:fs";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { machineSources, readConfig } from "./config.js";
 import { Roots, SCHEME, listFiles, listFolder, serveLocal, type ListedFile } from "./local-files.js";
@@ -119,6 +120,17 @@ async function start(): Promise<void> {
   session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
 
   ipcMain.handle("viewer:info", () => ({ server: server ? SERVER_BASE : null, serverAddress: server, configuredBy: config.source, problems: config.problems, version: app.getVersion() }));
+  // "Check this computer" (Help): what the operating system says; the page adds the graphics card.
+  ipcMain.handle("viewer:computer", async () => {
+    let freeDiskGb: number | null = null;
+    try {
+      const st = await fs.promises.statfs(app.getPath("userData"));
+      freeDiskGb = Math.round(((st.bavail * st.bsize) / 1024 ** 3) * 10) / 10;
+    } catch {
+      freeDiskGb = null;
+    }
+    return { cpuModel: os.cpus()[0]?.model ?? null, cores: os.availableParallelism(), ramGb: Math.round((os.totalmem() / 1024 ** 3) * 10) / 10, freeDiskGb, os: `${os.type()} ${os.release()}` };
+  });
   ipcMain.handle("viewer:openFiles", async (e) => {
     const win = BrowserWindow.fromWebContents(e.sender);
     const r = await dialog.showOpenDialog(win!, {

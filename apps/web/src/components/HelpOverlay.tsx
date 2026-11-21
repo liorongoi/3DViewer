@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { useApp } from "../state/store";
+import { ComputerCheck } from "./ComputerCheck";
 import { BookOpen, X } from "./icons";
 import { IconButton, Kbd } from "./primitives";
 import { useDialog } from "./useDialog";
@@ -38,7 +39,7 @@ export function HelpOverlay() {
   ];
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40" onPointerDown={(e) => e.target === e.currentTarget && set({ helpOpen: false })}>
-      <div ref={ref} role="dialog" aria-modal="true" aria-label={t("help.title")} className="glass w-[680px] max-w-[94vw] rounded-[14px] p-5">
+      <div ref={ref} role="dialog" aria-modal="true" aria-label={t("help.title")} className="glass max-h-[94vh] w-[680px] max-w-[94vw] overflow-y-auto rounded-[14px] p-5">
         <div className="mb-4 flex items-center">
           <h2 className="flex-1 text-[15px] font-semibold">{t("help.title")}</h2>
           <button type="button" className="btn-secondary me-2" onClick={() => set({ helpOpen: false, manualOpen: true })}>
@@ -75,6 +76,9 @@ export function HelpOverlay() {
               ))}
             </dl>
           </section>
+        </div>
+        <div className="mt-5 border-t border-white/10 pt-4">
+          <ComputerCheck />
         </div>
       </div>
     </div>

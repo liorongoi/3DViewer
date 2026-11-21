@@ -35,5 +35,7 @@ contextBridge.exposeInMainWorld("viewerDesktop", {
   onOpened: (cb: () => void): void => {
     ipcRenderer.on("viewer:opened", () => cb());
   },
+  /** Processor, memory, free disk and system, for "Check this computer". */
+  computer: (): Promise<{ cpuModel: string | null; cores: number; ramGb: number; freeDiskGb: number | null; os: string }> => ipcRenderer.invoke("viewer:computer"),
   platform: process.platform,
 });

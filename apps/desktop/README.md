@@ -45,6 +45,10 @@ While the server answers, the library is the server's and the status pill says *
 
 Building on Linux needs Wine for the NSIS step; `pnpm --filter @viewer/desktop dist:dir` gives the unpacked app without it.
 
+## Check this computer
+
+Help (the `?` key) has **Check this computer**. It reads the graphics card from WebGL, and in the app also the processor, memory and free disk from the operating system, and says in plain words what HOLO can do here: software drawing (no graphics driver) and missing WebGL 2 are called out with what to do, and a built-in graphics chip, little memory or few cores are shown as limits. Nothing is sent anywhere (`packages/shared/src/computer-check.ts`, tested in `computer-check.test.ts`).
+
 ## Hardening
 
 Context isolation, sandbox, no Node in the page, a narrow preload API (`viewerDesktop.info / openFiles / openFolder / openDropped / takeOpened / onOpened / platform`), no new windows, no navigation away, every permission request refused. Air gap: the session cancels any request that is not `viewer-app:`, `viewer-file:`, `viewer-server:`, `data:` or `blob:`, and the security policy repeats it; the page cannot reach the server's address directly either.
