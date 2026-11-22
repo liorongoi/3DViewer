@@ -921,6 +921,28 @@ export type paths = {
                     };
                     content: {
                         "application/json": {
+                            check?: {
+                                error: string | null;
+                                fraction: number | null;
+                                report: {
+                                    items: {
+                                        key: string;
+                                        params: {
+                                            [key: string]: string | number;
+                                        };
+                                        /** @enum {unknown} */
+                                        severity: "ok" | "info" | "warning" | "error";
+                                    }[];
+                                    stats: {
+                                        [key: string]: number;
+                                    };
+                                    /** @enum {unknown} */
+                                    verdict: "good" | "fair" | "poor";
+                                } | null;
+                                stage: string | null;
+                                /** @enum {unknown} */
+                                state: "queued" | "checking" | "done" | "failed" | "cancelled";
+                            };
                             methods: {
                                 error: string | null;
                                 fraction: number | null;
@@ -932,7 +954,7 @@ export type paths = {
                                 version: number | null;
                             }[];
                             /** @enum {unknown} */
-                            state: "working" | "ready" | "failed" | "cancelled";
+                            state: "checking" | "checked" | "working" | "ready" | "failed" | "cancelled";
                         };
                     };
                 };
@@ -991,6 +1013,28 @@ export type paths = {
                     };
                     content: {
                         "application/json": {
+                            check?: {
+                                error: string | null;
+                                fraction: number | null;
+                                report: {
+                                    items: {
+                                        key: string;
+                                        params: {
+                                            [key: string]: string | number;
+                                        };
+                                        /** @enum {unknown} */
+                                        severity: "ok" | "info" | "warning" | "error";
+                                    }[];
+                                    stats: {
+                                        [key: string]: number;
+                                    };
+                                    /** @enum {unknown} */
+                                    verdict: "good" | "fair" | "poor";
+                                } | null;
+                                stage: string | null;
+                                /** @enum {unknown} */
+                                state: "queued" | "checking" | "done" | "failed" | "cancelled";
+                            };
                             methods: {
                                 error: string | null;
                                 fraction: number | null;
@@ -1002,7 +1046,97 @@ export type paths = {
                                 version: number | null;
                             }[];
                             /** @enum {unknown} */
-                            state: "working" | "ready" | "failed" | "cancelled";
+                            state: "checking" | "checked" | "working" | "ready" | "failed" | "cancelled";
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/captures/{id}/train": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description `error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems. */
+                "5XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            check?: {
+                                error: string | null;
+                                fraction: number | null;
+                                report: {
+                                    items: {
+                                        key: string;
+                                        params: {
+                                            [key: string]: string | number;
+                                        };
+                                        /** @enum {unknown} */
+                                        severity: "ok" | "info" | "warning" | "error";
+                                    }[];
+                                    stats: {
+                                        [key: string]: number;
+                                    };
+                                    /** @enum {unknown} */
+                                    verdict: "good" | "fair" | "poor";
+                                } | null;
+                                stage: string | null;
+                                /** @enum {unknown} */
+                                state: "queued" | "checking" | "done" | "failed" | "cancelled";
+                            };
+                            methods: {
+                                error: string | null;
+                                fraction: number | null;
+                                method: string;
+                                modelId: string | null;
+                                stage: string | null;
+                                /** @enum {unknown} */
+                                state: "queued" | "training" | "publishing" | "ready" | "failed" | "cancelled";
+                                version: number | null;
+                            }[];
+                            /** @enum {unknown} */
+                            state: "checking" | "checked" | "working" | "ready" | "failed" | "cancelled";
                         };
                     };
                 };
@@ -1261,6 +1395,7 @@ export type paths = {
                             verticalFactor?: number;
                         };
                         reconstruct?: {
+                            checkFirst?: boolean;
                             /** @enum {unknown} */
                             goal: "scene" | "surface" | "area" | "satellite";
                             /** @enum {unknown} */

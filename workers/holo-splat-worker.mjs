@@ -861,6 +861,14 @@ export function jpegSplitter(onImage) {
  * block shifts, so that forward motion (which spreads outwards) counts as well as a pan.
  */
 export function frameMotion(a, b, w, h, block = 16, search = 6) {
+  const shifts = blockShifts(a, b, w, h, block, search).map((v) => Math.hypot(v.dx, v.dy));
+  if (shifts.length < 4) return 0;
+  shifts.sort((x, y) => x - y);
+  return shifts[Math.floor(shifts.length * 0.75)];
+}
+
+/** Each textured block's shift between two grey frames: { x, y } is the block's centre, { dx, dy } where it went. */
+export function blockShifts(a, b, w, h, block = 16, search = 6) {
   const shifts = [];
   for (let by = search; by + block + search <= h; by += block)
     for (let bx = search; bx + block + search <= w; bx += block) {
@@ -892,11 +900,9 @@ export function frameMotion(a, b, w, h, block = 16, search = 6) {
             bdy = dy;
           }
         }
-      shifts.push(Math.hypot(bdx, bdy));
+      shifts.push({ x: bx + block / 2, y: by + block / 2, dx: bdx, dy: bdy });
     }
-  if (shifts.length < 4) return 0;
-  shifts.sort((x, y) => x - y);
-  return shifts[Math.floor(shifts.length * 0.75)];
+  return shifts;
 }
 
 /**
@@ -1068,6 +1074,338 @@ function check(cfg, method) {
   return { ok: problems.length === 0, tool: method, version, revision: revision || undefined, problems };
 }
 
+// ---------------------------------------------------------------------------------------------
+// --assess: is this capture good for splats? A quick look at the pictures, then a pose test on a
+// sample. Writes <output>/report.json: { verdict, items: [{ key, severity, params }], stats }.
+// Keys are translated by the app (splat.check.<key>); params fill them in.
+
+/** Sharpness of a grey picture: variance of its Laplacian. Only compared within one capture. */
+export function sharpness(g, w, h) {
+  let s = 0;
+  let s2 = 0;
+  let n = 0;
+  for (let y = 1; y < h - 1; y++)
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      const l = 4 * g[i] - g[i - 1] - g[i + 1] - g[i - w] - g[i + w];
+      s += l;
+      s2 += l * l;
+      n++;
+    }
+  return n ? s2 / n - (s / n) ** 2 : 0;
+}
+
+/** Mean grey level, and the shares of pixels nearly black and nearly white. */
+export function exposure(g) {
+  let sum = 0;
+  let lo = 0;
+  let hi = 0;
+  for (const v of g) {
+    sum += v;
+    if (v < 10) lo++;
+    else if (v > 245) hi++;
+  }
+  return { mean: sum / g.length, black: lo / g.length, white: hi / g.length };
+}
+
+/** Time ranges ("0:12–0:20") of the samples where `bad` holds, joining gaps of one sample. */
+export function timeRanges(samples, bad, max = 4) {
+  const out = [];
+  let from = null;
+  let last = null;
+  const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+  const range = (a, b) => (fmt(a) === fmt(b) ? fmt(a) : `${fmt(a)}–${fmt(b)}`);
+  samples.forEach((s, i) => {
+    if (bad(s, i)) {
+      if (from === null) from = s.t;
+      last = s.t;
+    } else if (from !== null && !(i + 1 < samples.length && bad(samples[i + 1], i + 1))) {
+      out.push(range(from, last));
+      from = null;
+    }
+  });
+  if (from !== null) out.push(range(from, last));
+  return out.slice(0, max).join(", ") + (out.length > max ? ", …" : "");
+}
+
+const MOTION_W = 160;
+const MOTION_H = 90;
+const MOTION_SEARCH = 10;
+
+/**
+ * The quick part for a video, from samples { t, sharp, mean, black, white, shifts } taken at a
+ * steady rate (shifts: block motion from the previous sample, at 160×90). Pure, for tests.
+ */
+export function judgeVideo(samples, meta) {
+  const items = [];
+  const add = (key, severity, params = {}) => items.push({ key, severity, params });
+  const pct = (x) => Math.round(x * 100);
+  if (meta.height && Math.min(meta.width, meta.height) < 720) add("lowResolution", "warning", { size: `${meta.width}×${meta.height}` });
+  if (meta.duration < 8) add("tooShort", "error", { seconds: Math.round(meta.duration) });
+  else if (meta.duration > 15 * 60) add("veryLong", "warning", { minutes: Math.round(meta.duration / 60) });
+  if (samples.length < 4) return items;
+
+  const sharp = samples.map((s) => s.sharp).sort((a, b) => a - b);
+  const median = sharp[Math.floor(sharp.length / 2)] || 1;
+  const blurred = (s) => s.sharp < 0.4 * median;
+  const blurShare = samples.filter(blurred).length / samples.length;
+  if (blurShare > 0.25) add("blurry", blurShare > 0.5 ? "error" : "warning", { share: pct(blurShare), when: timeRanges(samples, blurred) });
+
+  const dark = (s) => s.mean < 45 || s.black > 0.5;
+  const bright = (s) => s.mean > 215 || s.white > 0.4;
+  const darkShare = samples.filter(dark).length / samples.length;
+  const brightShare = samples.filter(bright).length / samples.length;
+  if (darkShare > 0.2) add("dark", darkShare > 0.6 ? "error" : "warning", { share: pct(darkShare), when: timeRanges(samples, dark) });
+  if (brightShare > 0.2) add("bright", "warning", { share: pct(brightShare), when: timeRanges(samples, bright) });
+  const jumps = samples.filter((s, i) => i > 0 && Math.abs(s.mean - samples[i - 1].mean) > 45).length;
+  if (jumps >= 3) add("exposureJumps", "warning", { count: jumps });
+
+  // Motion between samples: still, followable, too fast (block matching hit its limit).
+  const moves = samples.slice(1).map((s) => {
+    const m = s.shifts.map((v) => Math.hypot(v.dx, v.dy)).sort((a, b) => a - b);
+    return m.length >= 4 ? m[Math.floor(m.length * 0.5)] : null;
+  });
+  const known = moves.filter((m) => m !== null);
+  const still = (s, i) => i > 0 && moves[i - 1] !== null && moves[i - 1] < 0.5;
+  const fast = (s, i) => i > 0 && moves[i - 1] !== null && moves[i - 1] >= MOTION_SEARCH - 1;
+  const stillShare = known.length ? samples.filter(still).length / known.length : 0;
+  const fastShare = known.length ? samples.filter(fast).length / known.length : 0;
+  if (stillShare > 0.4) add("standingStill", stillShare > 0.85 ? "error" : "warning", { share: pct(stillShare), when: timeRanges(samples, still) });
+  if (fastShare > 0.15) add("tooFast", "warning", { share: pct(fastShare), when: timeRanges(samples, fast) });
+
+  // Turning in place: every block moves the same way (no parallax), so there is no depth.
+  let moving = 0;
+  let flat = 0;
+  samples.slice(1).forEach((s, i) => {
+    if (moves[i] === null || moves[i] < 1.5 || moves[i] >= MOTION_SEARCH - 1 || s.shifts.length < 8) return;
+    moving++;
+    const mx = s.shifts.reduce((a, v) => a + v.dx, 0) / s.shifts.length;
+    const my = s.shifts.reduce((a, v) => a + v.dy, 0) / s.shifts.length;
+    const spread = Math.sqrt(s.shifts.reduce((a, v) => a + (v.dx - mx) ** 2 + (v.dy - my) ** 2, 0) / s.shifts.length);
+    if (spread < 0.2 * Math.hypot(mx, my)) flat++;
+  });
+  if (moving >= 6 && flat / moving > 0.6) add("turningInPlace", "warning", { share: pct(flat / moving) });
+
+  // Part of the picture that does not move while the rest does: a finger, a dashboard, a mount.
+  const cols = Math.floor((MOTION_W - 2 * 6) / 16);
+  const rows = Math.floor((MOTION_H - 2 * 6) / 16);
+  const stuck = new Map();
+  let movingPairs = 0;
+  samples.slice(1).forEach((s, i) => {
+    if (moves[i] === null || moves[i] < 2) return;
+    movingPairs++;
+    for (const v of s.shifts) if (Math.hypot(v.dx, v.dy) < 0.5) stuck.set(`${v.x},${v.y}`, (stuck.get(`${v.x},${v.y}`) ?? 0) + 1);
+  });
+  if (movingPairs >= 6) {
+    const blocks = [...stuck].filter(([, n]) => n / movingPairs > 0.7).map(([k]) => k.split(",").map(Number));
+    const share = blocks.length / Math.max(1, cols * rows);
+    if (share > 0.08) {
+      const ys = blocks.map(([, y]) => y / MOTION_H);
+      const xs = blocks.map(([x]) => x / MOTION_W);
+      const avg = (a) => a.reduce((p, q) => p + q, 0) / a.length;
+      const where = avg(ys) > 0.62 ? "bottom" : avg(ys) < 0.38 ? "top" : avg(xs) < 0.38 ? "left" : avg(xs) > 0.62 ? "right" : "middle";
+      add("partBlocked", "warning", { share: pct(share), where });
+    }
+  }
+  return items;
+}
+
+/**
+ * What the pose test says: how many pictures got a pose, and whether the camera only moved
+ * forward (along its view), which gives little depth. `cams` in picture order, with poses.
+ */
+export function judgePoses(cams, total) {
+  const items = [];
+  const share = total ? cams.length / total : 0;
+  const p = { posed: cams.length, total, share: Math.round(share * 100) };
+  if (cams.length < 3 || share < 0.4) items.push({ key: "posesFailed", severity: "error", params: p });
+  else if (share < 0.8) items.push({ key: "posesSome", severity: "warning", params: p });
+  else items.push({ key: "posesGood", severity: "ok", params: p });
+  if (cams.length >= 6) {
+    const along = [];
+    for (let i = 1; i < cams.length; i++) {
+      const d = [0, 1, 2].map((k) => cams[i].centre[k] - cams[i - 1].centre[k]);
+      const n = Math.hypot(...d);
+      if (n < 1e-9) continue;
+      const z = quatToR(cams[i - 1].q)[2];
+      along.push(Math.abs(d[0] * z[0] + d[1] * z[1] + d[2] * z[2]) / n);
+    }
+    along.sort((a, b) => a - b);
+    const med = along.length ? along[Math.floor(along.length / 2)] : 0;
+    if (along.length >= 5 && med > 0.85) items.push({ key: "forwardOnly", severity: "warning", params: { share: Math.round(med * 100) } });
+  }
+  return items;
+}
+
+/** One verdict from the items: any error is poor, any warning is fair, otherwise good. */
+export const verdictOf = (items) => (items.some((i) => i.severity === "error") ? "poor" : items.some((i) => i.severity === "warning") ? "fair" : "good");
+
+/** Size and length of a video or picture, from ffmpeg's header lines. */
+export function parseMediaInfo(text) {
+  const d = /Duration:\s*(\d+):(\d+):([\d.]+)/.exec(text);
+  const v = /Stream #[^\n]*Video:[^\n]*?\b(\d{2,5})x(\d{2,5})\b/.exec(text);
+  const r = /Stream #[^\n]*Video:[^\n]*?([\d.]+)\s*fps/.exec(text);
+  return {
+    duration: d ? Number(d[1]) * 3600 + Number(d[2]) * 60 + Number(d[3]) : 0,
+    width: v ? Number(v[1]) : 0,
+    height: v ? Number(v[2]) : 0,
+    fps: r ? Number(r[1]) : 0,
+  };
+}
+
+function mediaInfo(cfg, file) {
+  const r = spawnSync(cfg.ffmpeg, ["-hide_banner", "-i", file], { encoding: "utf8", timeout: 60_000 });
+  return parseMediaInfo(`${r.stderr ?? ""}`);
+}
+
+/** Grey frames of a video at `fps`, at two sizes: 320×180 for sharpness and light, 160×90 for motion. */
+function greyFrames(cfg, file, fps, onFrame) {
+  return new Promise((resolve, reject) => {
+    const W = 320;
+    const H = 180;
+    const child = spawn(cfg.ffmpeg, ["-hide_banner", "-loglevel", "error", "-i", file, "-an", "-vf", `fps=${fps},scale=${W}:${H},format=gray`, "-f", "rawvideo", "pipe:1"], { stdio: ["ignore", "pipe", "pipe"] });
+    let buf = Buffer.alloc(0);
+    let n = 0;
+    let err = "";
+    child.stdout.on("data", (chunk) => {
+      buf = Buffer.concat([buf, chunk]);
+      while (buf.length >= W * H) {
+        onFrame(new Uint8Array(buf.subarray(0, W * H)), W, H, n++);
+        buf = buf.subarray(W * H);
+      }
+    });
+    child.stderr.on("data", (c) => (err = (err + c).slice(-2000)));
+    child.on("error", reject);
+    child.on("close", (code) => (code === 0 ? resolve(n) : reject(new Error(`ffmpeg stopped (exit ${code}): ${err.trim().slice(-300)}`))));
+  });
+}
+
+/** Halves a grey picture in each direction (box filter). */
+function halve(g, w, h) {
+  const out = new Uint8Array((w >> 1) * (h >> 1));
+  for (let y = 0; y < h >> 1; y++)
+    for (let x = 0; x < w >> 1; x++) {
+      const i = 2 * y * w + 2 * x;
+      out[y * (w >> 1) + x] = (g[i] + g[i + 1] + g[i + w] + g[i + w + 1]) >> 2;
+    }
+  return out;
+}
+
+async function assess(cfg, o) {
+  const items = [];
+  const stats = {};
+  const all = listFiles(o.input);
+  const work = path.join(o.output, "work");
+  mkdirSync(work, { recursive: true });
+  const images = path.join(work, "images");
+  mkdirSync(images, { recursive: true });
+  let names = [];
+  progress(0.02, "look");
+  if (o.inputKind === "video") {
+    const videos = all.filter((f) => VIDEO.test(f));
+    if (videos.length !== 1) items.push({ key: videos.length ? "manyVideos" : "noVideo", severity: "error", params: { count: videos.length } });
+    else {
+      const meta = mediaInfo(cfg, videos[0]);
+      Object.assign(stats, { duration: Math.round(meta.duration), width: meta.width, height: meta.height, fps: meta.fps });
+      const fps = meta.duration > 0 ? Math.min(2, 600 / meta.duration) : 2;
+      const samples = [];
+      let prev = null;
+      await greyFrames(cfg, videos[0], fps, (g, w, h, n) => {
+        const small = halve(g, w, h);
+        samples.push({ t: n / fps, sharp: sharpness(g, w, h), ...exposure(g), shifts: prev ? blockShifts(prev, small, MOTION_W, MOTION_H, 16, MOTION_SEARCH) : [] });
+        prev = small;
+        if (meta.duration) progress(0.02 + 0.3 * Math.min(1, n / fps / meta.duration), "look");
+      });
+      stats.samples = samples.length;
+      items.push(...judgeVideo(samples, meta));
+      const csv = all.some((f) => path.basename(f).toLowerCase() === "camera-gnss.csv");
+      const srt = all.some((f) => /\.srt$/i.test(f));
+      items.push(csv || srt ? { key: "positionsFound", severity: "ok", params: { source: csv ? "camera-gnss.csv" : ".SRT" } } : { key: "noPositions", severity: "info", params: {} });
+      if (!items.some((i) => i.severity === "error")) {
+        progress(0.35, "frames");
+        // The pose test: frames picked as for training, at most 100, at 640 px.
+        const picked = await videoFrames(cfg, videos[0], images, { resolution: 640, videoFps: 2 });
+        const keep = new Set(picked.filter((_, i) => i % Math.ceil(picked.length / 100) === 0).map((f) => f.name));
+        for (const f of picked) if (!keep.has(f.name)) rmSync(path.join(images, f.name), { force: true });
+        names = [...keep];
+      }
+    }
+  } else if (o.inputKind === "photos") {
+    const photos = all.filter((f) => PHOTO.test(f));
+    stats.photos = photos.length;
+    if (photos.length < 3) items.push({ key: "fewPhotos", severity: "error", params: { count: photos.length } });
+    else {
+      if (photos.length < 20) items.push({ key: "somePhotos", severity: "warning", params: { count: photos.length } });
+      let gps = 0;
+      let small = 0;
+      const sharp = [];
+      const light = [];
+      const step = Math.max(1, Math.ceil(photos.length / 200));
+      for (const [i, f] of photos.entries()) {
+        if (/\.jpe?g$/i.test(f) && exifGps(readFileSync(f))) gps++;
+        if (i % step) continue;
+        const meta = mediaInfo(cfg, f);
+        if (meta.height && Math.min(meta.width, meta.height) < 720) small++;
+        const r = spawnSync(cfg.ffmpeg, ["-hide_banner", "-loglevel", "error", "-i", f, "-vf", "scale=320:180,format=gray", "-frames:v", "1", "-f", "rawvideo", "pipe:1"], { maxBuffer: 1 << 20, timeout: 60_000 });
+        if (r.status === 0 && r.stdout?.length === 320 * 180) {
+          const g = new Uint8Array(r.stdout);
+          sharp.push({ name: path.basename(f), v: sharpness(g, 320, 180) });
+          light.push(exposure(g));
+        }
+        progress(0.02 + 0.3 * (i / photos.length), "look");
+      }
+      const sorted = sharp.map((x) => x.v).sort((a, b) => a - b);
+      const med = sorted[Math.floor(sorted.length / 2)] || 1;
+      const blurred = sharp.filter((x) => x.v < 0.4 * med);
+      if (sharp.length >= 4 && blurred.length / sharp.length > 0.2) items.push({ key: "blurryPhotos", severity: "warning", params: { count: blurred.length, examples: blurred.slice(0, 3).map((x) => x.name).join(", ") } });
+      const dark = light.filter((l) => l.mean < 45 || l.black > 0.5).length;
+      if (light.length && dark / light.length > 0.2) items.push({ key: "darkPhotos", severity: "warning", params: { count: dark } });
+      if (small) items.push({ key: "smallPhotos", severity: "warning", params: { count: small } });
+      items.push(gps >= 3 ? { key: "photoGps", severity: "ok", params: { count: gps } } : { key: "noPositions", severity: "info", params: {} });
+      // The pose test: at most 80 photos, made smaller.
+      const pick = photos.filter((_, i) => i % Math.max(1, Math.ceil(photos.length / 80)) === 0);
+      for (const f of pick) {
+        let name = path.basename(f).replace(/\.[^.]+$/, ".jpg");
+        while (names.includes(name)) name = `x${name}`;
+        const r = spawnSync(cfg.ffmpeg, ["-hide_banner", "-loglevel", "error", "-i", f, "-vf", "scale='min(1280,iw)':-2", "-q:v", "3", "-y", path.join(images, name)], { timeout: 120_000 });
+        if (r.status === 0) names.push(name);
+      }
+    }
+  }
+  if (o.groundControl) {
+    const gc = JSON.parse(readFileSync(o.groundControl, "utf8"));
+    const have = new Set(all.map((f) => path.basename(f)));
+    const seen = gc.points.filter((p) => p.observations.filter((ob) => have.has(ob.image)).length >= 2).length;
+    items.push(
+      o.inputKind === "video"
+        ? { key: "gcpVideo", severity: "info", params: { count: gc.points.length } }
+        : seen >= 3
+          ? { key: "gcpGood", severity: "ok", params: { count: seen, total: gc.points.length } }
+          : { key: "gcpFew", severity: "warning", params: { count: seen, total: gc.points.length } },
+    );
+  }
+
+  if (names.length >= 3) {
+    progress(0.45, "poses");
+    try {
+      const { model } = await sfm(cfg, images, work, { ...o, threads: o.threads }, o.inputKind === "video");
+      const cams = readImages(readFileSync(path.join(model, "images.bin"))).sort((a, b) => (a.name < b.name ? -1 : 1));
+      items.push(...judgePoses(cams, names.length));
+      stats.posed = cams.length;
+      stats.tested = names.length;
+    } catch (e) {
+      say(`pose test: ${e instanceof Error ? e.message : String(e)}`);
+      items.push({ key: "posesFailed", severity: "error", params: { posed: 0, total: names.length, share: 0 } });
+    }
+  }
+  const order = { error: 0, warning: 1, info: 2, ok: 3 };
+  items.sort((a, b) => order[a.severity] - order[b.severity]);
+  const report = { verdict: verdictOf(items), items, stats };
+  rmSync(work, { recursive: true, force: true });
+  writeFileSync(path.join(o.output, "report.json"), JSON.stringify(report));
+  progress(1, "done");
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   const cfg = loadConfig();
@@ -1076,6 +1414,13 @@ async function main() {
     const method = argv[1] === "--method" ? argv[2] : undefined;
     console.log(JSON.stringify(method ? check(cfg, method) : { ok: false, problems: ["--check needs --method <id>."] }));
     return;
+  }
+  if (argv[0] === "--assess") {
+    const o = {};
+    for (let i = 1; i < argv.length; i += 2) o[argv[i].slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = argv[i + 1];
+    for (const k of ["input", "inputKind", "output"]) if (!o[k]) throw new Error(`Missing --${k}`);
+    o.threads = Number.parseInt(o.threads ?? "4", 10);
+    return assess(cfg, o);
   }
   const o = parseArgs(argv);
   const m = cfg.methods[o.method];

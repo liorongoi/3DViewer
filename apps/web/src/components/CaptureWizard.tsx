@@ -14,7 +14,7 @@ import {
   type SplatGoal,
   type SplatPreset,
 } from "@viewer/shared";
-import { cancelCapture, getCapture, getSplatSetup, sendCapture, type CaptureStatus, type IngestRequest, type SplatSetup, type UploadProgress } from "../server/api";
+import { buildCapture, cancelCapture, getCapture, getSplatSetup, sendCapture, type CaptureStatus, type IngestRequest, type SplatSetup, type UploadProgress } from "../server/api";
 import { errorText } from "../server/error-text";
 import { refreshLibrary } from "../state/library";
 import { useLevels } from "../state/classification";
@@ -22,7 +22,7 @@ import { useApp } from "../state/store";
 import { useEngine } from "../engine";
 import { useOpenModel } from "../useAppEffects";
 import { fromDrop, fromInput } from "../upload/read-drop";
-import { AlertTriangle, Aperture, Building2, Check, ChevronLeft, ChevronRight, Cpu, Film, Gpu, Images, Ruler, Satellite, Sparkles, X, XCircle } from "./icons";
+import { AlertTriangle, Aperture, Building2, Check, ChevronLeft, ChevronRight, Cpu, Film, Gpu, Images, Info, Ruler, Satellite, ShieldCheck, Sparkles, X, XCircle } from "./icons";
 import { IconButton, cx } from "./primitives";
 import { useDialog } from "./useDialog";
 
@@ -66,6 +66,8 @@ export function CaptureWizard() {
   const [error, setError] = useState<string | null>(null);
   const [captureId, setCaptureId] = useState<string | null>(null);
   const [status, setStatus] = useState<CaptureStatus | null>(null);
+  // Bumped to follow a capture again after building starts from a check.
+  const [follow, setFollow] = useState(0);
 
   // The server's hardware and installed methods, read when the window opens.
   useEffect(() => {
@@ -100,8 +102,8 @@ export function CaptureWizard() {
         const s = await getCapture(server, captureId);
         if (!live) return;
         setStatus(s);
-        if (s.state !== "working") {
-          void refreshLibrary();
+        if (s.state !== "working" && s.state !== "checking") {
+          if (s.state !== "checked") void refreshLibrary();
           return;
         }
       } catch {
@@ -114,7 +116,7 @@ export function CaptureWizard() {
       live = false;
       clearTimeout(timer);
     };
-  }, [server, captureId]);
+  }, [server, captureId, follow]);
 
   if (!open) return null;
 
@@ -145,7 +147,7 @@ export function CaptureWizard() {
     if (!name && list[0]) setName((list[0].path.split("/")[0] ?? "").replace(/\.[^.]+$/, "").replace(/[_-]+/g, " "));
   };
 
-  const start = async () => {
+  const start = async (checkFirst: boolean) => {
     if (!server) return;
     setError(null);
     setSending({ sent: 0, total, step: "upload" });
@@ -161,7 +163,7 @@ export function CaptureWizard() {
           // A splat from a capture has no real size yet: it opens floating where the map is.
           placement: { lat, lon, height: 0, scale: 1, modelUnit: 1 },
           centre: { lat, lon },
-          reconstruct: { input, goal, methods: runs as NonNullable<IngestRequest["reconstruct"]>["methods"], preset },
+          reconstruct: { input, goal, methods: runs as NonNullable<IngestRequest["reconstruct"]>["methods"], preset, ...(checkFirst ? { checkFirst: true } : {}) },
         },
         setSending,
       );
@@ -209,6 +211,7 @@ export function CaptureWizard() {
               status={status}
               onOpen={(id) => { set({ captureOpen: false }); reset(); setTimeout(() => openModel(id), 0); }}
               onStop={server && captureId ? async () => setStatus(await cancelCapture(server, captureId)) : undefined}
+              onBuild={server && captureId ? async () => { setStatus(await buildCapture(server, captureId)); setFollow((n) => n + 1); } : undefined}
             />
           ) : step === 0 ? (
             <div className="mx-auto grid max-w-2xl gap-4">
@@ -359,9 +362,14 @@ export function CaptureWizard() {
                 {t("splat.make.next")} <ChevronRight size={14} className="rtl:rotate-180" />
               </button>
             ) : (
-              <button type="button" className="btn-primary" disabled={!canStart} onClick={() => void start()} data-testid="capture-start">
-                <Sparkles size={14} /> {sending ? t("splat.make.starting") : t("splat.make.start")}
-              </button>
+              <div className="flex items-center gap-2">
+                <button type="button" className="btn-ghost" disabled={!canStart} onClick={() => void start(false)} data-testid="capture-start">
+                  <Sparkles size={14} /> {t("splat.make.start")}
+                </button>
+                <button type="button" className="btn-primary" disabled={!canStart} onClick={() => void start(true)} data-testid="capture-check" title={t("splat.make.checkFirstHint")}>
+                  <ShieldCheck size={14} /> {sending ? t("splat.make.starting") : t("splat.make.checkFirst")}
+                </button>
+              </div>
             )}
           </footer>
         )}
@@ -444,10 +452,52 @@ function MethodSetup({ setup, ids }: { setup: SplatSetup; ids: string[] }) {
   );
 }
 
-function Progress({ status, onOpen, onStop }: { status: CaptureStatus | null; onOpen: (modelId: string) => void; onStop?: () => Promise<void> }) {
+function Progress({ status, onOpen, onStop, onBuild }: { status: CaptureStatus | null; onOpen: (modelId: string) => void; onStop?: () => Promise<void>; onBuild?: () => Promise<void> }) {
   const { t } = useTranslation();
-  const done = status && status.state !== "working";
+  const check = status?.check;
+  const [building, setBuilding] = useState(false);
   const [stopping, setStopping] = useState(false);
+  if (check && (status.state === "checking" || status.state === "checked" || (status.state !== "working" && !status.methods.some((m) => m.state !== "queued")))) {
+    const report = check.report;
+    return (
+      <div className="mx-auto grid max-w-xl gap-4" data-testid="capture-check-report">
+        <div>
+          <h3 className="text-[17px] font-semibold">
+            {status.state === "checking" ? t("splat.check.checking") : status.state === "cancelled" ? t("splat.make.stopped") : report ? t(`splat.check.verdict_${report.verdict}`) : t("splat.check.failed")}
+          </h3>
+          <p className="text-[12px] text-fg3">{status.state === "checking" ? t("splat.check.checkingHint") : report ? t(`splat.check.verdict_${report.verdict}Hint`) : (check.error ?? "")}</p>
+        </div>
+        {status.state === "checking" && (
+          <div className="h-1.5 overflow-hidden rounded-full bg-s3">
+            <div className="h-full bg-accent transition-[width]" style={{ width: `${Math.round((check.fraction ?? 0.02) * 100)}%` }} />
+          </div>
+        )}
+        {report && <ReportItems report={report} />}
+        <div className="flex justify-end gap-2">
+          {onStop && (status.state === "checking" || status.state === "checked") && (
+            <button type="button" className="btn-ghost" onClick={() => void onStop()} data-testid="capture-discard">
+              <XCircle size={14} /> {status.state === "checking" ? t("splat.make.stop") : t("splat.check.discard")}
+            </button>
+          )}
+          {status.state === "checked" && onBuild && (
+            <button
+              type="button"
+              className={report?.verdict === "poor" ? "btn-secondary" : "btn-primary"}
+              disabled={building}
+              onClick={() => {
+                setBuilding(true);
+                void onBuild().catch(() => setBuilding(false));
+              }}
+              data-testid="capture-build"
+            >
+              <Sparkles size={14} /> {report?.verdict === "poor" ? t("splat.check.buildAnyway") : t("splat.check.build")}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+  const done = status && status.state !== "working";
   const stop = async () => {
     setStopping(true);
     try {
@@ -493,6 +543,35 @@ function Progress({ status, onOpen, onStop }: { status: CaptureStatus | null; on
         </div>
       )}
     </div>
+  );
+}
+
+function ReportItems({ report }: { report: NonNullable<NonNullable<CaptureStatus["check"]>["report"]> }) {
+  const { t } = useTranslation();
+  return (
+    <ul className="grid gap-2">
+      {report.items.map((it, i) => {
+        const params: Record<string, string | number> = { ...it.params };
+        if (typeof params.where === "string") params.where = t(`splat.check.where_${params.where}`);
+        return (
+          <li key={`${it.key}-${i}`} className="flex items-start gap-2 rounded-[12px] bg-s2 p-3" data-testid={`check-${it.key}`}>
+            {it.severity === "ok" ? (
+              <Check size={16} className="mt-0.5 shrink-0 text-[var(--status-current)]" />
+            ) : it.severity === "error" ? (
+              <XCircle size={16} className="mt-0.5 shrink-0 text-[var(--danger,#e5484d)]" />
+            ) : it.severity === "warning" ? (
+              <AlertTriangle size={16} className="mt-0.5 shrink-0 text-[var(--status-production)]" />
+            ) : (
+              <Info size={16} className="mt-0.5 shrink-0 text-fg3" />
+            )}
+            <div className="grid gap-0.5">
+              <span className="font-medium">{t(`splat.check.${it.key}.title`, params)}</span>
+              <span className="text-[12px] text-fg2">{t(`splat.check.${it.key}.detail`, params)}</span>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

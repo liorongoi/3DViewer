@@ -6,7 +6,14 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   applySim,
+  blockShifts,
   controlPlacement,
+  judgePoses,
+  judgeVideo,
+  parseMediaInfo,
+  sharpness,
+  timeRanges,
+  verdictOf,
   DEFAULTS,
   pixelRay,
   exifGps,
@@ -638,5 +645,81 @@ describe("surveyed ground control points", () => {
   it("says why when too few points are seen twice", () => {
     const got = controlPlacement([], new Map(), { crs: "EPSG:4326", points: [{ name: "a", lat: 0, lon: 0, height: 0, observations: [{ image: "x.jpg", x: 1, y: 1 }] }] });
     expect("reason" in got && got.reason).toMatch(/Only 0 ground control points/);
+  });
+});
+
+describe("checking a capture before building", () => {
+  // A textured grey picture, moved by (dx, dy) pixels.
+  const tex = (w: number, h: number, dx = 0, dy = 0) => {
+    const g = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) g[y * w + x] = (Math.sin((x - dx) * 0.9) * Math.cos((y - dy) * 0.7) * 60 + ((((x - dx) * 7919) ^ ((y - dy) * 104729)) & 63) + 100) & 255;
+    return g;
+  };
+  const shiftAll = (dx: number, dy = 0) => Array.from({ length: 40 }, (_, i) => ({ x: (i % 8) * 16 + 14, y: Math.floor(i / 8) * 16 + 14, dx, dy }));
+  const sample = (t: number, o: Partial<{ sharp: number; mean: number; black: number; white: number; shifts: ReturnType<typeof shiftAll> }> = {}) => ({ t, sharp: 100, mean: 120, black: 0, white: 0, shifts: shiftAll(3, 0).map((v, i) => ({ ...v, dx: 2 + (i % 5) })), ...o });
+  const meta = { duration: 60, width: 1920, height: 1080 };
+
+  it("finds how far a picture moved", () => {
+    const a = tex(160, 90);
+    const b = tex(160, 90, 4, -2);
+    const s = blockShifts(a, b, 160, 90, 16, 10);
+    expect(s.length).toBeGreaterThan(10);
+    const med = s.map((v) => v.dx).sort((p, q) => p - q)[s.length >> 1];
+    expect(med).toBe(4);
+    expect(s.map((v) => v.dy).sort((p, q) => p - q)[s.length >> 1]).toBe(-2);
+  });
+
+  it("scores a sharp picture above a blurred one", () => {
+    const a = tex(64, 64);
+    const blur = a.map((_, i) => (a[i]! + a[Math.min(a.length - 1, i + 1)]! + a[Math.max(0, i - 1)]! + a[Math.min(a.length - 1, i + 64)]! + a[Math.max(0, i - 64)]!) / 5);
+    expect(sharpness(a, 64, 64)).toBeGreaterThan(3 * sharpness(Uint8Array.from(blur), 64, 64));
+  });
+
+  it("says nothing about a good walk around", () => {
+    const items = judgeVideo(Array.from({ length: 120 }, (_, i) => sample(i / 2)), meta);
+    expect(items).toEqual([]);
+    expect(verdictOf(items)).toBe("good");
+  });
+
+  it("names blur, darkness, standing still and a part that never moves, with times", () => {
+    const s = Array.from({ length: 120 }, (_, i) =>
+      sample(i / 2, {
+        sharp: i >= 20 && i < 60 ? 20 : 100,
+        mean: i >= 80 ? 30 : 120,
+        // The bottom rows never move (a dashboard), the rest does.
+        shifts: shiftAll(3).map((v) => (v.y > 60 ? { ...v, dx: 0 } : { ...v, dx: 2 + (v.x % 3) })),
+      }),
+    );
+    const items = judgeVideo(s, meta);
+    const by = Object.fromEntries(items.map((i) => [i.key, i]));
+    expect(by.blurry).toMatchObject({ severity: "warning", params: { share: 33, when: "0:10–0:29" } });
+    expect(by.dark).toMatchObject({ severity: "warning", params: { when: "0:40–0:59" } });
+    expect(by.partBlocked).toMatchObject({ params: { where: "bottom" } });
+    expect(verdictOf(items)).toBe("fair");
+    const still = judgeVideo(Array.from({ length: 40 }, (_, i) => sample(i / 2, { shifts: shiftAll(0) })), meta);
+    expect(still.find((i) => i.key === "standingStill")).toMatchObject({ severity: "error" });
+  });
+
+  it("notices turning on the spot: everything moves the same way", () => {
+    const items = judgeVideo(Array.from({ length: 40 }, (_, i) => sample(i / 2, { shifts: shiftAll(4, 1) })), meta);
+    expect(items.map((i) => i.key)).toContain("turningInPlace");
+  });
+
+  it("says when too few pictures got a pose, and when the camera only went forward", () => {
+    // Cameras looking down +z (identity rotation) and moving along it: a drive straight ahead.
+    const ahead = Array.from({ length: 20 }, (_, i) => ({ q: [1, 0, 0, 0], centre: [0.02 * Math.sin(i), 0, i] as V3 }));
+    const items = judgePoses(ahead, 25);
+    expect(items.map((i) => i.key)).toEqual(["posesGood", "forwardOnly"]);
+    const sideways = Array.from({ length: 20 }, (_, i) => ({ q: [1, 0, 0, 0], centre: [i, 0, 0] as V3 }));
+    expect(judgePoses(sideways, 20).map((i) => i.key)).toEqual(["posesGood"]);
+    expect(judgePoses(sideways.slice(0, 5), 20)[0]).toMatchObject({ key: "posesFailed", severity: "error" });
+  });
+
+  it("reads a video's size and length from ffmpeg", () => {
+    const text = "Input #0, mov,mp4\n  Duration: 00:02:05.43, start: 0.000000, bitrate: 15000 kb/s\n  Stream #0:0[0x1](und): Video: hevc (Main) (hvc1 / 0x31637668), yuv420p(tv), 3840x2160, 14000 kb/s, 29.97 fps, 29.97 tbr\n";
+    expect(parseMediaInfo(text)).toEqual({ duration: 125.43, width: 3840, height: 2160, fps: 29.97 });
+    // A gap of one sample is joined; a longer one splits the range.
+    expect(timeRanges([{ t: 0 }, { t: 0.5 }, { t: 1 }, { t: 70 }], (x) => x.t !== 1)).toBe("0:00–1:10");
+    expect(timeRanges([{ t: 0 }, { t: 0.5 }, { t: 1 }, { t: 1.5 }, { t: 70 }], (x) => x.t < 1 || x.t > 2)).toBe("0:00, 1:10");
   });
 });

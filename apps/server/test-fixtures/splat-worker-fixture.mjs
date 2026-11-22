@@ -12,6 +12,18 @@ if (args[0] === "--check") {
   console.log(JSON.stringify({ ok: true, tool: "holo-test-fixture", version: "1", revision: "test-fixture", problems: [], fixture: true }));
   process.exit(0);
 }
+// The capture check (--assess): a fixed report that says it is a fixture.
+if (args[0] === "--assess") {
+  const out = args[args.indexOf("--output") + 1];
+  const input = args[args.indexOf("--input") + 1];
+  const names = readdirSync(input, { recursive: true }).map(String);
+  const bad = names.some((f) => /blurred/.test(f));
+  const items = [bad ? { key: "blurry", severity: "error", params: { share: 60, when: "0:01–0:09" } } : { key: "posesGood", severity: "ok", params: { posed: 2, total: 2, share: 100 } }, { key: "fixture", severity: "info", params: {} }];
+  mkdirSync(out, { recursive: true });
+  writeFileSync(path.join(out, "report.json"), JSON.stringify({ verdict: bad ? "poor" : "good", items, stats: { fixture: 1 } }));
+  console.log("progress 1 done");
+  process.exit(0);
+}
 const opt = (k) => {
   const i = args.indexOf(`--${k}`);
   return i >= 0 ? args[i + 1] : undefined;

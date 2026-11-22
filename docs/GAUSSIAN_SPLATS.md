@@ -105,6 +105,15 @@ What the worker does:
 - It may write `output/georef.json` when it placed the splats from measured camera positions: `{ source, origin: {lat, lon, height}, horizontalCrs, verticalDatum, metresPerModelUnit, controls: {count, horizontalRms, verticalRms, max}, checks: {...} | null }`. The splats are then in metres east, north and up of `origin`. HOLO places the model there and shows the control and check residuals in the report; anything out of range means the model stays floating.
 - `--check --method <id>` prints one JSON line `{ ok, tool, version, revision, problems, fixture }` and exits. HOLO asks at most every ten minutes and shows the answer under "Set up" in Make a splat.
 
+**Check it first.** The last step of Make a splat offers "Check it first" (and "Build now, without checking"). The capture is uploaded once and a `capture-check` job runs the first method's worker with `--assess --input <dir> --input-kind <kind> --output <dir> --threads N [--ground-control <file>]`. The worker writes `report.json`: `{ verdict: good|fair|poor, items: [{ key, severity, params }], stats }`; the app translates each key (`splat.check.<key>`).
+
+- Video, from grey samples at up to 2 a second (at most 600): resolution and length; blur and darkness relative to the video itself, with the times; brightness jumps; standing still; moving too fast to follow; turning on the spot (every block moves alike, so no parallax); a part of the picture that never moves while the rest does (a finger, a dashboard), with where.
+- Photos: count, blurred, dark and small photos, GPS.
+- Then a pose test on at most 100 frames (or 80 photos) at 640 to 1280 px with the configured pose software: how many got a camera position, and whether the camera moved mostly along its view (driving straight ahead gives little depth).
+- Satellite: the satellite check above. Ground control: whether enough points are marked in two pictures.
+
+The report stays on the capture (`GET /api/captures/:id`, `check`). `POST /api/captures/:id/train` starts building from the same upload; cancelling discards it. The check runs in the same one-at-a-time queue as building.
+
 A training can be stopped from Make a splat. HOLO marks the job cancelled, sends the worker SIGTERM (SIGKILL 10 s later), publishes nothing from it and removes its folders.
 
 How HOLO reads the exit code:
