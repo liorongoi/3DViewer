@@ -1,0 +1,52 @@
+diff --git a/crates/brush-train/src/config.rs b/crates/brush-train/src/config.rs
+index 68df1f0..04bffb0 100644
+--- a/crates/brush-train/src/config.rs
++++ b/crates/brush-train/src/config.rs
+@@ -87,6 +87,14 @@ pub struct TrainConfig {
+ 
+     #[arg(long, help_heading = "Refine options", default_value = "0.0")]
+     pub lpips_loss_weight: f32,
++
++    /// Weight of the penalty on long, thin splats (0 turns it off).
++    #[arg(long, help_heading = "Training options", default_value = "0.0")]
++    pub aniso_loss_weight: f32,
++
++    /// Longest-to-shortest axis ratio a splat may have before the penalty applies.
++    #[arg(long, help_heading = "Training options", default_value = "10.0")]
++    pub aniso_max_ratio: f32,
+ }
+ 
+ impl Default for TrainConfig {
+diff --git a/crates/brush-train/src/train.rs b/crates/brush-train/src/train.rs
+index 47aa071..263ad22 100644
+--- a/crates/brush-train/src/train.rs
++++ b/crates/brush-train/src/train.rs
+@@ -196,13 +196,26 @@ impl SplatTrainer {
+             };
+ 
+             let scale_loss_weight = self.config.scale_loss_weight * aux_loss_weight / median_scale;
+-            if scale_loss_weight > 0.0 {
++            let loss = if scale_loss_weight > 0.0 {
+                 // Scale loss is the sum of the squared differences between the
+                 // predicted scale and the target scale.
+-                let scale_loss = (splats.scales() * vis_weight.unsqueeze_dim(1)).sum();
++                let scale_loss = (splats.scales() * vis_weight.clone().unsqueeze_dim(1)).sum();
+                 loss + scale_loss * scale_loss_weight
+             } else {
+                 loss
++            };
++
++            // HOLO: a penalty on long, thin splats ("needles"). For each splat, how far the ratio of
++            // its longest to its shortest axis goes past aniso_max_ratio, averaged over the splats
++            // (PhysGaussian's anisotropy regulariser). Off when the weight is 0.
++            if self.config.aniso_loss_weight > 0.0 {
++                let log_scales = splats.log_scales.val();
++                let log_ratio = log_scales.clone().max_dim(1) - log_scales.min_dim(1);
++                let excess = (log_ratio.exp() - self.config.aniso_max_ratio).clamp_min(0.0);
++                let excess: Tensor<_, 1> = excess.squeeze(1);
++                loss + (excess * vis_weight).mean() * self.config.aniso_loss_weight
++            } else {
++                loss
+             }
+         });
+ 

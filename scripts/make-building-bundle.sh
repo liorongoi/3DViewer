@@ -5,21 +5,23 @@
 #
 #   env.tar.gz     Python 3.12 with pycolmap (camera poses), numpy, Pillow, and ffmpeg (video
 #                  frames), from conda-forge and PyPI, packed with conda-pack so it can move
-#   brush/         Brush, the trainer (Apache-2.0): one program that trains on any graphics card
-#                  through Vulkan (NVIDIA, AMD or Intel), or slowly on the processor
+#   brush/         Brush (Apache-2.0), built from source with HOLO's needle penalty: one program
+#                  that builds on any graphics card through Vulkan (NVIDIA, AMD or Intel), or
+#                  slowly on the processor
 #   sample/        a small made-up scene for the self-test (workers/selftest/make_sample.py)
 #   install-building.sh, VERSION, SHA256SUMS
 #
 # Run on an internet-connected build machine:
 #   bash scripts/make-building-bundle.sh      -> out/holo-building-<version>-linux-x64.tar.gz
-# VIEWER_VERSION sets the version. MICROMAMBA_VERSION, PYCOLMAP_VERSION and BRUSH_VERSION pin the
-# tools (defaults below).
+# VIEWER_VERSION sets the version. MICROMAMBA_VERSION, PYCOLMAP_VERSION, BRUSH_VERSION and
+# BRUSH_COMMIT pin the tools (defaults below). Building Brush needs Rust (cargo) and git.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VERSION="${VIEWER_VERSION:-$(git -C "$ROOT" describe --tags --always --dirty 2>/dev/null || echo dev)}"
 MICROMAMBA_VERSION="${MICROMAMBA_VERSION:-2.3.3-0}"
 PYCOLMAP_VERSION="${PYCOLMAP_VERSION:-3.13.0}"
 BRUSH_VERSION="${BRUSH_VERSION:-v0.3.0}"
+BRUSH_COMMIT="${BRUSH_COMMIT:-3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486}"
 NAME="holo-building-$VERSION-linux-x64"
 OUT="$ROOT/out"
 STAGE="$OUT/$NAME"
@@ -50,13 +52,20 @@ echo "· packing the environment"
 "$env/bin/python" -m pip install -q --no-cache-dir conda-pack --target "$WORK/cp"
 PYTHONPATH="$WORK/cp" "$env/bin/python" -c "import sys; from conda_pack.cli import main; sys.exit(main())" -p "$env" -o "$STAGE/env.tar.gz" --ignore-missing-files -q
 
-echo "· Brush $BRUSH_VERSION"
-br="$DL/brush-$BRUSH_VERSION.tar.xz"
-[[ -f "$br" ]] || curl -fsSL -o "$br" "https://github.com/ArthurBrussee/brush/releases/download/$BRUSH_VERSION/brush-app-x86_64-unknown-linux-gnu.tar.xz"
+echo "· Brush $BRUSH_VERSION with HOLO's needle penalty (scripts/brush/needle-penalty.patch)"
+# Built from Brush's own source at the tag's commit, with one small addition: a penalty on long,
+# thin splats (--aniso-loss-weight, --aniso-max-ratio). Needs Rust (cargo) on the build machine.
+src="$WORK/brush-src"
+git clone -q --depth 1 --branch "$BRUSH_VERSION" https://github.com/ArthurBrussee/brush.git "$src"
+[[ "$(git -C "$src" rev-parse HEAD)" == "$BRUSH_COMMIT" ]] || fail "Brush $BRUSH_VERSION is not commit $BRUSH_COMMIT"
+git -C "$src" apply "$ROOT/scripts/brush/needle-penalty.patch"
+(cd "$src" && cargo build -q --release --locked --bin brush_app)
 mkdir -p "$STAGE/brush"
-tar -xJf "$br" -C "$STAGE/brush" --strip-components=1
-[[ -x "$STAGE/brush/brush_app" ]] || fail "the Brush archive has no brush_app"
-brv="$("$STAGE/brush/brush_app" --version | awk '{print $2}')"
+install -m 0755 "$src/target/release/brush_app" "$STAGE/brush/brush_app"
+cp "$src/LICENSE"* "$STAGE/brush/" 2>/dev/null || true
+cp "$ROOT/scripts/brush/needle-penalty.patch" "$STAGE/brush/"
+"$STAGE/brush/brush_app" --help | grep -q -- "--aniso-loss-weight" || fail "the Brush build has no needle penalty"
+brv="$("$STAGE/brush/brush_app" --version | awk '{print $2}')+holo"
 
 install -m 0755 "$ROOT/deploy/install-building.sh" "$STAGE/install-building.sh"
 cat > "$STAGE/VERSION" <<EOF

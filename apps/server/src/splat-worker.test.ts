@@ -19,6 +19,7 @@ import {
   exifGps,
   exportStep,
   fill,
+  needleOptions,
   fitSimilarity,
   georeference,
   parseFrameScores,
@@ -721,5 +722,21 @@ describe("checking a capture before building", () => {
     // A gap of one sample is joined; a longer one splits the range.
     expect(timeRanges([{ t: 0 }, { t: 0.5 }, { t: 1 }, { t: 70 }], (x) => x.t !== 1)).toBe("0:00–1:10");
     expect(timeRanges([{ t: 0 }, { t: 0.5 }, { t: 1 }, { t: 1.5 }, { t: 70 }], (x) => x.t < 1 || x.t > 2)).toBe("0:00, 1:10");
+  });
+});
+
+describe("holding back needles", () => {
+  it("adds the needle penalty only when the trainer lists it", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "needles-"));
+    const patched = path.join(dir, "patched");
+    const stock = path.join(dir, "stock");
+    await writeFile(patched, "#!/bin/sh\necho '  --aniso-loss-weight <ANISO_LOSS_WEIGHT>'\n", { mode: 0o755 });
+    await writeFile(stock, "#!/bin/sh\necho '  --scale-loss-weight <SCALE_LOSS_WEIGHT>'\n", { mode: 0o755 });
+    const brush = DEFAULTS.methods.brush;
+    expect(needleOptions({ ...brush, program: patched }, {})).toEqual(["--aniso-loss-weight", "0.05", "--aniso-max-ratio", "10"]);
+    expect(needleOptions({ ...brush, program: stock }, {})).toEqual([]);
+    expect(needleOptions({ ...brush, program: path.join(dir, "missing") }, {})).toEqual([]);
+    expect(needleOptions({ program: patched }, {})).toEqual([]);
+    await rm(dir, { recursive: true, force: true });
   });
 });

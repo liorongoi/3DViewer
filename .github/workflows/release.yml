@@ -119,10 +119,12 @@ jobs:
 
   # The building add-on for a server in a home folder: Python with pycolmap, ffmpeg and Brush.
   # Checked on the runner with Mesa's software Vulkan driver (no graphics card there).
+  # Brush is built from source here (with HOLO's needle penalty), on Ubuntu 22.04 so that it runs
+  # on servers with an older C library too.
   building:
     needs: server
-    runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    runs-on: ubuntu-22.04
+    timeout-minutes: 100
     steps:
       - uses: actions/checkout@v4
         with:

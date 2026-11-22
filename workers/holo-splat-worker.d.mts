@@ -5,6 +5,7 @@ export interface Fix { lat: number; lon: number; height: number | null }
 export interface Res { count: number; horizontalRms: number; verticalRms: number; max: number }
 export const DEFAULTS: { methods: Record<string, { train: string[]; check?: string[] }> } & Record<string, unknown>;
 export function fill(argv: string[], values: Record<string, unknown>): string[];
+export function needleOptions(m: { needles?: string[]; program?: string }, values: Record<string, unknown>): string[];
 export function toEcef(lat: number, lon: number, h: number): V3;
 export function toGeodetic(p: V3): { lat: number; lon: number; height: number };
 export function toEnu(origin: { lat: number; lon: number; height: number }, lat: number, lon: number, h: number): V3;
