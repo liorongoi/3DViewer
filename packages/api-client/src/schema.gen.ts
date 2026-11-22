@@ -194,7 +194,7 @@ export type paths = {
             path?: never;
             cookie?: never;
         };
-        /** @description A redacted text log for reporting a problem: versions, hardware, method checks, recent captures and jobs, training logs. */
+        /** @description A redacted text log for reporting a problem: versions, hardware, method checks, recent captures and jobs, building logs. */
         get: {
             parameters: {
                 query?: never;

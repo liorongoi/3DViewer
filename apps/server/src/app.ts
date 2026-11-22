@@ -401,7 +401,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   // One text file to take away when reporting a problem, with network details removed (debug-log.ts).
   app.get(
     "/api/admin/debug-log",
-    { onRequest: admin, schema: { tags: ["admin"], description: "A redacted text log for reporting a problem: versions, hardware, method checks, recent captures and jobs, training logs.", response: { 200: { description: "The log as plain text, with network details replaced by placeholders.", content: { "text/plain": { schema: { type: "string" } } } } } } },
+    { onRequest: admin, schema: { tags: ["admin"], description: "A redacted text log for reporting a problem: versions, hardware, method checks, recent captures and jobs, building logs.", response: { 200: { description: "The log as plain text, with network details replaced by placeholders.", content: { "text/plain": { schema: { type: "string" } } } } } } },
     async (req, reply) => {
       const text = await debugLog(db, capture, checkerFor(capture));
       await audit(db, { ...(await who(req)), action: "admin.debuglog", target: "server", detail: { bytes: text.length } });

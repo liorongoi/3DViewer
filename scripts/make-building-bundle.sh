@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# The training add-on for a HOLO server installed in a home folder (deploy/install-user.sh): the
+# The building add-on for a HOLO server installed in a home folder (deploy/install-user.sh): the
 # tools that turn a video or photos into Gaussian splats, in one archive that installs with no
-# root and no internet (deploy/install-training.sh, docs/INSTALL.md):
+# root and no internet (deploy/install-building.sh, docs/INSTALL.md):
 #
 #   env.tar.gz     Python 3.12 with pycolmap (camera poses), numpy, Pillow, and ffmpeg (video
 #                  frames), from conda-forge and PyPI, packed with conda-pack so it can move
 #   brush/         Brush, the trainer (Apache-2.0): one program that trains on any graphics card
 #                  through Vulkan (NVIDIA, AMD or Intel), or slowly on the processor
 #   sample/        a small made-up scene for the self-test (workers/selftest/make_sample.py)
-#   install-training.sh, VERSION, SHA256SUMS
+#   install-building.sh, VERSION, SHA256SUMS
 #
 # Run on an internet-connected build machine:
-#   bash scripts/build-training-bundle.sh      -> out/holo-training-<version>-linux-x64.tar.gz
+#   bash scripts/make-building-bundle.sh      -> out/holo-building-<version>-linux-x64.tar.gz
 # VIEWER_VERSION sets the version. MICROMAMBA_VERSION, PYCOLMAP_VERSION and BRUSH_VERSION pin the
 # tools (defaults below).
 set -euo pipefail
@@ -20,13 +20,13 @@ VERSION="${VIEWER_VERSION:-$(git -C "$ROOT" describe --tags --always --dirty 2>/
 MICROMAMBA_VERSION="${MICROMAMBA_VERSION:-2.3.3-0}"
 PYCOLMAP_VERSION="${PYCOLMAP_VERSION:-3.13.0}"
 BRUSH_VERSION="${BRUSH_VERSION:-v0.3.0}"
-NAME="holo-training-$VERSION-linux-x64"
+NAME="holo-building-$VERSION-linux-x64"
 OUT="$ROOT/out"
 STAGE="$OUT/$NAME"
 DL="$OUT/.downloads"
 WORK="$OUT/.training-build"
 
-fail() { echo "build-training-bundle: $*" >&2; exit 1; }
+fail() { echo "make-building-bundle: $*" >&2; exit 1; }
 rm -rf "$STAGE" "$OUT/$NAME.tar.gz" "$WORK"
 mkdir -p "$STAGE" "$DL" "$WORK"
 
@@ -58,9 +58,9 @@ tar -xJf "$br" -C "$STAGE/brush" --strip-components=1
 [[ -x "$STAGE/brush/brush_app" ]] || fail "the Brush archive has no brush_app"
 brv="$("$STAGE/brush/brush_app" --version | awk '{print $2}')"
 
-install -m 0755 "$ROOT/deploy/install-training.sh" "$STAGE/install-training.sh"
+install -m 0755 "$ROOT/deploy/install-building.sh" "$STAGE/install-building.sh"
 cat > "$STAGE/VERSION" <<EOF
-holo-training $VERSION
+holo-building $VERSION
 pycolmap $PYCOLMAP_VERSION
 ffmpeg $ffv
 brush $brv

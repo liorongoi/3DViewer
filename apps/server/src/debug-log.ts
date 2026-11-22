@@ -9,7 +9,7 @@ import { readTrainingLogs } from "./training-log.ts";
  * One text file an administrator can take away to report a problem (docs/OPERATIONS.md,
  * "Debug log"). It keeps what helps debugging: versions, hardware, which methods are set up and
  * what their checks said, recent captures and jobs with their timings and errors, and the newest
- * training logs. It never includes environment variables, settings values, file names from
+ * building logs. It never includes environment variables, settings values, file names from
  * captures, client addresses or audit entries, and the whole text goes through the redactor
  * (redact.ts) last, so a stray address or path in an error message is removed too.
  */
@@ -28,7 +28,7 @@ export async function debugLog(db: Queryable, opts: ReconstructOptions, check: P
   out.push(`CPU ${hw.cpuModel}, ${hw.cpus} threads, ${hw.ramGb} GB`);
   for (const g of hw.gpus) out.push(`GPU ${g.vendor} ${g.name}, ${g.memoryGb} GB${g.freeGb !== undefined ? `, ${g.freeGb} GB free` : ""}${g.driver ? `, driver ${g.driver}` : ""}`);
   if (!hw.gpus.length) out.push("GPU none found (nvidia-smi did not answer)");
-  out.push(`CUDA_VISIBLE_DEVICES ${process.env.CUDA_VISIBLE_DEVICES === undefined ? "not set" : "set"}; training time limit ${opts.timeoutHours ?? 12} h; virus scan ${opts.scan ? "on" : "off"}`);
+  out.push(`CUDA_VISIBLE_DEVICES ${process.env.CUDA_VISIBLE_DEVICES === undefined ? "not set" : "set"}; building time limit ${opts.timeoutHours ?? 12} h; virus scan ${opts.scan ? "on" : "off"}`);
 
   section("Splat methods");
   for (const c of await componentStates(db, opts.workers, check))
@@ -55,7 +55,7 @@ export async function debugLog(db: Queryable, opts: ReconstructOptions, check: P
   }
   if (!jobs.length) out.push("none");
 
-  section("Training logs (newest 10)");
+  section("Building logs (newest 10)");
   const logs = opts.logDir ? await readTrainingLogs(opts.logDir, 10) : [];
   for (const l of logs) out.push(`--- ${l.name} ---`, l.text.trimEnd());
   if (!logs.length) out.push("none");

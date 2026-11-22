@@ -45,17 +45,17 @@ cd viewer-server-<version>-linux-x64
 - **Limits:** the conversion sandbox (podman) is off, and uploads are not virus-scanned unless `clamdscan` is installed. For a shared site server, use the root install below.
 - **Check:** `scripts/check-user-install.sh` (CI) installs as an ordinary user, signs in, stops, starts, backs up, writes a report, upgrades and uninstalls.
 
-### Making splats on this server: the training add-on
+### Making splats on this server: the building add-on
 
-`holo-training-<version>-linux-x64.tar.gz` holds what turns a video or photos into Gaussian splats: Python 3.12 with pycolmap (camera poses, on the processor), ffmpeg (video frames) and Brush (training through Vulkan on any NVIDIA, AMD or Intel graphics card). As the same user:
+`holo-building-<version>-linux-x64.tar.gz` holds what turns a video or photos into Gaussian splats: Python 3.12 with pycolmap (camera poses, on the processor), ffmpeg (video frames) and Brush (building through Vulkan on any NVIDIA, AMD or Intel graphics card). As the same user:
 
 ```sh
-tar -xzf holo-training-<version>-linux-x64.tar.gz
-cd holo-training-<version>-linux-x64
-./install-training.sh          # or --dir for HOLO elsewhere
+tar -xzf holo-building-<version>-linux-x64.tar.gz
+cd holo-building-<version>-linux-x64
+./install-building.sh          # or --dir for HOLO elsewhere
 ```
 
-It unpacks into `~/holo/training/<version>`, writes `settings/holo-worker.json`, sets `SPLAT_WORKERS=brush=…` in `settings/viewer.env`, restarts HOLO and runs `holo test-training`: 300 Brush steps on a made-up scene (`workers/selftest/make_sample.py`), with the time it took. Brush needs the graphics driver's Vulkan part (on NVIDIA it comes with the driver); if the test is slow, Brush is drawing on the processor. Checked by `scripts/check-training-install.sh` in the release workflow (Mesa's software Vulkan on the runner), and once by hand here: a 10 s orbit video uploaded through the API went through frames and camera poses (153 of 153 frames posed) into Brush training, on a machine with no graphics card (Mesa's software Vulkan).
+It unpacks into `~/holo/training/<version>`, writes `settings/holo-worker.json`, sets `SPLAT_WORKERS=brush=…` in `settings/viewer.env`, restarts HOLO and runs `holo test-building`: 300 Brush steps on a made-up scene (`workers/selftest/make_sample.py`), with the time it took. Brush needs the graphics driver's Vulkan part (on NVIDIA it comes with the driver); if the test is slow, Brush is drawing on the processor. Checked by `scripts/check-building-install.sh` in the release workflow (Mesa's software Vulkan on the runner), and once by hand here: a 10 s orbit video uploaded through the API went through frames and camera poses (153 of 153 frames posed) into a Brush build, on a machine with no graphics card (Mesa's software Vulkan).
 
 ## 1. Copy the bundle and check it
 
