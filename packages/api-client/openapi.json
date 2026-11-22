@@ -3528,7 +3528,7 @@
         "tags": [
           "admin"
         ],
-        "description": "A redacted text log for reporting a problem: versions, hardware, method checks, recent captures and jobs, training logs.",
+        "description": "A redacted text log for reporting a problem: versions, hardware, method checks, recent captures and jobs, building logs.",
         "responses": {
           "200": {
             "description": "The log as plain text, with network details replaced by placeholders.",

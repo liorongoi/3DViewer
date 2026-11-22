@@ -7,8 +7,8 @@
 #   bin/FBX2glTF   the FBX converter (from the fbx2gltf package, as the desktop app)
 #   server/        the API server with its production packages
 #   web/           the web app (without the sample data)
-#   workers/       the splat training worker; the training tools come in their own bundle
-#                  (scripts/build-training-bundle.sh, holo-training-<version>-linux-x64.tar.gz)
+#   workers/       the splat building worker; the building tools come in their own bundle
+#                  (scripts/make-building-bundle.sh, holo-building-<version>-linux-x64.tar.gz)
 #   deploy/        systemd units, Caddy config, settings templates, backup, restore, base maps
 #   sandbox/rootfs the conversion sandbox's root: the C libraries Node.js and FBX2glTF load
 #   docs/          INSTALL.md and OPERATIONS.md

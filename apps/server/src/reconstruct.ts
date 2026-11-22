@@ -390,7 +390,7 @@ export function reconstructHandler(
 
     // The run's log (training-log.ts): written redacted when the run ends, however it ends.
     const started = Date.now();
-    const trace: string[] = [`HOLO training log`, `capture ${ingestId}, method ${method.id}, attempt ${job.attempts} of ${job.max_attempts}`, `input ${r.input}, goal ${r.goal}, preset ${r.preset}`, `started ${new Date(started).toISOString()}`];
+    const trace: string[] = [`HOLO building log`, `capture ${ingestId}, method ${method.id}, attempt ${job.attempts} of ${job.max_attempts}`, `input ${r.input}, goal ${r.goal}, preset ${r.preset}`, `started ${new Date(started).toISOString()}`];
     const note = (t: string) => trace.push(`[${((Date.now() - started) / 1000).toFixed(1)} s] ${t}`);
     const abort = new AbortController();
     const watch = setInterval(() => void cancelled().then((c) => c && abort.abort(), () => undefined), 2000);

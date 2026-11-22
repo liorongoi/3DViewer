@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Adds the training tools to a HOLO server installed in a home folder (install-user.sh), so it can
+# Adds the building tools to a HOLO server installed in a home folder (install-user.sh), so it can
 # make Gaussian splats from a video or photos by itself. No root and no internet needed.
 #
-#   ./install-training.sh                 for HOLO in ~/holo
-#   ./install-training.sh --dir /data/holo
-#   ./install-training.sh --no-test       skip the short self-test training at the end
+#   ./install-building.sh                 for HOLO in ~/holo
+#   ./install-building.sh --dir /data/holo
+#   ./install-building.sh --no-test       skip the short self-test build at the end
 #
-# Run it from the unpacked holo-training bundle, as the same user that installed HOLO. It puts the
+# Run it from the unpacked holo-building bundle, as the same user that installed HOLO. It puts the
 # tools in <holo>/training/<version>, tells HOLO where they are (settings/holo-worker.json and
-# SPLAT_WORKERS in settings/viewer.env), restarts HOLO, and runs `holo test-training`.
+# SPLAT_WORKERS in settings/viewer.env), restarts HOLO, and runs `holo test-building`.
 # Running it again, or with a newer bundle, is safe.
 set -euo pipefail
 umask 077
@@ -22,16 +22,16 @@ while [[ $# -gt 0 ]]; do
     --dir) D="$2"; shift 2 ;;
     --no-test) TEST=0; shift ;;
     -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
-    *) fail "unknown option $1 (./install-training.sh --help lists them)" ;;
+    *) fail "unknown option $1 (./install-building.sh --help lists them)" ;;
   esac
 done
 
 [[ $EUID -ne 0 ]] || fail "run it as yourself, without sudo"
-[[ -f "$BUNDLE/VERSION" && -f "$BUNDLE/SHA256SUMS" ]] || fail "run this from the unpacked holo-training folder"
+[[ -f "$BUNDLE/VERSION" && -f "$BUNDLE/SHA256SUMS" ]] || fail "run this from the unpacked holo-building folder"
 [[ -f "$D/settings/viewer.env" && -L "$D/current" ]] || fail "HOLO is not installed in $D. Install the server first (./install-user.sh), or give its folder with --dir"
 [[ -f "$D/current/workers/holo-splat-worker.mjs" ]] || fail "this HOLO version has no splat worker; install HOLO 1.1.1 or newer first"
-VERSION="$(awk '/^holo-training /{print $2}' "$BUNDLE/VERSION")"
-echo "HOLO training tools $VERSION: adding them to $D"
+VERSION="$(awk '/^holo-building /{print $2}' "$BUNDLE/VERSION")"
+echo "HOLO building tools $VERSION: adding them to $D"
 echo
 
 say "checking the download"
@@ -60,7 +60,7 @@ ln -sfn "$dest" "$T/current.new" && mv -Tf "$T/current.new" "$T/current"
 mkdir -p "$T/bin"
 cat > "$T/bin/brush" <<EOF
 #!/usr/bin/env bash
-# Brush with a Vulkan loader: the system's, or the one in the training environment.
+# Brush with a Vulkan loader: the system's, or the one in the building environment.
 if ! /sbin/ldconfig -p 2>/dev/null | grep -q 'libvulkan.so.1 '; then
   export LD_LIBRARY_PATH="$T/current/env/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
 fi
@@ -68,7 +68,7 @@ exec "$T/current/brush/brush_app" "\$@"
 EOF
 cat > "$T/bin/holo-splat-worker" <<EOF
 #!/usr/bin/env bash
-# HOLO's splat worker on HOLO's own Node.js, with the settings install-training.sh wrote.
+# HOLO's splat worker on HOLO's own Node.js, with the settings install-building.sh wrote.
 export HOLO_WORKER_CONFIG="$D/settings/holo-worker.json"
 exec "$D/current/node/bin/node" "$D/current/workers/holo-splat-worker.mjs" "\$@"
 EOF
@@ -77,7 +77,7 @@ chmod 700 "$T/bin/brush" "$T/bin/holo-splat-worker"
 say "telling HOLO where the tools are"
 cat > "$D/settings/holo-worker.json" <<EOF
 {
-  "_note": "Written by install-training.sh. Camera poses with pycolmap on the processor; training with Brush on the graphics card.",
+  "_note": "Written by install-building.sh. Camera poses with pycolmap on the processor; building with Brush on the graphics card.",
   "ffmpeg": "$T/current/env/bin/ffmpeg",
   "sfm": "pycolmap",
   "python": "$T/current/env/bin/python",
@@ -92,7 +92,7 @@ line="SPLAT_WORKERS=brush=$T/bin/holo-splat-worker"
 if grep -q '^SPLAT_WORKERS=' "$D/settings/viewer.env"; then
   sed -i "s|^SPLAT_WORKERS=.*|$line|" "$D/settings/viewer.env"
 else
-  printf '\n# Added by install-training.sh: splats from video and photos, trained with Brush.\n%s\n' "$line" >> "$D/settings/viewer.env"
+  printf '\n# Added by install-building.sh: splats from video and photos, built with Brush.\n%s\n' "$line" >> "$D/settings/viewer.env"
 fi
 
 say "restarting HOLO"
@@ -100,7 +100,7 @@ say "restarting HOLO"
 
 if [[ $TEST -eq 1 ]]; then
   echo
-  "$D/holo" test-training || exit 1
+  "$D/holo" test-building || exit 1
 fi
 echo
 echo "Done. In HOLO, choose \"Make a splat\" and upload a video or photos."

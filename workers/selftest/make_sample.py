@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A small made-up scene for the training self-test (holo test-training): no real photos.
+"""A small made-up scene for the building self-test (holo test-building): no real photos.
 
 Writes <out>/images/*.png and <out>/sparse/0 (COLMAP binary, as pycolmap writes it): a coloured
 checkered box on a ground plane, seen by 24 cameras on a ring. Each picture is drawn by projecting

@@ -177,7 +177,7 @@ describe("making splats from a capture", () => {
     const logs = (await readdir(capture.logDir!)).filter((f) => f.endsWith(".log"));
     expect(logs.length).toBeGreaterThanOrEqual(2);
     const one = await readFile(path.join(capture.logDir!, logs[0]!), "utf8");
-    expect(one).toMatch(/HOLO training log/);
+    expect(one).toMatch(/HOLO building log/);
     expect(one).toMatch(/worker ended: exit 0/);
     expect(one).not.toContain(dir);
     expect(one).not.toContain(tmpdir());
@@ -193,7 +193,7 @@ describe("making splats from a capture", () => {
     expect(text).toMatch(/=== Splat methods ===/);
     expect(text).toMatch(/gsplat: configured yes, environment ok/);
     expect(text).toMatch(/NVIDIA RTX A5000, 24 GB, driver 550.54.14/);
-    expect(text).toMatch(/=== Training logs/);
+    expect(text).toMatch(/=== Building logs/);
     for (const bad of [dir, tmpdir(), FIXTURE, (await import("node:os")).hostname(), "127.0.0.1"]) expect(text).not.toContain(bad);
   });
 

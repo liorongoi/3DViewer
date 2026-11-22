@@ -92,9 +92,9 @@ const worker =
 // and long trainings do not hold up ordinary uploads.
 const trainer =
   config.workers && Object.keys(config.splatWorkers).length
-    ? new Worker(db, { reconstruct: reconstructHandler(db, storage, capture, unpackUpload), "capture-check": captureCheckHandler(db, storage, capture, unpackUpload) }, { leaseSeconds: config.jobLeaseSeconds, pollMs: 3000, onError: (e, job) => app.log.warn({ err: e, job: job.id }, "splat training failed") })
+    ? new Worker(db, { reconstruct: reconstructHandler(db, storage, capture, unpackUpload), "capture-check": captureCheckHandler(db, storage, capture, unpackUpload) }, { leaseSeconds: config.jobLeaseSeconds, pollMs: 3000, onError: (e, job) => app.log.warn({ err: e, job: job.id }, "splat building failed") })
     : null;
-if (trainer) void serverHardware().then((hw) => app.log.info({ hardware: hw, methods: Object.keys(config.splatWorkers) }, "splat training ready"));
+if (trainer) void serverHardware().then((hw) => app.log.info({ hardware: hw, methods: Object.keys(config.splatWorkers) }, "splat building ready"));
 if (adminPassword === "missing") app.log.warn("No admin password: set ADMIN_PASSWORD and restart to open the admin page");
 if (adminPassword === "kept" && config.adminPassword && !config.adminPasswordReset) app.log.info("ADMIN_PASSWORD is ignored: a password is already stored (ADMIN_PASSWORD_RESET=1 replaces it)");
 if (!config.clamdscan) app.log.warn("CLAMDSCAN is not set: uploads are not scanned for viruses");

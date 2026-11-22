@@ -9,7 +9,7 @@ You do not need root, sudo or admin rights. Everything goes into one folder in y
 
      ./deploy/bin/holo-check
 
-   It says whether HOLO can run here, and whether the graphics card can train Gaussian splats.
+   It says whether HOLO can run here, and whether the graphics card can build Gaussian splats.
    Its output names no machine, address or user, so you can copy it and send it for support.
 
 
@@ -27,15 +27,15 @@ You do not need root, sudo or admin rights. Everything goes into one folder in y
    In the HOLO Windows app, the same address goes in as the server address.
 
 
-3. To make splats on this machine (optional): the training tools
+3. To make splats on this machine (optional): the building tools
 
-   Download holo-training-<version>-linux-x64.tar.gz too, then:
+   Download holo-building-<version>-linux-x64.tar.gz too, then:
 
-     tar -xzf holo-training-<version>-linux-x64.tar.gz
-     cd holo-training-<version>-linux-x64
-     ./install-training.sh
+     tar -xzf holo-building-<version>-linux-x64.tar.gz
+     cd holo-building-<version>-linux-x64
+     ./install-building.sh
 
-   At the end it trains a small sample and says whether the graphics card is used and how fast.
+   At the end it builds a small sample and says whether the graphics card is used and how fast.
 
 
 4. Every day: the holo command
@@ -44,7 +44,7 @@ You do not need root, sudo or admin rights. Everything goes into one folder in y
      holo stop        stop it
      holo start       start it again
      holo check       what this machine can do
-     holo test-training   a short training, to check the training tools
+     holo test-building   a short build, to check the building tools
      holo logs        the last messages, if something is wrong
      holo report      a file to send for support (no addresses or names in it)
      holo backup      a backup now (one is also made every night at 02:30)
