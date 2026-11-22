@@ -81,7 +81,7 @@ cat > "$D/settings/holo-worker.json" <<EOF
   "ffmpeg": "$T/current/env/bin/ffmpeg",
   "sfm": "pycolmap",
   "python": "$T/current/env/bin/python",
-  "sfmGpu": false,
+  "sfmGpu": false,$([[ -f "$T/current/models/yolox_s.onnx" ]] && printf '\n  "masks": "%s",' "$T/current/models/yolox_s.onnx" || true)
   "methods": {
     "brush": { "program": "$T/bin/brush", "revision": "$("$T/current/brush/brush_app" --version 2>/dev/null | awk '{print $2}')" }
   }

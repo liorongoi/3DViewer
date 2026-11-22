@@ -48,10 +48,13 @@ def main() -> int:
     if not models:
         print("No camera poses could be found: the pictures do not overlap enough, or are too blurred or too plain.", file=sys.stderr)
         return 2
-    best = max(models.values(), key=lambda r: r.num_reg_images())
+    # The largest model is the one to keep. Read them back from disk: the folder numbers pycolmap
+    # writes need not match the keys of the models it returns.
+    folders = [os.path.join(sparse, d) for d in os.listdir(sparse) if os.path.exists(os.path.join(sparse, d, "images.bin"))]
+    best = max(folders, key=lambda d: pycolmap.Reconstruction(d).num_reg_images())
     data = os.path.join(a.work, "data")
     shutil.rmtree(data, ignore_errors=True)
-    pycolmap.undistort_images(data, os.path.join(sparse, str([k for k, v in models.items() if v is best][0])), a.images, output_type="COLMAP")
+    pycolmap.undistort_images(data, best, a.images, output_type="COLMAP")
     return 0
 
 

@@ -63,6 +63,13 @@ Researched 20 November 2026. These are the best methods that can be installed to
 | Terrain from satellite images | EOGS++ | Skyfall-GS (labelled **generative**) | [EOGS++](https://gardiens.github.io/EOGS2/). Skyfall-GS invents the sides no satellite saw, so its models carry a "Partly generated" warning. |
 | Camera poses without COLMAP | (not yet wired) | VGGT-X, LongSplat | Promising for long videos and few views; a candidate for a later worker. |
 
+### Needles and masks (Brush)
+
+Two additions came from building a street drive and a garage walk:
+
+- **Needles.** Brush is built from its source with one patch (`scripts/brush/needle-penalty.patch`), which penalises splats whose longest axis is more than 10 times their shortest. The worker passes `--aniso-loss-weight 0.05` whenever the installed Brush has the option. On the self-test scene, splats more than 10 times long fell from 73% to 0.5%, and the held-out PSNR rose from 19.5 to 20.4. On the garage they fell from 72% to 5%, with the same PSNR.
+- **Masks.** After the pose step, `workers/holo_masks.py` finds people and vehicles with YOLOX-S (Apache-2.0, run with onnxruntime on the processor) and writes `data/masks/`, which Brush reads by itself. People are always left out. A vehicle is left out only when it moved: the features on a parked car became 3D points in the pose step, while those on a moving or badly blurred car did not. When nothing needs leaving out, no masks are written. The step never stops a build; if it fails, the build goes on without masks and the log says why. The masks only leave parts of pictures out; nothing in the capture is changed.
+
 INRIA's original 3DGS code is non-commercial, so no method here depends on it unless it is marked "research". Every method marked "research" shows "Research licence: check it before commercial use" in the wizard and on its result.
 
 ## Hardware
