@@ -11,7 +11,7 @@ import { migrate, openPglite, type Db } from "./db.ts";
 import { appleGpu, parseNvidiaSmi } from "./hardware.ts";
 import { ingestHandler, unpackUpload } from "./ingest.ts";
 import { Worker } from "./jobs.ts";
-import { captureFileOk, reconstructHandler, runWorker, type ReconstructOptions } from "./reconstruct.ts";
+import { captureFileOk, captureCheckHandler, reconstructHandler, runWorker, type ReconstructOptions } from "./reconstruct.ts";
 import { seed } from "./seed.ts";
 import { ensureAdminPassword } from "./admin.ts";
 import { Storage } from "./storage.ts";
@@ -195,6 +195,38 @@ describe("making splats from a capture", () => {
     expect(text).toMatch(/NVIDIA RTX A5000, 24 GB, driver 550.54.14/);
     expect(text).toMatch(/=== Training logs/);
     for (const bad of [dir, tmpdir(), FIXTURE, (await import("node:os")).hostname(), "127.0.0.1"]) expect(text).not.toContain(bad);
+  });
+
+  it("checks a capture first, says what it found, and builds from the same upload only when asked", async () => {
+    const ing = (await send([{ path: "photos.zip", data: photos() }], { input: "photos", goal: "scene", methods: ["gsplat"], preset: "fast", checkFirst: true })) as { id: string };
+    expect((await app.inject(`/api/captures/${ing.id}`)).json()).toMatchObject({ state: "checking", check: { state: "queued" } });
+    const checker = () => new Worker(db, { "capture-check": captureCheckHandler(db, storage, capture, unpackUpload) });
+    expect(await checker().runOnce()).toBe(true);
+    const checked = (await app.inject(`/api/captures/${ing.id}`)).json();
+    expect(checked).toMatchObject({ state: "checked", check: { state: "done", report: { verdict: "good", items: [{ key: "posesGood", severity: "ok" }, { key: "fixture" }] } } });
+    // Nothing was built, and the upload is kept for building.
+    expect((await db.query("SELECT 1 FROM jobs WHERE kind = 'reconstruct' AND payload->>'ingestId' = $1", [ing.id])).length).toBe(0);
+    expect((await readdir(storage.uploads)).length).toBeGreaterThan(0);
+    const built = await app.inject({ method: "POST", url: `/api/captures/${ing.id}/train` });
+    expect(built.statusCode).toBe(200);
+    expect(built.json()).toMatchObject({ state: "working", methods: [{ method: "gsplat", state: "queued" }] });
+    // Only once.
+    expect((await app.inject({ method: "POST", url: `/api/captures/${ing.id}/train` })).statusCode).toBe(409);
+    await drain();
+    expect((await app.inject(`/api/captures/${ing.id}`)).json()).toMatchObject({ state: "ready", check: { report: { verdict: "good" } } });
+    const audit = await db.query<{ action: string }>("SELECT action FROM audit_events WHERE target = $1 ORDER BY at", [ing.id]);
+    expect(audit.map((x) => x.action)).toEqual(expect.arrayContaining(["reconstruct.check", "reconstruct.train", "reconstruct.done"]));
+  });
+
+  it("says when a checked capture is poor, and discarding it removes the upload", async () => {
+    const zip = zipSync({ "blurred_1.jpg": new Uint8Array([0xff, 0xd8, 1]), "IMG_2.jpg": new Uint8Array([0xff, 0xd8, 2]) });
+    const ing = (await send([{ path: "photos.zip", data: zip }], { input: "photos", goal: "scene", methods: ["gsplat"], preset: "fast", checkFirst: true })) as { id: string };
+    await new Worker(db, { "capture-check": captureCheckHandler(db, storage, capture, unpackUpload) }).runOnce();
+    expect((await app.inject(`/api/captures/${ing.id}`)).json()).toMatchObject({ state: "checked", check: { report: { verdict: "poor", items: [{ key: "blurry", severity: "error" }, { key: "fixture" }] } } });
+    const res = await app.inject({ method: "POST", url: `/api/captures/${ing.id}/cancel` });
+    expect(res.json()).toMatchObject({ state: "cancelled" });
+    expect(await readdir(storage.ingests)).toEqual([]);
+    expect((await app.inject({ method: "POST", url: `/api/captures/${ing.id}/train` })).statusCode).toBe(409);
   });
 
   it("cancels a capture: queued methods end at once, the running worker is stopped, and its files are removed", async () => {

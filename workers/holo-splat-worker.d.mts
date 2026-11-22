@@ -45,3 +45,14 @@ export function jpegSplitter(onImage: (jpg: Buffer, n: number) => void): (chunk:
 export function levelTransform(cams: { q: number[]; centre: V3 }[]): { T: Sim; tiltDeg: number; reason?: undefined } | { reason: string; T?: undefined };
 /** About a twentieth of a training run, dividing it exactly. */
 export function exportStep(iterations: number): number;
+
+export interface CheckItem { key: string; severity: "ok" | "info" | "warning" | "error"; params: Record<string, string | number> }
+export interface Shift { x: number; y: number; dx: number; dy: number }
+export function blockShifts(a: Uint8Array, b: Uint8Array, w: number, h: number, block?: number, search?: number): Shift[];
+export function sharpness(g: Uint8Array, w: number, h: number): number;
+export function exposure(g: Uint8Array): { mean: number; black: number; white: number };
+export function timeRanges<T extends { t: number }>(samples: T[], bad: (s: T, i: number) => boolean, max?: number): string;
+export function judgeVideo(samples: { t: number; sharp: number; mean: number; black: number; white: number; shifts: Shift[] }[], meta: { duration: number; width: number; height: number }): CheckItem[];
+export function judgePoses(cams: { q: number[]; centre: V3 }[], total: number): CheckItem[];
+export function verdictOf(items: CheckItem[]): "good" | "fair" | "poor";
+export function parseMediaInfo(text: string): { duration: number; width: number; height: number; fps: number };

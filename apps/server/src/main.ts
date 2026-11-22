@@ -7,7 +7,7 @@ import { AuditForwarder } from "./audit-forward.ts";
 import { migrate, openPglite, openPostgres } from "./db.ts";
 import { ingestHandler, scan, unpackUpload } from "./ingest.ts";
 import { serverHardware } from "./hardware.ts";
-import { reconstructHandler } from "./reconstruct.ts";
+import { captureCheckHandler, reconstructHandler } from "./reconstruct.ts";
 import { Worker, type Handler } from "./jobs.ts";
 import { chromiumRenderer, thumbnailHandler } from "./thumbnails.ts";
 import { PodmanSandbox, probeSandbox, type Sandbox } from "./sandbox.ts";
@@ -92,7 +92,7 @@ const worker =
 // and long trainings do not hold up ordinary uploads.
 const trainer =
   config.workers && Object.keys(config.splatWorkers).length
-    ? new Worker(db, { reconstruct: reconstructHandler(db, storage, capture, unpackUpload) }, { leaseSeconds: config.jobLeaseSeconds, pollMs: 3000, onError: (e, job) => app.log.warn({ err: e, job: job.id }, "splat training failed") })
+    ? new Worker(db, { reconstruct: reconstructHandler(db, storage, capture, unpackUpload), "capture-check": captureCheckHandler(db, storage, capture, unpackUpload) }, { leaseSeconds: config.jobLeaseSeconds, pollMs: 3000, onError: (e, job) => app.log.warn({ err: e, job: job.id }, "splat training failed") })
     : null;
 if (trainer) void serverHardware().then((hw) => app.log.info({ hardware: hw, methods: Object.keys(config.splatWorkers) }, "splat training ready"));
 if (adminPassword === "missing") app.log.warn("No admin password: set ADMIN_PASSWORD and restart to open the admin page");

@@ -2085,6 +2085,8 @@
                   "properties": {
                     "state": {
                       "enum": [
+                        "checking",
+                        "checked",
                         "working",
                         "ready",
                         "failed",
@@ -2141,6 +2143,103 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "check": {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "enum": [
+                            "queued",
+                            "checking",
+                            "done",
+                            "failed",
+                            "cancelled"
+                          ]
+                        },
+                        "fraction": {
+                          "type": "number",
+                          "nullable": true
+                        },
+                        "stage": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "error": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "report": {
+                          "type": "object",
+                          "properties": {
+                            "verdict": {
+                              "enum": [
+                                "good",
+                                "fair",
+                                "poor"
+                              ]
+                            },
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "key": {
+                                    "type": "string"
+                                  },
+                                  "severity": {
+                                    "enum": [
+                                      "ok",
+                                      "info",
+                                      "warning",
+                                      "error"
+                                    ]
+                                  },
+                                  "params": {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "number"
+                                        }
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "key",
+                                  "severity",
+                                  "params"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "stats": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "number"
+                              }
+                            }
+                          },
+                          "required": [
+                            "verdict",
+                            "items",
+                            "stats"
+                          ],
+                          "additionalProperties": false,
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "fraction",
+                        "stage",
+                        "error",
+                        "report"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -2201,6 +2300,8 @@
                   "properties": {
                     "state": {
                       "enum": [
+                        "checking",
+                        "checked",
                         "working",
                         "ready",
                         "failed",
@@ -2257,6 +2358,318 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "check": {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "enum": [
+                            "queued",
+                            "checking",
+                            "done",
+                            "failed",
+                            "cancelled"
+                          ]
+                        },
+                        "fraction": {
+                          "type": "number",
+                          "nullable": true
+                        },
+                        "stage": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "error": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "report": {
+                          "type": "object",
+                          "properties": {
+                            "verdict": {
+                              "enum": [
+                                "good",
+                                "fair",
+                                "poor"
+                              ]
+                            },
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "key": {
+                                    "type": "string"
+                                  },
+                                  "severity": {
+                                    "enum": [
+                                      "ok",
+                                      "info",
+                                      "warning",
+                                      "error"
+                                    ]
+                                  },
+                                  "params": {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "number"
+                                        }
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "key",
+                                  "severity",
+                                  "params"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "stats": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "number"
+                              }
+                            }
+                          },
+                          "required": [
+                            "verdict",
+                            "items",
+                            "stats"
+                          ],
+                          "additionalProperties": false,
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "fraction",
+                        "stage",
+                        "error",
+                        "report"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "methods"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "`error` is English. `key` and `params` name the message in the app's strings (serverErrors.<key>), so a client can show it in its own language; `details` does the same for each of several problems.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/captures/{id}/train": {
+      "post": {
+        "tags": [
+          "capture"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "enum": [
+                        "checking",
+                        "checked",
+                        "working",
+                        "ready",
+                        "failed",
+                        "cancelled"
+                      ]
+                    },
+                    "methods": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "method": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "enum": [
+                              "queued",
+                              "training",
+                              "publishing",
+                              "ready",
+                              "failed",
+                              "cancelled"
+                            ]
+                          },
+                          "fraction": {
+                            "type": "number",
+                            "nullable": true
+                          },
+                          "stage": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "error": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "modelId": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "version": {
+                            "type": "integer",
+                            "nullable": true
+                          }
+                        },
+                        "required": [
+                          "method",
+                          "state",
+                          "fraction",
+                          "stage",
+                          "error",
+                          "modelId",
+                          "version"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "check": {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "enum": [
+                            "queued",
+                            "checking",
+                            "done",
+                            "failed",
+                            "cancelled"
+                          ]
+                        },
+                        "fraction": {
+                          "type": "number",
+                          "nullable": true
+                        },
+                        "stage": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "error": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "report": {
+                          "type": "object",
+                          "properties": {
+                            "verdict": {
+                              "enum": [
+                                "good",
+                                "fair",
+                                "poor"
+                              ]
+                            },
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "key": {
+                                    "type": "string"
+                                  },
+                                  "severity": {
+                                    "enum": [
+                                      "ok",
+                                      "info",
+                                      "warning",
+                                      "error"
+                                    ]
+                                  },
+                                  "params": {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "number"
+                                        }
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "key",
+                                  "severity",
+                                  "params"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "stats": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "number"
+                              }
+                            }
+                          },
+                          "required": [
+                            "verdict",
+                            "items",
+                            "stats"
+                          ],
+                          "additionalProperties": false,
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "fraction",
+                        "stage",
+                        "error",
+                        "report"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -3624,6 +4037,9 @@
                           "balanced",
                           "high"
                         ]
+                      },
+                      "checkFirst": {
+                        "type": "boolean"
                       }
                     },
                     "additionalProperties": false

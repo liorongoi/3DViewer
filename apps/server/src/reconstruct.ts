@@ -45,6 +45,15 @@ export interface ReconstructRequest {
   goal: SplatGoal;
   methods: string[];
   preset: SplatPreset;
+  /** Check the capture first (capture-check job) and train only when someone asks (POST /api/captures/:id/train). */
+  checkFirst?: boolean;
+}
+
+/** What the check found: worker items (keys translated by the app), a verdict, and a few numbers. */
+export interface CaptureReport {
+  verdict: "good" | "fair" | "poor";
+  items: { key: string; severity: "ok" | "info" | "warning" | "error"; params: Record<string, string | number> }[];
+  stats: Record<string, number>;
 }
 
 export interface SplatProvenance {
@@ -133,6 +142,7 @@ export const reconstructSchema = {
     goal: { enum: ["scene", "surface", "area", "satellite"] },
     methods: { type: "array", minItems: 1, maxItems: MAX_METHODS, uniqueItems: true, items: { enum: SPLAT_METHODS.map((m) => m.id) } },
     preset: { enum: ["fast", "balanced", "high"] },
+    checkFirst: { type: "boolean" },
   },
   additionalProperties: false,
 } as const;
@@ -178,10 +188,27 @@ export async function reconstructProblem(r: ReconstructRequest, files: { path: s
 /** Queues the jobs for a submitted capture, one per method, in the caller's transaction. */
 export async function queueReconstruct(q: Queryable, ingestId: string, r: ReconstructRequest): Promise<void> {
   await q.query("UPDATE ingests SET state = 'converting', updated_at = now() WHERE id = $1", [ingestId]);
-  for (const method of r.methods) await enqueue(q, "reconstruct", { ingestId, method }, 2);
+  if (r.checkFirst) await enqueue(q, "capture-check", { ingestId }, 1);
+  else for (const method of r.methods) await enqueue(q, "reconstruct", { ingestId, method }, 2);
 }
 
-async function listFiles(dir: string, rel = ""): Promise<string[]> {
+/** Starts the training of a checked capture. False when there is nothing to start. */
+export async function trainChecked(db: Db, ingestId: string, actor: { ip: string; host: string }): Promise<boolean> {
+  return db.tx(async (q) => {
+    const [ing] = await q.query<{ request: IngestRow["request"] }>("SELECT request FROM ingests WHERE id = $1 FOR UPDATE", [ingestId]);
+    const r = ing?.request.reconstruct;
+    if (!r?.checkFirst) return false;
+    const [check] = await q.query<{ state: string; cancelled: boolean }>("SELECT state, (payload->>'cancel') = 'true' AS cancelled FROM jobs WHERE kind = 'capture-check' AND payload->>'ingestId' = $1 ORDER BY id DESC LIMIT 1", [ingestId]);
+    const [started] = await q.query("SELECT 1 FROM jobs WHERE kind = 'reconstruct' AND payload->>'ingestId' = $1 LIMIT 1", [ingestId]);
+    // A discarded capture's upload is gone: nothing to build from.
+    if (check?.state !== "done" || check.cancelled || started) return false;
+    for (const method of r.methods) await enqueue(q, "reconstruct", { ingestId, method }, 2);
+    await audit(q, { ...actor, action: "reconstruct.train", target: ingestId, detail: { methods: r.methods } });
+    return true;
+  });
+}
+
+export async function listFiles(dir: string, rel = ""): Promise<string[]> {
   const out: string[] = [];
   for (const e of await readdir(path.join(dir, rel), { withFileTypes: true })) {
     const p = rel ? `${rel}/${e.name}` : e.name;
@@ -318,6 +345,20 @@ export async function cancelCapture(db: Db, storage: Storage, ingestId: string, 
     return { stopped, running };
   });
   if (stopped.length && !running.length) await finishCapture(db, storage, ingestId);
+  // A capture that was only checked, or is being checked: stop the check and remove the upload.
+  if (!stopped.length && !running.length && ing.request.reconstruct.checkFirst) {
+    const [started] = await db.query("SELECT 1 FROM jobs WHERE kind = 'reconstruct' AND payload->>'ingestId' = $1 LIMIT 1", [ingestId]);
+    if (!started) {
+      const busy = await db.query<{ id: string }>(
+        `UPDATE jobs SET state = CASE WHEN state = 'queued' THEN 'failed' ELSE state END, error = CASE WHEN state = 'queued' THEN $2 ELSE error END,
+           payload = payload || '{"cancel":true}'::jsonb, updated_at = now()
+         WHERE kind = 'capture-check' AND payload->>'ingestId' = $1 AND state IN ('queued', 'running', 'done') RETURNING id`,
+        [ingestId, CANCELLED],
+      );
+      await audit(db, { ...actor, action: "reconstruct.cancel", target: ingestId, detail: { check: busy.length } });
+      await finishCapture(db, storage, ingestId);
+    }
+  }
   return true;
 }
 
@@ -514,6 +555,86 @@ export function reconstructHandler(
   };
 }
 
+/**
+ * The capture-check job: unpacks the capture once, runs the first method's worker with --assess
+ * (a look at the pictures, then a pose test on a sample) and keeps its report in the job's
+ * progress. The upload stays, so training can start from it without sending it again.
+ */
+export function captureCheckHandler(db: Db, storage: Storage, opts: ReconstructOptions, unpack: (part: string, uploadPath: string, dest: string) => Promise<void>): Handler {
+  return async (job, ctx) => {
+    const ingestId = String(job.payload.ingestId);
+    const [ing] = await db.query<IngestRow>("SELECT id, state, request, ip, host FROM ingests WHERE id = $1", [ingestId]);
+    const r = ing?.request.reconstruct;
+    if (!r) throw new PermanentError(`Capture ${ingestId} does not exist.`);
+    const work = path.join(storage.ingests, ingestId, "check");
+    const abort = new AbortController();
+    const watch = setInterval(
+      () =>
+        void db.query<{ cancel: boolean }>("SELECT (payload->>'cancel') = 'true' AS cancel FROM jobs WHERE id = $1", [job.id]).then(
+          ([row]) => row?.cancel && abort.abort(),
+          () => undefined,
+        ),
+      2000,
+    );
+    try {
+      await rm(work, { recursive: true, force: true });
+      const input = path.join(work, "in");
+      const output = path.join(work, "out");
+      await mkdir(input, { recursive: true });
+      await mkdir(output, { recursive: true });
+      await ctx.progress({ step: "prepare", fraction: 0 });
+      for (const u of await db.query<{ id: string; path: string }>("SELECT id, path FROM uploads WHERE ingest_id = $1", [ingestId])) await unpack(storage.uploadPart(u.id), u.path, input);
+      const files = await listFiles(input);
+      const items: CaptureReport["items"] = [];
+      let gcpFile: string | null = null;
+      try {
+        if (await prepareGroundControl(input, files, path.join(work, "ground-control.json"))) gcpFile = path.join(work, "ground-control.json");
+      } catch (e) {
+        items.push({ key: "gcpBroken", severity: "error", params: { problem: e instanceof Error ? e.message : String(e) } });
+      }
+      let report: CaptureReport;
+      if (r.input === "satellite") {
+        // Satellite views are checked by what they carry (camera models, angles), not by a worker.
+        const pf = await satellitePreflight(input, files);
+        if (pf.problem) items.push({ key: "satelliteProblem", severity: "error", params: { problem: pf.problem } });
+        else items.push({ key: "satelliteViews", severity: "ok", params: { count: pf.views.length, angle: pf.convergenceDeg === null ? "?" : Math.round(pf.convergenceDeg * 10) / 10 } });
+        for (const w of pf.warnings) items.push({ key: w, severity: "warning", params: {} });
+        report = { verdict: items.some((i) => i.severity === "error") ? "poor" : items.some((i) => i.severity === "warning") ? "fair" : "good", items, stats: { views: pf.views.length } };
+      } else {
+        const bin = opts.workers[r.methods[0]!];
+        if (!bin) throw new PermanentError(`No worker is installed for ${r.methods[0]}.`);
+        if (opts.scan) {
+          const scanned = await opts.scan(input);
+          if (scanned.severity === "error") throw new PermanentError(scanned.title);
+        }
+        const hw = await opts.hardware();
+        const args = ["--assess", "--input", input, "--input-kind", r.input, "--output", output, "--threads", String(Math.max(1, Math.min(hw.cpus || 4, 16))), ...(gcpFile ? ["--ground-control", gcpFile] : [])];
+        let last = 0;
+        const run = await runWorker(bin, args, work, 3 * 3600_000, (fraction, stage) => {
+          if (Date.now() - last < 1000 && fraction < 1) return;
+          last = Date.now();
+          void ctx.progress({ step: "check", fraction, stage });
+        }, abort.signal);
+        if (run.cancelled) throw new PermanentError(CANCELLED);
+        if (run.timedOut) throw new PermanentError("The check did not finish in 3 hours.");
+        const got = JSON.parse(await readFile(path.join(output, "report.json"), "utf8").catch(() => "null")) as CaptureReport | null;
+        if (run.code !== 0 || !got) throw new PermanentError(`The check stopped (exit ${run.code}): ${run.stderr.trim().split("\n").slice(-2).join(" ").slice(0, 300)}`);
+        got.items.unshift(...items);
+        if (items.some((i) => i.severity === "error")) got.verdict = "poor";
+        report = got;
+      }
+      await ctx.progress({ step: "checked", fraction: 1, report });
+      await audit(db, { ip: ing.ip, host: ing.host, action: "reconstruct.check", target: ingestId, detail: { verdict: report.verdict, items: report.items.map((i) => i.key) } });
+    } catch (e) {
+      await audit(db, { ip: ing.ip, host: ing.host, action: "reconstruct.checkFail", target: ingestId, detail: { reason: e instanceof Error ? e.message : String(e) } });
+      throw e instanceof PermanentError ? e : new PermanentError(e instanceof Error ? e.message : String(e));
+    } finally {
+      clearInterval(watch);
+      await rm(work, { recursive: true, force: true });
+    }
+  };
+}
+
 export type MethodRun = {
   method: string;
   state: "queued" | "training" | "publishing" | "ready" | "failed" | "cancelled";
@@ -525,7 +646,15 @@ export type MethodRun = {
 };
 
 /** Each method's state for one capture: its job while it trains, then the ingest that publishes its splats. */
-export async function reconstructStatus(db: Queryable, ingestId: string): Promise<{ state: "working" | "ready" | "failed" | "cancelled"; methods: MethodRun[] } | null> {
+export interface CheckRun {
+  state: "queued" | "checking" | "done" | "failed" | "cancelled";
+  fraction: number | null;
+  stage: string | null;
+  error: string | null;
+  report: CaptureReport | null;
+}
+
+export async function reconstructStatus(db: Queryable, ingestId: string): Promise<{ state: "checking" | "checked" | "working" | "ready" | "failed" | "cancelled"; methods: MethodRun[]; check?: CheckRun } | null> {
   const [ing] = await db.query<{ state: string; request: IngestRow["request"] }>("SELECT state, request FROM ingests WHERE id = $1", [ingestId]);
   if (!ing?.request.reconstruct) return null;
   const jobs = await db.query<{ payload: { method: string; cancel?: boolean }; state: string; progress: { step?: string; fraction?: number; stage?: string }; error: string | null }>(
@@ -548,9 +677,24 @@ export async function reconstructStatus(db: Queryable, ingestId: string): Promis
     const running = j?.state === "running" || (j?.state === "queued" && !!j.error);
     return { method: m, state: running ? "training" : "queued", fraction: typeof p.fraction === "number" ? p.fraction : null, stage: p.stage ?? p.step ?? null, error: null, modelId: null, version: null };
   });
+  let check: CheckRun | undefined;
+  if (ing.request.reconstruct.checkFirst) {
+    const [c] = await db.query<{ state: string; progress: { fraction?: number; stage?: string; step?: string; report?: CaptureReport }; error: string | null; payload: { cancel?: boolean } }>(
+      "SELECT state, progress, error, payload FROM jobs WHERE kind = 'capture-check' AND payload->>'ingestId' = $1 ORDER BY id DESC LIMIT 1",
+      [ingestId],
+    );
+    const p = c?.progress ?? {};
+    const cstate: CheckRun["state"] = !c ? "queued" : c.payload.cancel ? "cancelled" : c.state === "done" ? "done" : c.state === "failed" ? "failed" : c.state === "running" ? "checking" : "queued";
+    check = { state: cstate, fraction: typeof p.fraction === "number" ? p.fraction : null, stage: p.stage ?? p.step ?? null, error: c?.error ?? null, report: p.report ?? null };
+    // Before training starts, the capture's state is the check's.
+    if (!jobs.length) {
+      const state = cstate === "done" ? "checked" : cstate === "failed" ? "failed" : cstate === "cancelled" ? "cancelled" : "checking";
+      return { state, methods, check };
+    }
+  }
   const ended = methods.every((m) => m.state === "ready" || m.state === "failed" || m.state === "cancelled");
   const state = !ended ? "working" : methods.some((m) => m.state === "ready") ? "ready" : methods.every((m) => m.state === "cancelled") ? "cancelled" : "failed";
-  return { state, methods };
+  return { state, methods, ...(check ? { check } : {}) };
 }
 
 /** GET /api/splat-methods (the registry, what is installed, the hardware) and GET /api/captures/:id (progress). */
@@ -607,7 +751,22 @@ export function registerReconstruct(app: FastifyInstance, db: Db, opts: Reconstr
     },
     ["method", "state", "fraction", "stage", "error", "modelId", "version"],
   );
-  const status = closed({ state: { enum: ["working", "ready", "failed", "cancelled"] }, methods: { type: "array", items: run } }, ["state", "methods"]);
+  const item = closed(
+    { key: text, severity: { enum: ["ok", "info", "warning", "error"] }, params: { type: "object", additionalProperties: { anyOf: [{ type: "string" }, { type: "number" }] } } },
+    ["key", "severity", "params"],
+  );
+  const report = closed({ verdict: { enum: ["good", "fair", "poor"] }, items: { type: "array", items: item }, stats: { type: "object", additionalProperties: { type: "number" } } }, ["verdict", "items", "stats"]);
+  const check = closed(
+    {
+      state: { enum: ["queued", "checking", "done", "failed", "cancelled"] },
+      fraction: { anyOf: [{ type: "number" }, { type: "null" }] },
+      stage: { anyOf: [text, { type: "null" }] },
+      error: { anyOf: [text, { type: "null" }] },
+      report: { anyOf: [report, { type: "null" }] },
+    },
+    ["state", "fraction", "stage", "error", "report"],
+  );
+  const status = closed({ state: { enum: ["checking", "checked", "working", "ready", "failed", "cancelled"] }, methods: { type: "array", items: run }, check }, ["state", "methods"]);
   app.get<{ Params: { id: string } }>(
     "/api/captures/:id",
     { schema: { tags: ["capture"], params: { type: "object", required: ["id"], properties: { id: { type: "string", maxLength: 200 } } }, response: { 200: status } } },
@@ -619,6 +778,16 @@ export function registerReconstruct(app: FastifyInstance, db: Db, opts: Reconstr
     { schema: { tags: ["capture"], params: { type: "object", required: ["id"], properties: { id: { type: "string", maxLength: 200 } } }, response: { 200: status } } },
     async (req, reply) => {
       if (!(await cancelCapture(db, files.storage, req.params.id, await files.who(req)))) return reply.status(404).send(problem("noUpload"));
+      return reconstructStatus(db, req.params.id);
+    },
+  );
+  app.post<{ Params: { id: string } }>(
+    "/api/captures/:id/train",
+    { schema: { tags: ["capture"], params: { type: "object", required: ["id"], properties: { id: { type: "string", maxLength: 200 } } }, response: { 200: status } } },
+    async (req, reply) => {
+      const st = await reconstructStatus(db, req.params.id);
+      if (!st) return reply.status(404).send(problem("noUpload"));
+      if (!(await trainChecked(db, req.params.id, await files.who(req)))) return reply.status(409).send(problem("alreadySubmitted"));
       return reconstructStatus(db, req.params.id);
     },
   );
