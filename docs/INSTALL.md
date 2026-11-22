@@ -47,7 +47,7 @@ cd viewer-server-<version>-linux-x64
 
 ### Making splats on this server: the building add-on
 
-`holo-building-<version>-linux-x64.tar.gz` holds what turns a video or photos into Gaussian splats: Python 3.12 with pycolmap (camera poses, on the processor), ffmpeg (video frames) and Brush (building through Vulkan on any NVIDIA, AMD or Intel graphics card). As the same user:
+`holo-building-<version>-linux-x64.tar.gz` holds what turns a video or photos into Gaussian splats: Python 3.12 with pycolmap (camera poses, on the processor), ffmpeg (video frames) and Brush (building through Vulkan on any NVIDIA, AMD or Intel graphics card). Brush is built from its own source with one HOLO addition, a penalty on long, thin splats (`scripts/brush/needle-penalty.patch`); HOLO switches it on whenever the installed Brush has it. As the same user:
 
 ```sh
 tar -xzf holo-building-<version>-linux-x64.tar.gz

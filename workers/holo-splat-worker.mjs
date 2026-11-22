@@ -65,6 +65,9 @@ export const DEFAULTS = {
       train: ["{program}", "{data}", "--total-steps", "{iterations}", "--max-splats", "{maxSplats}", "--sh-degree", "{shDegree}", "--max-resolution", "{resolution}", "--export-every", "{exportEvery}", "--export-path", "{train}", "--export-name", "export_{iter}.ply"],
       // Brush prints no progress when its output is not a terminal; its numbered exports show it.
       progressFiles: true,
+      // HOLO's Brush build (scripts/brush/needle-penalty.patch) can hold back long, thin splats
+      // ("needles"). Added only when the installed Brush lists the option; a stock Brush has none.
+      needles: ["--aniso-loss-weight", "0.05", "--aniso-max-ratio", "10"],
       check: ["{program}", "--version"],
     },
     // EOGS++ for satellite views, through workers/eogs/holo_eogs.py: it cuts the views to the area
@@ -92,6 +95,13 @@ export function loadConfig(file = process.env.HOLO_WORKER_CONFIG || path.join(HE
   const methods = { ...DEFAULTS.methods };
   for (const [k, v] of Object.entries(user.methods ?? {})) methods[k] = { ...(methods[k] ?? {}), ...v };
   return { ...DEFAULTS, ...user, methods };
+}
+
+/** The needle-penalty options of a method, when its program has them (it lists them in --help). */
+export function needleOptions(m, values) {
+  if (!m.needles?.length || !m.program) return [];
+  const r = spawnSync(fill([m.program], values)[0], ["--help"], { encoding: "utf8", timeout: 30_000 });
+  return `${r.stdout ?? ""}${r.stderr ?? ""}`.includes(m.needles[0]) ? m.needles : [];
 }
 
 /** Fills {name} in each argument ({here} is this program's folder); an argument is never split or passed to a shell. */
@@ -1528,8 +1538,10 @@ async function main() {
         for (const x of steps.slice(2)) rmSync(x.f, { force: true });
       }, 10_000)
     : null;
+  const needles = needleOptions(m, values);
+  if (needles.length) say("needles: long, thin splats are held back");
   try {
-    await run(fill(m.train, values), {
+    await run([...fill(m.train, values), ...needles], {
       cwd: m.repo || work,
       onLine: (line) => {
         // Trainers print "1234/30000" or "step 1234": map that onto the training share of the bar.
