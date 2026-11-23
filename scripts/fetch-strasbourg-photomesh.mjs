@@ -15,6 +15,7 @@
 // Needs network access to s3.eu-west-2.wasabisys.com. No npm packages.
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 
 const ROOT_URL = "https://s3.eu-west-2.wasabisys.com/ems-sgct-photomaillage/ODACIT/EMS_PM2022/tileset.json";
 const [OUT, LON = "7.7509", LAT = "48.5818", HALF = "300", MINERR = "1"] = process.argv.slice(2);
@@ -157,3 +158,7 @@ fs.writeFileSync(
     `Copied by scripts/fetch-strasbourg-photomesh.mjs; ${jobs.length} tiles down to ${minErr} m geometric error.\n`,
 );
 console.log(`Done: ${OUT} (${(bytes / 1e6).toFixed(0)} MB)`);
+
+// Offline, the sample sits on the demo terrain: warn if it is outside the areas that has.
+const cover = spawnSync(process.execPath, [path.join(path.dirname(new URL(import.meta.url).pathname), "check-sample-terrain.cjs")], { encoding: "utf8" });
+if (cover.status !== 0) console.warn(`\nWarning: ${cover.stdout.trim().split("\n").slice(-3).join("\n")}`);
