@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
 import { classificationIdOf, useClassOf, useLevels } from "../state/classification";
 import { canDelete, useLibrary } from "../state/library";
 import { useTranslation } from "react-i18next";
@@ -170,6 +170,7 @@ export function ModelCard({ m, onOpen, dense }: { m: ModelSummary; onOpen: () =>
   const thumb = m.thumbnail ?? `samples/thumbs/${m.id}.webp`;
   const Icon = m.source.splats ? Sparkles : m.sourceFormat === "3dtiles" ? Boxes : m.sourceFormat === "fbx" ? FileBox : Box;
   const deletable = canDelete(m, useApp((s) => !!s.server));
+  const nameId = useId();
   return (
     <div className="group/card relative">
     <button
@@ -218,7 +219,7 @@ export function ModelCard({ m, onOpen, dense }: { m: ModelSummary; onOpen: () =>
         )}
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-1 p-3">
-        <div className="line-clamp-2 font-semibold leading-5 text-fg" dir="auto" data-content>{m.name}</div>
+        <div id={nameId} className="line-clamp-2 font-semibold leading-5 text-fg" dir="auto" data-content>{m.name}</div>
         <div className="truncate text-[12px] text-fg3" data-content>
           {m.project} · {m.operation}
         </div>
@@ -234,7 +235,9 @@ export function ModelCard({ m, onOpen, dense }: { m: ModelSummary; onOpen: () =>
       // Beside the card, not in it: a button cannot hold another. Shows on hover or keyboard focus.
       <button
         type="button"
-        aria-label={`${t("deleteModel.menu")}: ${m.name}`}
+        // The model's name comes from its card, so screen readers hear which model.
+        aria-label={t("deleteModel.menu")}
+        aria-describedby={nameId}
         title={t("deleteModel.menu")}
         data-testid="delete-model-open"
         onClick={() => useApp.getState().set({ deleteModelId: m.id })}
