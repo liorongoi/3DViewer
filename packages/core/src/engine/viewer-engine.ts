@@ -48,6 +48,7 @@ import {
 } from "cesium";
 import type { BaseMapConfig, ModelSummary, UpdateStatus } from "@viewer/shared";
 import { CameraController } from "./camera-controller";
+import { nextResolutionScale } from "./adaptive-resolution";
 import { MeasureTool } from "./measure-tool";
 import { Snapper, type Snap } from "./snapper";
 import { FlyByTour, FlyMode, captureViewpoint, type Viewpoint } from "./fly";
@@ -149,6 +150,11 @@ export class ViewerEngine {
   private frameTimes: number[] = [];
   private lastFrameAt = 0;
   private baseScale = 1;
+  /** When adaptive resolution last changed the resolution, and when the camera last moved. */
+  private resolutionChangedAt = 0;
+  private cameraMovedAt = 0;
+  private movePose: number[] | null = null;
+  private restoreTimer: ReturnType<typeof setTimeout> | undefined;
   readonly layers = signal<Layer[]>([]);
   /** The layer picked by clicking the model, or in the layers panel; Focus selection (Z) fits it (NAV-05). */
   readonly selectedLayer = signal<string | null>(null);
@@ -333,6 +339,7 @@ export class ViewerEngine {
   }
 
   destroy(): void {
+    clearTimeout(this.restoreTimer);
     this.offInput();
     this.snapper.destroy();
     this.fly.disable();
@@ -1213,7 +1220,7 @@ export class ViewerEngine {
     this.quality = q;
     const scene = this.widget.scene;
     this.baseScale = { low: 0.75, balanced: 1, high: 1, ultra: Math.min(2, window.devicePixelRatio || 1) }[q];
-    this.widget.resolutionScale = this.baseScale;
+    this.setResolution(this.baseScale);
     scene.msaaSamples = { low: 1, balanced: 2, high: 4, ultra: 8 }[q];
     scene.shadowMap.size = { low: 1024, balanced: 2048, high: 4096, ultra: 4096 }[q];
     this.viewshed.mapSize = { low: 1024, balanced: 2048, high: 2048, ultra: 4096 }[q];
@@ -1636,6 +1643,7 @@ export class ViewerEngine {
     // Drawn on demand: only the time between two frames drawn back to back is a frame time.
     if (this.drawing && this.lastFrameAt) this.frameTimes.push(now - this.lastFrameAt);
     this.lastFrameAt = now;
+    this.trackCameraMove(now);
     if (now - this.lastFpsTime >= 500) {
       this.fps.set(Math.round((this.frames * 1000) / (now - this.lastFpsTime)));
       this.frames = 0;
@@ -1669,19 +1677,51 @@ export class ViewerEngine {
     }
   }
 
+  private setResolution(scale: number): void {
+    this.widget.resolutionScale = scale;
+    this.resolutionChangedAt = performance.now();
+    this.widget.scene.requestRender();
+  }
+
+  /**
+   * Notes when the camera moves. Once it has been still for a moment, a resolution lowered
+   * while it moved goes back to the preset, in one step (and one frame is drawn for it).
+   */
+  private trackCameraMove(now: number): void {
+    const cam = this.widget.camera;
+    const pose = [cam.positionWC.x, cam.positionWC.y, cam.positionWC.z, cam.directionWC.x, cam.directionWC.y, cam.directionWC.z];
+    const moved = !this.movePose || pose.some((v, i) => Math.abs(v - this.movePose![i]!) > 1e-3);
+    this.movePose = pose;
+    if (!moved) return;
+    this.cameraMovedAt = now;
+    if (this.widget.resolutionScale >= this.baseScale - 1e-3) return;
+    clearTimeout(this.restoreTimer);
+    this.restoreTimer = setTimeout(() => {
+      if (performance.now() - this.cameraMovedAt >= 300 && this.widget.resolutionScale < this.baseScale) this.setResolution(this.baseScale);
+    }, 350);
+  }
+
   private updatePerf(): void {
     // Pauses over 5 s (a hidden tab) are not frames. Slow frames accumulate until there are three.
     const times = this.frameTimes.filter((t) => t < 5000);
     if (times.length < 3) return;
     this.frameTimes = [];
     const avg = times.reduce((a, b) => a + b, 0) / times.length;
+    const now = performance.now();
     const worst = [...times].sort((a, b) => a - b)[Math.floor(times.length * 0.95)] ?? avg;
-    // Adaptive resolution: step down to 60% of the preset while frames take over 20 ms, back up under 12 ms.
+    // Adaptive resolution: lowered while the view moves and frames are slow, restored once it is still.
     if (this.adaptiveResolution) {
       const s = this.widget.resolutionScale;
-      if (avg > 20 && s > this.baseScale * 0.6 + 1e-3) this.widget.resolutionScale = Math.max(this.baseScale * 0.6, s - 0.1);
-      else if (avg < 12 && s < this.baseScale - 1e-3) this.widget.resolutionScale = Math.min(this.baseScale, s + 0.05);
-    } else if (!this.adaptiveResolution && this.widget.resolutionScale !== this.baseScale) this.widget.resolutionScale = this.baseScale;
+      const next = nextResolutionScale({
+        scale: s,
+        base: this.baseScale,
+        avgFrameMs: avg,
+        moving: now - this.cameraMovedAt < 300,
+        now,
+        changedAt: this.resolutionChangedAt,
+      });
+      if (Math.abs(next - s) > 1e-3) this.setResolution(next);
+    } else if (this.widget.resolutionScale !== this.baseScale) this.setResolution(this.baseScale);
     const t = this.tileset;
     const ts = t ? (t as unknown as { statistics: Record<string, number> }).statistics : null;
     const ms = this.model ? (this.model as unknown as { statistics?: Record<string, number> }).statistics : null;
