@@ -66,6 +66,7 @@ import { UserLayers } from "./user-layers";
 import { LodInspector } from "./lod-inspector";
 import { placementFrame } from "../geo/place";
 import { datumShift, geoidHeight } from "../geo/geoid";
+import { dataFootprint } from "./footprint";
 
 export type ViewMode = "shaded" | "edges" | "wireframe" | "unlit";
 export type Quality = "low" | "balanced" | "high" | "ultra";
@@ -967,7 +968,7 @@ export class ViewerEngine {
       // frame does not touch. Capturing while tiles load would cancel them, and the next try
       // again, so a model whose tiles take longer than the wait above would never load.
       if (target instanceof Cesium3DTileset && (!target.tilesLoaded || !(target as unknown as { _selectedTiles: unknown[] })._selectedTiles.length)) continue;
-      const u = captureUnderside(this.widget.scene, target, () => this.widget.render());
+      const u = captureUnderside(this.widget.scene, target, () => this.widget.render(), target instanceof Cesium3DTileset ? { sphere: dataFootprint(target) } : {});
       if (coverage(u) > coverage(best)) best = u;
       if (coverage(best) >= MIN_COVERAGE) break;
     }
@@ -1105,11 +1106,11 @@ export class ViewerEngine {
     this.groundFit.set(null);
     // With no terrain the globe is the bare ellipsoid: the fit still brings the dataset down
     // to it, rather than leave a city hanging its full height (200 m and more) above the map.
-    if (summary.source.groundFit === "surface") return this.fitSurfaceToGround(tileset);
+    if (summary.source.groundFit === "surface") return this.fitSurfaceToGround(tileset, 0.5, 8, summary.centre);
     if (summary.source.groundFit !== "street") return;
     // Cities: the lowest surfaces the camera can hit are streets and squares. Tile bounding
     // boxes are no help here: they reach far below the streets, which lifted Lyon ~80 m.
-    return this.fitSurfaceToGround(tileset, 0.1, 1);
+    return this.fitSurfaceToGround(tileset, 0.1, 1, summary.centre);
   }
 
   /**
@@ -1117,18 +1118,25 @@ export class ViewerEngine {
    * dataset's own surface (globe hidden) and the terrain on a grid, and move the dataset so
    * its lower surfaces (bare ground, not tree tops or roofs) meet the terrain.
    */
-  private async fitSurfaceToGround(tileset: Cesium3DTileset, quantile = 0.5, minOffset = 8): Promise<void> {
-    // First on the data drawn so far; if too few samples land on it (tiles still loading, or
-    // data with holes), again on a tighter grid once the view's tiles are in. Never silently:
-    // a fit that cannot measure says so in Properties.
-    let diffs = await this.groundGaps(tileset, 0.5);
+  private async fitSurfaceToGround(tileset: Cesium3DTileset, quantile = 0.5, minOffset = 8, centre?: { lat: number; lon: number }): Promise<void> {
+    // First over the tile tree's finest tiles; if too few samples land on the data (holes,
+    // or volumes that still mislead), a tighter grid once the view's tiles are in, then a
+    // 600 m square on the model's recorded centre. Never silently: a fit that cannot
+    // measure says so in Properties.
+    const fp = dataFootprint(tileset);
+    let diffs = await this.groundGaps(fp.center, fp.radius * 0.5);
     if (this.tileset !== tileset) return;
     let attempts = 1;
     if (diffs.gaps.length < MIN_FIT_SAMPLES) {
       await this.tilesSettled(tileset);
       if (this.tileset !== tileset) return;
-      diffs = await this.groundGaps(tileset, 0.25);
+      diffs = await this.groundGaps(fp.center, fp.radius * 0.25);
       attempts = 2;
+      if (this.tileset !== tileset) return;
+    }
+    if (diffs.gaps.length < MIN_FIT_SAMPLES && centre) {
+      diffs = await this.groundGaps(Cartesian3.fromDegrees(centre.lon, centre.lat), 300);
+      attempts = 3;
       if (this.tileset !== tileset) return;
     }
     const { gaps, total, centre: c } = diffs;
@@ -1153,15 +1161,13 @@ export class ViewerEngine {
   }
 
   /**
-   * Dataset surface minus terrain on a 9 × 9 grid over the data drawn so far, sorted. `spread`
-   * is the grid's half-width as a share of the footprint's radius.
+   * Dataset surface minus terrain on a 9 × 9 grid of half-width `half` metres around a point,
+   * sorted.
    */
-  private async groundGaps(tileset: Cesium3DTileset, spread: number): Promise<{ gaps: number[]; total: number; centre: Cartographic }> {
+  private async groundGaps(at: Cartesian3, half: number): Promise<{ gaps: number[]; total: number; centre: Cartographic }> {
     const scene = this.widget.scene;
-    const bs = dataFootprint(tileset);
-    const c = Cartographic.fromCartesian(bs.center);
-    const r = bs.radius * spread;
-    const dLat = r / 6371000;
+    const c = Cartographic.fromCartesian(at);
+    const dLat = half / 6371000;
     const dLon = dLat / Math.cos(c.latitude);
     const pts: Cartographic[] = [];
     for (let i = -4; i <= 4; i++) for (let j = -4; j <= 4; j++) pts.push(new Cartographic(c.longitude + (dLon * i) / 4, c.latitude + (dLat * j) / 4));
@@ -1934,31 +1940,6 @@ function friendlyReason(err: Error): string {
   return "The file is damaged or in a format HOLO cannot read.";
 }
 
-/**
- * Where a tileset's data actually is. Publishers often give the root and the first levels a
- * volume for their whole territory (Strasbourg's covers the Eurométropole, 21 km across, for
- * a 1 km sample), so the root's sphere would put the fit's samples everywhere but on the
- * data. The tiles drawn so far are the data in view; the oversized ones are left out.
- */
-function dataFootprint(tileset: Cesium3DTileset): BoundingSphere {
-  const spheres: BoundingSphere[] = [];
-  const stack = [tileset.root];
-  while (stack.length) {
-    const t = stack.pop()!;
-    const state = t as unknown as { hasRenderableContent: boolean; contentReady: boolean };
-    if (state.hasRenderableContent && state.contentReady) spheres.push(t.boundingSphere);
-    stack.push(...t.children);
-  }
-  if (!spheres.length) return tileset.boundingSphere;
-  const radii = spheres.map((b) => b.radius).sort((a, b) => a - b);
-  const median = radii[Math.floor(radii.length / 2)]!;
-  const kept = spheres.filter((b) => b.radius <= median * 10);
-  const fp = BoundingSphere.fromBoundingSpheres(kept);
-  // Tile volumes already include the tileset's model matrix. The tileset's own sphere wins
-  // when it is the tighter one (data with honest volumes).
-  return fp.radius < tileset.boundingSphere.radius ? fp : tileset.boundingSphere;
-}
-
 /** A fit needs this many of its 81 samples on both the dataset and the terrain. */
 const MIN_FIT_SAMPLES = 5;
 
@@ -1966,7 +1947,7 @@ export interface GroundFitReport {
   /** Samples that hit both the dataset and the terrain, of `samples`. */
   hits: number;
   samples: number;
-  /** 1, or 2 when the first grid hit too little and a tighter one was tried. */
+  /** 1; 2 when a tighter grid was tried; 3 when the model's recorded centre was tried too. */
   attempts: number;
   /** False when too few samples hit the data to measure: the offset was left at 0. */
   ok: boolean;

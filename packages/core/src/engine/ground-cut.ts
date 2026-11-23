@@ -9,6 +9,7 @@ import {
   OrthographicFrustum,
   Rectangle,
   UniformType,
+  type BoundingSphere,
   type Cesium3DTileset,
   type Model,
   type Scene,
@@ -115,8 +116,9 @@ export const MIN_COVERAGE = 500;
  * the scene would normally draw is switched off for that one frame and restored before
  * returning, all in the same task, so the frame is never shown.
  */
-export function captureUnderside(scene: Scene, target: Target, render: () => void): Underside | null {
-  const bs = target.boundingSphere;
+export function captureUnderside(scene: Scene, target: Target, render: () => void, opts: { sphere?: BoundingSphere } = {}): Underside | null {
+  // `sphere`: where the model's data is, when its own volume is far larger (see dataFootprint).
+  const bs = opts.sphere ?? target.boundingSphere;
   if (!bs || !(bs.radius > 0)) return null;
   const canvas = scene.canvas;
   const W = scene.drawingBufferWidth, H = scene.drawingBufferHeight;

@@ -13,6 +13,9 @@
 //   D. Strasbourg with no terrain: the streets come down to the ellipsoid.
 //   E. Two small patches 2 km apart: the fit cannot measure, so it must say so (report.ok
 //      false, offset 0) rather than leave a shift nobody asked for.
+//   F. Strasbourg as published: above the fine tile, a level of content with the same 21 km
+//      volume (centred 3 km from the data), which is all that is drawn from the opening view.
+//      PR #51 looked only at drawn tiles and still sampled the 21 km area (1 of 81 hits).
 // A datum case passes when the shift is the geoid height to 0.5 m and at least 60 of the 81
 // samples landed on the data.
 //
@@ -123,7 +126,7 @@ function cityGlb(patches) {
  * (lat, lon). `bigRoot` gives the root a region 21 km across with no content, as the
  * Strasbourg publisher does.
  */
-function cityTileset({ lat, lon, h, patches, bigRoot }) {
+function cityTileset({ lat, lon, h, patches, bigRoot, coarse }) {
   const reach = Math.max(...patches.map((q) => Math.max(Math.abs(q.dx), Math.abs(q.dy)) + q.size / 2));
   const leaf = {
     transform: enu(lat, lon, h),
@@ -132,15 +135,17 @@ function cityTileset({ lat, lon, h, patches, bigRoot }) {
     refine: "REPLACE",
     content: { uri: "city.glb" },
   };
-  const root = bigRoot
-    ? {
-        boundingVolume: { region: [rad(lon - 0.14), rad(lat - 0.095), rad(lon + 0.14), rad(lat + 0.095), -1607, 1668] },
-        geometricError: 4000,
-        refine: "REPLACE",
-        children: [leaf],
-      }
-    : leaf;
-  return { asset: { version: "1.1" }, geometricError: 4000, root };
+  if (!bigRoot) return { asset: { version: "1.1" }, geometricError: 4000, root: leaf };
+  // As the Strasbourg publisher: the whole Eurométropole, its centre 3 km south-west of the data.
+  const [clat, clon] = [lat - 0.012, lon - 0.04];
+  const region = { region: [rad(clon - 0.19), rad(clat - 0.14), rad(clon + 0.19), rad(clat + 0.14), -1607, 1668] };
+  // `coarse`: a level of content with that same 21 km volume above the fine tile, coarse
+  // enough to be all that is drawn from the opening view (the real one has 20 such levels).
+  // A region ignores transforms, so the coarse tile can carry the ENU frame for its content
+  // and its child while keeping the 21 km volume.
+  const { transform, ...leafInFrame } = leaf;
+  const mid = coarse ? { transform, boundingVolume: region, geometricError: 100, refine: "REPLACE", content: { uri: "coarse.glb" }, children: [leafInFrame] } : leaf;
+  return { asset: { version: "1.1" }, geometricError: 4000, root: { boundingVolume: region, geometricError: 4000, refine: "REPLACE", children: [mid] } };
 }
 
 // ---------- Terrarium terrain ----------
@@ -210,6 +215,13 @@ const CASES = [
     expect: { shift: -STRAS.geoid, tol: 0.5, hits: 60 },
   },
   {
+    name: "F. Strasbourg as published: coarse levels with the 21 km volume drawn first",
+    site: STRAS,
+    terrain: flat(STRAS.ground),
+    tileset: cityTileset({ lat: STRAS.lat, lon: STRAS.lon, h: STRAS.ground + STRAS.geoid, patches: block, bigRoot: true, coarse: true }),
+    expect: { shift: -STRAS.geoid, tol: 0.5, hits: 60 },
+  },
+  {
     name: "B. Lyon Fourvière: ellipsoidal, terrain off by ±9 m",
     site: LYON,
     terrain: bumpy(LYON.ground),
@@ -271,7 +283,7 @@ const summary = (id, url, site) => ({
   await page.route("**/check-ground-fit/**", (route) => {
     const u = new URL(route.request().url());
     if (u.pathname.endsWith("tileset.json")) return route.fulfill({ contentType: "application/json", body: JSON.stringify(current.tileset) });
-    if (u.pathname.endsWith("city.glb")) return route.fulfill({ contentType: "model/gltf-binary", body: current.glb });
+    if (u.pathname.endsWith(".glb")) return route.fulfill({ contentType: "model/gltf-binary", body: current.glb });
     return route.fulfill({ status: 404 });
   });
   await page.route("**/samples/terrain/**", (route) => {
