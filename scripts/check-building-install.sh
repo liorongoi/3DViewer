@@ -21,6 +21,7 @@ check "the server installs" "'$H/holo' status >/dev/null"
 check "install-building.sh installs and the self-test builds" "grep -q 'The building tools work' '$WORK/t.log'"
 check "HOLO is told about Brush" "grep -q '^SPLAT_WORKERS=brush=$H/training/bin/holo-splat-worker' '$H/settings/viewer.env'"
 check "the installed Brush holds back needles" "'$H/training/bin/brush' --help | grep -q -- '--aniso-loss-weight'"
+check "HOLO is told about the detector for masks" "grep -q '\"masks\": \"$H/training/' '$H/settings/holo-worker.json'"
 check "the worker's own check passes with the server's bare environment" "env -i PATH=/usr/bin:/bin HOME=/tmp LANG=C.UTF-8 '$H/training/bin/holo-splat-worker' --check --method brush | grep -q '\"ok\":true'"
 check "the server sees Brush as ready" "curl -fsS http://127.0.0.1:18090/api/splat-methods | grep -q '\"method\":\"brush\",\"configured\":true,\"environment\":\"ok\"'"
 "$H/holo" uninstall >/dev/null

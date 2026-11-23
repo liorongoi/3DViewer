@@ -68,6 +68,8 @@ export const DEFAULTS = {
       // HOLO's Brush build (scripts/brush/needle-penalty.patch) can hold back long, thin splats
       // ("needles"). Added only when the installed Brush lists the option; a stock Brush has none.
       needles: ["--aniso-loss-weight", "0.05", "--aniso-max-ratio", "10"],
+      // Brush reads data/masks/<picture>.png by itself: people and moving vehicles are left out.
+      readsMasks: true,
       check: ["{program}", "--version"],
     },
     // EOGS++ for satellite views, through workers/eogs/holo_eogs.py: it cuts the views to the area
@@ -95,6 +97,31 @@ export function loadConfig(file = process.env.HOLO_WORKER_CONFIG || path.join(HE
   const methods = { ...DEFAULTS.methods };
   for (const [k, v] of Object.entries(user.methods ?? {})) methods[k] = { ...(methods[k] ?? {}), ...v };
   return { ...DEFAULTS, ...user, methods };
+}
+
+/**
+ * Masks that leave people and moving vehicles out of the build (holo_masks.py), when the settings
+ * name the detector ("masks": the YOLOX-S ONNX file). Never stops a build: without masks it goes on
+ * as before, and says why.
+ */
+async function makeMasks(cfg, data, model, o) {
+  if (!cfg.masks) return null;
+  if (!existsSync(cfg.masks)) {
+    say(`masks: not made (the detector file is missing)`);
+    return null;
+  }
+  progress(0.29, "masks");
+  try {
+    const tail = await run([cfg.python, path.join(HERE, "holo_masks.py"), "--data", data, "--model", model, "--detector", cfg.masks, "--threads", String(o.threads ?? 0)]);
+    const line = tail.split(/\r?\n/).reverse().find((l) => l.startsWith("{"));
+    const stats = line ? JSON.parse(line) : null;
+    if (stats) say(`masks: ${stats.people} people and ${stats.movingVehicles} moving vehicles left out of ${stats.pictures} pictures (${(stats.share * 100).toFixed(1)}% of the area); ${stats.parkedVehicles} parked vehicles kept`);
+    return stats;
+  } catch (e) {
+    rmSync(path.join(data, "masks"), { recursive: true, force: true });
+    say(`masks: not made (${e instanceof Error ? e.message : e}); building without them`);
+    return null;
+  }
 }
 
 /** The needle-penalty options of a method, when its program has them (it lists them in --help). */
@@ -1483,6 +1510,7 @@ async function main() {
   const { data, model } = await sfm(cfg, images, work, o, o.inputKind === "video");
   const cams = readImages(readFileSync(path.join(model, "images.bin")));
   if (cams.length < Math.max(3, Math.ceil(frames * 0.2))) throw new InputError(`Only ${cams.length} of ${frames} pictures got a camera pose: they do not overlap enough, or are blurred.`);
+  const masks = m.readsMasks ? await makeMasks(cfg, data, model, o) : null;
 
   let georef = null;
   let georefNote = null;
@@ -1561,7 +1589,7 @@ async function main() {
   copyFileSync(plys[0], path.join(o.output, "splats.ply"));
   writeFileSync(
     path.join(o.output, "provenance.json"),
-    JSON.stringify({ tool: o.method, version: check(cfg, o.method).version, poses: cfg.sfm === "glomap" ? "COLMAP features, GLOMAP mapper" : cfg.sfm === "pycolmap" ? "pycolmap" : "COLMAP", frames, registeredViews: cams.length, georefNote, levelled }),
+    JSON.stringify({ tool: o.method, version: check(cfg, o.method).version, poses: cfg.sfm === "glomap" ? "COLMAP features, GLOMAP mapper" : cfg.sfm === "pycolmap" ? "pycolmap" : "COLMAP", frames, registeredViews: cams.length, georefNote, levelled, masks }),
   );
   if (georef) writeFileSync(path.join(o.output, "georef.json"), JSON.stringify(georef));
   progress(1, "done");
