@@ -50,7 +50,9 @@ else
   # conda-pack's fix-up: the environment now lives here, not where it was built.
   "$dest.partial/env/bin/python" "$dest.partial/env/bin/conda-unpack" >/dev/null 2>&1 || (cd "$dest.partial/env" && ./bin/conda-unpack >/dev/null)
   cp -a "$BUNDLE/brush" "$BUNDLE/sample" "$BUNDLE/VERSION" "$dest.partial/"
+  [[ -d "$BUNDLE/models" ]] && cp -a "$BUNDLE/models" "$dest.partial/"
   "$dest.partial/env/bin/python" -c "import pycolmap" || fail "the unpacked Python cannot load pycolmap"
+  if [[ -d "$BUNDLE/models" ]]; then "$dest.partial/env/bin/python" -c "import onnxruntime" || fail "the unpacked Python cannot load onnxruntime"; fi
   rm -rf "$dest"
   mv "$dest.partial" "$dest"
 fi
