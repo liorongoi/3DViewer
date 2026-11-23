@@ -64,6 +64,7 @@ import { Viewshed } from "./viewshed";
 import { UserLayers } from "./user-layers";
 import { LodInspector } from "./lod-inspector";
 import { placementFrame } from "../geo/place";
+import { datumShift, geoidHeight } from "../geo/geoid";
 
 export type ViewMode = "shaded" | "edges" | "wireframe" | "unlit";
 export type Quality = "low" | "balanced" | "high" | "ultra";
@@ -1065,7 +1066,8 @@ export class ViewerEngine {
    */
   private async fitTilesetToGround(tileset: Cesium3DTileset, summary: ModelSummary): Promise<void> {
     this.setGroundOffset(0);
-    if (this.terrainId.get() === "none") return;
+    // With no terrain the globe is the bare ellipsoid: the fit still brings the dataset down
+    // to it, rather than leave a city hanging its full height (200 m and more) above the map.
     if (summary.source.groundFit === "surface") return this.fitSurfaceToGround(tileset);
     if (summary.source.groundFit !== "street") return;
     // Cities: the lowest surfaces the camera can hit are streets and squares. Tile bounding
@@ -1080,7 +1082,7 @@ export class ViewerEngine {
    */
   private async fitSurfaceToGround(tileset: Cesium3DTileset, quantile = 0.5, minOffset = 8): Promise<void> {
     const scene = this.widget.scene;
-    const bs = tileset.boundingSphere;
+    const bs = dataFootprint(tileset);
     const c = Cartographic.fromCartesian(bs.center);
     const r = bs.radius * 0.5;
     const dLat = r / 6371000;
@@ -1106,7 +1108,11 @@ export class ViewerEngine {
     // ridges by metres. So only a clear, consistent gap is corrected: that is a height-datum
     // mismatch (ellipsoid vs geoid is 20–50 m in Europe and the Middle East).
     // Cities use a low quantile (streets, not roofs) and any gap over 1 m.
-    const offset = -diffs[Math.floor(diffs.length * quantile)]!;
+    const gap = diffs[Math.floor(diffs.length * quantile)]!;
+    // On terrain, a gap close to the geoid height (or to none) is a datum difference: take
+    // the exact value rather than the noisy measurement. The ellipsoid has no datum to match.
+    const flat = this.groundTerrain instanceof EllipsoidTerrainProvider && !this.userDems.length;
+    const offset = flat ? -gap : datumShift(gap, geoidHeight(CMath.toDegrees(c.latitude), CMath.toDegrees(c.longitude)));
     if (Math.abs(offset) > minOffset) this.setGroundOffset(offset);
   }
 
@@ -1817,4 +1823,29 @@ function friendlyReason(err: Error): string {
   if (m.includes("magic") || /invalid glb|glb (header|version)/.test(m)) return "The file is not a valid GLB.";
   if (m.includes("version")) return "This file uses a version HOLO does not support.";
   return "The file is damaged or in a format HOLO cannot read.";
+}
+
+/**
+ * Where a tileset's data actually is. Publishers often give the root and the first levels a
+ * volume for their whole territory (Strasbourg's covers the Eurométropole, 21 km across, for
+ * a 1 km sample), so the root's sphere would put the fit's samples everywhere but on the
+ * data. The tiles drawn so far are the data in view; the oversized ones are left out.
+ */
+function dataFootprint(tileset: Cesium3DTileset): BoundingSphere {
+  const spheres: BoundingSphere[] = [];
+  const stack = [tileset.root];
+  while (stack.length) {
+    const t = stack.pop()!;
+    const state = t as unknown as { hasRenderableContent: boolean; contentReady: boolean };
+    if (state.hasRenderableContent && state.contentReady) spheres.push(t.boundingSphere);
+    stack.push(...t.children);
+  }
+  if (!spheres.length) return tileset.boundingSphere;
+  const radii = spheres.map((b) => b.radius).sort((a, b) => a - b);
+  const median = radii[Math.floor(radii.length / 2)]!;
+  const kept = spheres.filter((b) => b.radius <= median * 10);
+  const fp = BoundingSphere.fromBoundingSpheres(kept);
+  // Tile volumes already include the tileset's model matrix. The tileset's own sphere wins
+  // when it is the tighter one (data with honest volumes).
+  return fp.radius < tileset.boundingSphere.radius ? fp : tileset.boundingSphere;
 }
