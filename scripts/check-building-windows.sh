@@ -52,12 +52,15 @@ check "frames are taken from the video" "'$NODE' --input-type=module -e \"const 
 check "the capture check runs on the video" "'$NODE' '$WORKER' --assess --input '$(cygpath -w "$T/video in")' --input-kind video --output '$(cygpath -w "$T/assess video")' --threads 2 && grep -q verdict '$T/assess video/report.json'"
 check "the capture check poses the photos" "'$NODE' '$WORKER' --assess --input '$(cygpath -w "$T/photos in")' --input-kind photos --output '$(cygpath -w "$T/assess photos")' --threads 2 && grep -q verdict '$T/assess photos/report.json'"
 
-# Brush needs a graphics adapter; a runner without one may not have it. Reported, not required.
-if "$NODE" "$WORKER" --method brush --input "$(cygpath -w "$T/photos in")" --input-kind photos --goal scene --output "$(cygpath -w "$T/build/out")" \
-  --iterations 300 --max-splats 100000 --resolution 320 --sh-degree 1 --video-fps 2 --threads 2 >"$T/build.log" 2>&1 && [[ -s "$T/build/out/splats.ply" ]]; then
-  echo "ok   a short build of the sample made splats"
+# A short Brush build on the sample, which already has its camera poses (made-up pictures are
+# too plain for the pose step), as `holo test-building` does. Brush needs a graphics adapter,
+# which a runner may not have: reported, not required.
+mkdir -p "$T/build"
+if "$A/brush/brush_app.exe" "$(cygpath -w "$A/sample")" --total-steps 300 --max-resolution 320 --export-every 300 \
+  --export-path "$(cygpath -w "$T/build")" --export-name splats.ply >"$T/build.log" 2>&1 && [[ -s "$T/build/splats.ply" ]]; then
+  echo "ok   a short Brush build of the sample made splats"
 else
-  echo "note a short build did not finish here (no graphics adapter on this machine?):"
+  echo "note a short Brush build did not finish here (no graphics adapter on this machine?):"
   tail -5 "$T/build.log" | sed 's/^/     /'
 fi
 
