@@ -794,6 +794,8 @@ export async function videoFrames(cfg, video, dir, o) {
   mkdirSync(dir, { recursive: true });
   const work = path.join(dir, "..", "candidates");
   mkdirSync(work, { recursive: true });
+  // ffmpeg writes the scores in its own folder: a full path inside a filter would need escaping
+  // that differs between Windows paths and the rest.
   const scores = path.join(work, "blur.txt");
   const W = 192;
   const H = 108;
@@ -804,7 +806,7 @@ export async function videoFrames(cfg, video, dir, o) {
   let ref = null;
   let count = 0;
   await new Promise((resolve, reject) => {
-    const child = spawn(cfg.ffmpeg, ["-hide_banner", "-loglevel", "error", "-i", video, "-an", "-vf", `scale=640:-2,blurdetect,metadata=mode=print:key=lavfi.blurdetect.blur:file=${scores.replace(/([\\:'])/g, "\\$1")},scale=${W}:${H},format=gray`, "-fps_mode", "passthrough", "-f", "rawvideo", "pipe:1"], { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(cfg.ffmpeg, ["-hide_banner", "-loglevel", "error", "-i", path.resolve(video), "-an", "-vf", `scale=640:-2,blurdetect,metadata=mode=print:key=lavfi.blurdetect.blur:file=blur.txt,scale=${W}:${H},format=gray`, "-fps_mode", "passthrough", "-f", "rawvideo", "pipe:1"], { cwd: work, stdio: ["ignore", "pipe", "pipe"] });
     const stop = () => child.kill("SIGTERM");
     process.once("SIGTERM", stop);
     let buf = Buffer.alloc(0);

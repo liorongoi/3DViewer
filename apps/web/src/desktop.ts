@@ -30,10 +30,38 @@ interface DesktopApi {
   onOpened(cb: () => void): void;
   /** Present from the version that has "Check this computer". */
   computer?: () => Promise<{ cpuModel: string | null; cores: number; ramGb: number; freeDiskGb: number | null; os: string }>;
+  /** "Build on this PC" (Windows app from 1.3.0). */
+  buildStatus?: () => Promise<{ addon: { version: string } | null; nvidiaSmi: string; building: boolean }>;
+  installBuildAddon?: () => Promise<{ ok: true; version: string } | { ok: false; reason: string } | null>;
+  pickCapture?: (kind: "video" | "photos") => Promise<DesktopFile[] | null>;
+  build?: (request: LocalBuildRequest, urls: string[]) => Promise<LocalBuildResult>;
+  stopBuild?: () => Promise<boolean>;
+  showBuildFolder?: () => Promise<boolean>;
+  onBuildProgress?: (cb: (p: { fraction: number; stage: string }) => void) => () => void;
   platform: string;
 }
 
+export interface LocalBuildRequest {
+  inputKind: "video" | "photos";
+  name: string;
+  checkOnly: boolean;
+  iterations: number;
+  maxSplats: number;
+  resolution: number;
+  shDegree: number;
+  videoFps: number;
+  threads: number;
+}
+
+export type LocalBuildResult =
+  | { ok: true; file: DesktopFile; name: string; report?: undefined }
+  | { ok: true; report: unknown; file?: undefined }
+  | { ok: false; reason: "busy" | "noAddon" | "noFiles" | "stopped" | "failed" | "disk"; detail?: string; needGb?: number; freeGb?: number };
+
 export const desktop: DesktopApi | null = (globalThis as { viewerDesktop?: DesktopApi }).viewerDesktop ?? null;
+
+/** "Build on this PC" is offered: HOLO for Windows, from the version that has it. */
+export const localBuildAvailable = (): boolean => !!desktop?.build && desktop.platform === "win32";
 
 let info: Promise<DesktopInfo | null> | null = null;
 /** The desktop app's set-up, read once. */

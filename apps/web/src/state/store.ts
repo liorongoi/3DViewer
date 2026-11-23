@@ -49,6 +49,8 @@ interface AppState {
   uploadOpen: boolean;
   /** The "Make a splat" wizard (docs/GAUSSIAN_SPLATS.md). */
   captureOpen: boolean;
+  /** "Build on this PC" (HOLO for Windows with the building add-on). */
+  localBuildOpen: boolean;
   /** The admin page (WP 3.9). */
   adminOpen: boolean;
   /** Performance overlay (Shift+P). */
@@ -113,6 +115,7 @@ export const useApp = create<AppState>((set) => ({
   manualOpen: false,
   uploadOpen: false,
   captureOpen: false,
+  localBuildOpen: false,
   adminOpen: false,
   perfOpen: false,
   adaptiveResolution: readPref<string>("adaptiveResolution", "true") === "true",

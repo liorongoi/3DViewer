@@ -25,6 +25,7 @@ import { fromDrop, fromInput } from "../upload/read-drop";
 import { AlertTriangle, Aperture, Building2, Check, ChevronLeft, ChevronRight, Cpu, Film, Gpu, Images, Info, Ruler, Satellite, ShieldCheck, Sparkles, X, XCircle } from "./icons";
 import { IconButton, cx } from "./primitives";
 import { useDialog } from "./useDialog";
+import { localBuildAvailable } from "../desktop";
 
 /**
  * "Make a splat" (docs/GAUSSIAN_SPLATS.md, "Making a splat"): four short steps, each one question.
@@ -205,7 +206,16 @@ export function CaptureWizard() {
 
         <div className="min-h-0 flex-1 overflow-auto p-6">
           {!server ? (
-            <Notice>{t("splat.make.needsServer")}</Notice>
+            <div className="mx-auto grid max-w-xl gap-3">
+              <Notice>{t("splat.make.needsServer")}</Notice>
+              {localBuildAvailable() && (
+                <div>
+                  <button type="button" className="btn-primary" onClick={() => set({ captureOpen: false, localBuildOpen: true })} data-testid="capture-local">
+                    <Gpu size={14} /> {t("splat.local.instead")}
+                  </button>
+                </div>
+              )}
+            </div>
           ) : captureId ? (
             <Progress
               status={status}
@@ -215,7 +225,14 @@ export function CaptureWizard() {
             />
           ) : step === 0 ? (
             <div className="mx-auto grid max-w-2xl gap-4">
-              <h3 className="text-[17px] font-semibold">{t("splat.make.have")}</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="flex-1 text-[17px] font-semibold">{t("splat.make.have")}</h3>
+                {localBuildAvailable() && (
+                  <button type="button" className="btn-ghost text-[12px]" onClick={() => set({ captureOpen: false, localBuildOpen: true })} data-testid="capture-local-link">
+                    <Gpu size={14} /> {t("splat.local.instead")}
+                  </button>
+                )}
+              </div>
               <Cards
                 name="capture-input"
                 value={input}
@@ -546,7 +563,7 @@ function Progress({ status, onOpen, onStop, onBuild }: { status: CaptureStatus |
   );
 }
 
-function ReportItems({ report }: { report: NonNullable<NonNullable<CaptureStatus["check"]>["report"]> }) {
+export function ReportItems({ report }: { report: NonNullable<NonNullable<CaptureStatus["check"]>["report"]> }) {
   const { t } = useTranslation();
   return (
     <ul className="grid gap-2">
