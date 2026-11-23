@@ -285,3 +285,29 @@ export function startBuild(addon: Addon, req: BuildRequest, workRoot: string, ou
   })();
   return { done, stop };
 }
+
+/**
+ * The build folder (`root/<name> <date>`) that holds every one of these files, or null when they
+ * are not all inside one build folder. Used to move a finished build to the Recycle Bin when its
+ * model is deleted from the library: only a folder HOLO made, never one the page names.
+ */
+export function buildFolderOf(files: string[], root: string): string | null {
+  let realRoot: string;
+  try {
+    realRoot = fs.realpathSync(root);
+  } catch {
+    return null;
+  }
+  let folder: string | null = null;
+  for (const f of files) {
+    const rel = path.relative(realRoot, f);
+    if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return null;
+    const parts = rel.split(path.sep);
+    // A file inside a build folder, not a file at the top of the builds folder.
+    if (parts.length < 2 || !parts[0]) return null;
+    const here = path.join(realRoot, parts[0]);
+    if (folder && folder !== here) return null;
+    folder = here;
+  }
+  return folder;
+}

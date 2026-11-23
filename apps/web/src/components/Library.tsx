@@ -1,10 +1,10 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { classificationIdOf, useClassOf, useLevels } from "../state/classification";
-import { useLibrary } from "../state/library";
+import { canDelete, useLibrary } from "../state/library";
 import { useTranslation } from "react-i18next";
 import { UPDATE_STATUSES, matchesQuery, type ModelSummary } from "@viewer/shared";
 import { useApp, type Filters } from "../state/store";
-import { Box, Boxes, ChevronDown, FileBox, Search, Sparkles, X } from "./icons";
+import { Box, Boxes, ChevronDown, FileBox, Search, Sparkles, Trash2, X } from "./icons";
 import { StatusBadge, cx } from "./primitives";
 
 export function filterModels(models: ModelSummary[], f: Filters, classOf: (m: ModelSummary) => string = (m) => m.classificationId): ModelSummary[] {
@@ -169,7 +169,9 @@ export function ModelCard({ m, onOpen, dense }: { m: ModelSummary; onOpen: () =>
   // The server's turntable when it has one; the bundled samples otherwise.
   const thumb = m.thumbnail ?? `samples/thumbs/${m.id}.webp`;
   const Icon = m.source.splats ? Sparkles : m.sourceFormat === "3dtiles" ? Boxes : m.sourceFormat === "fbx" ? FileBox : Box;
+  const deletable = canDelete(m, useApp((s) => !!s.server));
   return (
+    <div className="group/card relative">
     <button
       ref={ref}
       type="button"
@@ -228,6 +230,23 @@ export function ModelCard({ m, onOpen, dense }: { m: ModelSummary; onOpen: () =>
         </div>
       </div>
     </button>
+    {deletable && (
+      // Beside the card, not in it: a button cannot hold another. Shows on hover or keyboard focus.
+      <button
+        type="button"
+        aria-label={`${t("deleteModel.menu")}: ${m.name}`}
+        title={t("deleteModel.menu")}
+        data-testid="delete-model-open"
+        onClick={() => useApp.getState().set({ deleteModelId: m.id })}
+        className={cx(
+          "absolute end-1.5 z-20 grid h-7 w-7 place-items-center rounded-[8px] bg-black/60 text-white/80 opacity-0 transition-opacity hover:bg-[var(--bad)] hover:text-white focus-visible:opacity-100 group-hover/card:opacity-100 group-focus-within/card:opacity-100",
+          dense ? "top-1.5" : "top-3",
+        )}
+      >
+        <Trash2 size={14} />
+      </button>
+    )}
+    </div>
   );
 }
 

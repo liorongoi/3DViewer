@@ -161,6 +161,14 @@ The server checks the files again, scans them, converts an FBX, validates the mo
 
 > **Desktop app:** **Keep on this computer only** opens the model here without sending it to the server. FBX files are converted on your own computer.
 
+### Deleting a model
+
+Point at a model in the library, or open it, and choose the bin. The app asks first.
+
+- **A model on the server** is deleted for everyone, with every version and all its files. It cannot be undone, so the app asks for the admin password and for the model's name typed again. The audit log keeps a record of it.
+- **A model opened from this computer** only leaves the library; its files stay where they are. For a model made with **Build on this PC**, tick the box to move its build folder to the Recycle Bin too.
+- The sample models (when no server is set up) cannot be deleted.
+
 ## Settings
 
 ![Settings](img/settings.png)

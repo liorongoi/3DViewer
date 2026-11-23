@@ -7,7 +7,7 @@ import { machineSources, readConfig } from "./config.js";
 import { Roots, SCHEME, listFiles, listFolder, serveLocal, type ListedFile } from "./local-files.js";
 import { SERVER_BASE, SERVER_SCHEME, proxyServer } from "./server-proxy.js";
 import { convertFbx, findConverter, stopAll } from "./fbx.js";
-import { CAPTURE_PHOTO, CAPTURE_VIDEO, cleanRequest, currentAddon, installAddon, nvidiaSmi, startBuild, type BuildRequest } from "./local-build.js";
+import { CAPTURE_PHOTO, CAPTURE_VIDEO, buildFolderOf, cleanRequest, currentAddon, installAddon, nvidiaSmi, startBuild, type BuildRequest } from "./local-build.js";
 
 /**
  * HOLO desktop app (plan WP 5.1, 5.3, 5.4). It loads the same web build as the portal from a
@@ -187,6 +187,7 @@ async function start(): Promise<void> {
   let building: { stop: () => void } | null = null;
   let installing = false;
   let lastFolder: string | null = null;
+  const outRoot = path.join(app.getPath("documents"), "HOLO builds");
   app.on("will-quit", () => {
     building?.stop();
     fs.rmSync(buildWork, { recursive: true, force: true });
@@ -248,7 +249,6 @@ async function start(): Promise<void> {
     } catch {
       /* unknown: go ahead */
     }
-    const outRoot = path.join(app.getPath("documents"), "HOLO builds");
     const sender = e.sender;
     const run = startBuild(addon, clean, buildWork, outRoot, (p) => {
       if (!sender.isDestroyed()) sender.send("viewer:buildProgress", p);
@@ -273,6 +273,39 @@ async function start(): Promise<void> {
   ipcMain.handle("viewer:showBuildFolder", () => {
     if (lastFolder) shell.showItemInFolder(path.join(lastFolder, "splats.ply"));
     return !!lastFolder;
+  });
+
+  // Deleting a built model: the build folder its files are in (by the viewer-file:// URLs of files
+  // the user opened), its name to show, and moving it to the Recycle Bin (Trash on a Mac).
+  const buildFolderFor = (urls: unknown): string | null => {
+    const files: string[] = [];
+    for (const u of Array.isArray(urls) ? urls.slice(0, 5000) : []) {
+      let file: string | null = null;
+      try {
+        const url = new URL(String(u));
+        if (url.protocol === `${SCHEME}:`) file = roots.resolve(url.hostname, url.pathname.slice(1));
+      } catch {
+        file = null;
+      }
+      if (!file) return null;
+      files.push(file);
+    }
+    return files.length ? buildFolderOf(files, outRoot) : null;
+  };
+  ipcMain.handle("viewer:buildFolderOf", (_e, urls: unknown) => {
+    const folder = buildFolderFor(urls);
+    return folder ? path.basename(folder) : null;
+  });
+  ipcMain.handle("viewer:trashBuild", async (_e, urls: unknown) => {
+    const folder = buildFolderFor(urls);
+    if (!folder) return false;
+    try {
+      await shell.trashItem(folder);
+      if (lastFolder && path.resolve(lastFolder) === path.resolve(folder)) lastFolder = null;
+      return true;
+    } catch {
+      return false;
+    }
   });
 
   const win = await createWindow();

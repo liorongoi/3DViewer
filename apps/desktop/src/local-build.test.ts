@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { addonParts, cleanRequest, currentAddon, readAddon, startBuild, verifySums, workerConfig } from "./local-build.ts";
+import { addonParts, buildFolderOf, cleanRequest, currentAddon, readAddon, startBuild, verifySums, workerConfig } from "./local-build.ts";
 
 const dirs: string[] = [];
 const tmp = () => {
@@ -154,5 +154,26 @@ describe("a build", () => {
     fs.writeFileSync(video, "video");
     const run = startBuild({ dir, version: "1.3.0" }, request([video]), tmp(), tmp(), () => run.stop());
     expect(await run.done).toEqual({ ok: false, stopped: true });
+  });
+});
+
+describe("buildFolderOf", () => {
+  it("finds the one build folder that holds the files", () => {
+    const root = tmp();
+    const b = path.join(root, "Fourviere 2026-11-23 17.40");
+    fs.mkdirSync(b);
+    const real = fs.realpathSync(b);
+    expect(buildFolderOf([path.join(real, "splats.ply")], root)).toBe(real);
+    expect(buildFolderOf([path.join(real, "splats.ply"), path.join(real, "build.log")], root)).toBe(real);
+  });
+  it("refuses files outside the builds folder, at its top, or in two build folders", () => {
+    const root = tmp();
+    const real = fs.realpathSync(root);
+    expect(buildFolderOf([path.join(tmp(), "a", "splats.ply")], root)).toBeNull();
+    expect(buildFolderOf([path.join(real, "splats.ply")], root)).toBeNull();
+    expect(buildFolderOf([path.join(real, "..", "x", "splats.ply")], root)).toBeNull();
+    expect(buildFolderOf([path.join(real, "a", "splats.ply"), path.join(real, "b", "splats.ply")], root)).toBeNull();
+    expect(buildFolderOf([], root)).toBeNull();
+    expect(buildFolderOf([path.join(real, "a", "x")], path.join(real, "missing"))).toBeNull();
   });
 });

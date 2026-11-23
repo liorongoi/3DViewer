@@ -291,7 +291,8 @@ export function UploadWizard() {
         placement,
         sizeBytes: report.stats.bytes,
       };
-      addUpload(m);
+      // Where it came from on this computer, so deleting it can offer to remove a HOLO build's folder.
+      addUpload(m, checked.files.flatMap((f) => (f.url?.startsWith("viewer-file:") ? [f.url] : [])));
       close();
       // Let the store update reach the library before opening.
       setTimeout(() => openModel(id), 0);
