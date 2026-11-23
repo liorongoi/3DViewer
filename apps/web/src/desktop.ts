@@ -37,6 +37,10 @@ interface DesktopApi {
   build?: (request: LocalBuildRequest, urls: string[]) => Promise<LocalBuildResult>;
   stopBuild?: () => Promise<boolean>;
   showBuildFolder?: () => Promise<boolean>;
+  /** Present from the version that can delete models: the build folder opened files are in, by name. */
+  buildFolderOf?: (urls: string[]) => Promise<string | null>;
+  /** Moves that build folder to the Recycle Bin (Trash on a Mac). */
+  trashBuild?: (urls: string[]) => Promise<boolean>;
   onBuildProgress?: (cb: (p: { fraction: number; stage: string }) => void) => () => void;
   platform: string;
 }

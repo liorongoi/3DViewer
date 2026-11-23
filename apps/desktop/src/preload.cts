@@ -48,6 +48,10 @@ contextBridge.exposeInMainWorld("viewerDesktop", {
   stopBuild: (): Promise<boolean> => ipcRenderer.invoke("viewer:stopBuild"),
   /** Shows the last finished build in Explorer. */
   showBuildFolder: (): Promise<boolean> => ipcRenderer.invoke("viewer:showBuildFolder"),
+  /** The name of the HOLO build folder these opened files are in, or null when they are not in one. */
+  buildFolderOf: (urls: string[]): Promise<string | null> => ipcRenderer.invoke("viewer:buildFolderOf", urls),
+  /** Moves that build folder to the Recycle Bin (Trash on a Mac). False when it could not. */
+  trashBuild: (urls: string[]): Promise<boolean> => ipcRenderer.invoke("viewer:trashBuild", urls),
   /** Progress of the running build; returns a function that stops listening. */
   onBuildProgress: (cb: (p: { fraction: number; stage: string }) => void): (() => void) => {
     const h = (_e: unknown, p: { fraction: number; stage: string }) => cb(p);

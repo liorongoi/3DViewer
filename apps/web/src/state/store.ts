@@ -63,6 +63,10 @@ interface AppState {
   classOverrides: Record<string, string>;
   /** Models uploaded in this browser session (kept in memory until the server stores them, Phase 3). */
   uploads: ModelSummary[];
+  /** The viewer-file:// URLs each of those was opened from on this computer (desktop app), by model id. */
+  uploadFiles: Record<string, string[]>;
+  /** The model the delete dialog is asking about. */
+  deleteModelId: string | null;
   /** The HOLO server, when one answers (Phase 3). Without it the app uses the sample library. */
   server: import("../server/api").ServerInfo | null;
   /**
@@ -80,7 +84,9 @@ interface AppState {
   libraryReady: boolean;
   /** Classification levels, lowest first: the admin's from the server, or the prototype set. */
   levels: ClassificationLevel[];
-  addUpload: (m: ModelSummary) => void;
+  addUpload: (m: ModelSummary, files?: string[]) => void;
+  /** Takes a model of this session out of the library. */
+  removeUpload: (id: string) => void;
   setClassification: (modelId: string, classificationId: string) => void;
   set: (patch: Partial<AppState>) => void;
   setPref: <K extends "theme" | "lang" | "coordSystem" | "utmZone" | "unit" | "quality" | "environment" | "memoryGb" | "fadeTools" | "adaptiveResolution">(k: K, v: AppState[K]) => void;
@@ -130,6 +136,8 @@ export const useApp = create<AppState>((set) => ({
     }
   })(),
   uploads: [],
+  uploadFiles: {},
+  deleteModelId: null,
   server: null,
   serverState: "none",
   pendingFiles: null,
@@ -137,7 +145,16 @@ export const useApp = create<AppState>((set) => ({
   versionHistory: null,
   libraryReady: false,
   levels: SAMPLE_CLASSIFICATIONS,
-  addUpload: (m) => set((s) => ({ uploads: [m, ...s.uploads.filter((x) => x.id !== m.id)] })),
+  addUpload: (m, files) =>
+    set((s) => ({
+      uploads: [m, ...s.uploads.filter((x) => x.id !== m.id)],
+      ...(files ? { uploadFiles: { ...s.uploadFiles, [m.id]: files } } : {}),
+    })),
+  removeUpload: (id) =>
+    set((s) => {
+      const { [id]: _gone, ...uploadFiles } = s.uploadFiles;
+      return { uploads: s.uploads.filter((x) => x.id !== id), uploadFiles };
+    }),
   setClassification: (modelId, classificationId) =>
     set((s) => {
       const classOverrides = { ...s.classOverrides, [modelId]: classificationId };

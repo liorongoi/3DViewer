@@ -25,3 +25,8 @@ export async function refreshLibrary(): Promise<void> {
   if (!srv) return;
   useApp.setState({ serverModels: await listModels(srv) });
 }
+
+/** A model the user can delete: one of this session's, or any model on the server. The bundled samples stay. */
+export function canDelete(m: ModelSummary, server: boolean): boolean {
+  return m.id.startsWith("upload-") || server;
+}

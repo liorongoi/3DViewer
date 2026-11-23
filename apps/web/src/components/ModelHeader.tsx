@@ -4,7 +4,8 @@ import { useClassOf } from "../state/classification";
 import { useTranslation } from "react-i18next";
 import { useEngine, useSignal } from "../engine";
 import { useApp } from "../state/store";
-import { Camera, ChevronLeft, Command, Share2 } from "./icons";
+import { Camera, ChevronLeft, Command, Share2, Trash2 } from "./icons";
+import { canDelete } from "../state/library";
 import { VersionPicker } from "./VersionPicker";
 import { ServerPill } from "./ServerPill";
 import { hiddenLayers, shareUrl } from "../share";
@@ -20,6 +21,7 @@ export function ModelHeader({ onBack, backLabel, className, compact }: { onBack:
   const set = useApp((s) => s.set);
   const [shared, setShared] = useState(false);
   const classOf = useClassOf();
+  const server = useApp((s) => !!s.server);
   if (!model) return null;
   const cls = classOf(model);
   return (
@@ -74,6 +76,11 @@ export function ModelHeader({ onBack, backLabel, className, compact }: { onBack:
       >
         <Share2 size={16} />
       </IconButton>
+      {canDelete(model, server) && (
+        <IconButton label={t("deleteModel.menu")} className="tip-below" onClick={() => set({ deleteModelId: model.id })} data-testid="delete-model-header">
+          <Trash2 size={16} />
+        </IconButton>
+      )}
     </div>
   );
 }
