@@ -78,7 +78,7 @@ export const SAMPLE_LIBRARY: ModelSummary[] = [
       attribution: "Ville et Eurométropole de Strasbourg, Photomaillage 3D 2022, co-funded by FEDER / DataGrandEst (Licence Ouverte)",
     },
     centre: { lat: 48.5818, lon: 7.7509 },
-    sizeBytes: 0,
+    sizeBytes: 460000000,
   },
   {
     id: "m-tarn",

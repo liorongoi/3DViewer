@@ -10,13 +10,14 @@
 // Usage: node scripts/fetch-strasbourg-photomesh.mjs <out dir> [lon] [lat] [half size m] [finest error m]
 //   lon lat        centre, default 7.7509 48.5818 (Notre-Dame cathedral, Grande Île)
 //   half size      half the side of the square in metres, default 300 (600 × 600 m)
-//   finest error   stop below this geometric error, default 0.25 m
+//   finest error   stop below this geometric error, default 1 m (282 tiles, about 460 MB;
+//                  0.5 m is about 1,500 tiles and 0.25 m about 8,000 tiles, 3.5 GB)
 // Needs network access to s3.eu-west-2.wasabisys.com. No npm packages.
 import fs from "node:fs";
 import path from "node:path";
 
 const ROOT_URL = "https://s3.eu-west-2.wasabisys.com/ems-sgct-photomaillage/ODACIT/EMS_PM2022/tileset.json";
-const [OUT, LON = "7.7509", LAT = "48.5818", HALF = "300", MINERR = "0.25"] = process.argv.slice(2);
+const [OUT, LON = "7.7509", LAT = "48.5818", HALF = "300", MINERR = "1"] = process.argv.slice(2);
 if (!OUT) throw new Error("Usage: fetch-strasbourg-photomesh.mjs <out dir> [lon] [lat] [half size m] [finest error m]");
 const lon = Number(LON), lat = Number(LAT), half = Number(HALF), minErr = Number(MINERR);
 const rad = Math.PI / 180;
@@ -113,8 +114,10 @@ async function walk(tile, url, parentTransform) {
     }
     if (kept.length) out.children = [...(out.children ?? []), ...kept];
   }
+  // A wrapper tile whose children all fell outside the area has nothing to draw.
+  if (!out.content && !out.children?.length) return null;
   // A tile cut off from its children must not ask for more detail than it has.
-  if (!out.children?.length && (tile.children?.length || (uri && !out.content))) out.geometricError = 0;
+  if (!out.children?.length && tile.children?.length) out.geometricError = 0;
   return out;
 }
 
@@ -123,6 +126,11 @@ const top = JSON.parse((await get(ROOT_URL)).toString());
 const root = await walk(top.root, ROOT_URL, undefined);
 if (!root) throw new Error("The area does not touch the Strasbourg photomesh");
 console.log(`· ${jobs.length} tiles to fetch (${external} external tilesets read)`);
+// Written first so an interrupted run can be resumed (tiles already on disk are skipped).
+fs.writeFileSync(
+  path.join(OUT, "tileset.json"),
+  JSON.stringify({ asset: { version: "1.0" }, geometricError: Math.max(top.geometricError ?? 0, root.geometricError), root }),
+);
 
 let next = 0, done = 0, bytes = 0;
 await Promise.all(
@@ -140,7 +148,6 @@ await Promise.all(
   }),
 );
 
-fs.writeFileSync(path.join(OUT, "tileset.json"), JSON.stringify({ asset: { version: "1.0" }, geometricError: top.geometricError ?? root.geometricError * 2, root }));
 fs.writeFileSync(
   path.join(OUT, "README.md"),
   `# Strasbourg 2022 photomesh · ${2 * half} × ${2 * half} m around ${lat}, ${lon}\n\n` +
