@@ -21,6 +21,7 @@ These are photogrammetry meshes made from oblique aerial photos, so building fro
 | 5 | **PLATEAU** (Japan MLIT) — 200+ cities | CityGML, **3D Tiles**, **FBX**, OBJ, GeoPackage | LOD1–LOD2 buildings, many with textured LOD2 | **CC BY 4.0 / ODbL / ODC-BY multi-licence — verified** (OSM wiki; terms linked from PLATEAU site policy) | geospatial.jp CKAN, dataset `plateau` | **Real FBX test files** with georeference + 3D Tiles of the same area, so we can compare our FBX conversion against the publisher's tiles |
 | 6 | **Lyon Metropolis 3D Tiles** (LIRIS / VCity, from Grand Lyon open data) | **3D Tiles** (incl. temporal 2009 / 2012 / 2015 vintages) | Building models by borough | **Etalab Open Licence 2.0 — verified** (README) | `dataset-dl.liris.cnrs.fr/three-d-tiles-lyon-metropolis/` | Many medium tilesets; layer-per-tileset tests (LYR) |
 | 7 | **Photomaillage 3D de la Métropole de Lyon** (2023 aerial survey) | **3D Tiles 1.0** (b3dm with glTF 1.0), 9-level pyramid over 34,812 blocks of ~140 × 210 m, each with its own 5-level tree | 5.5 cm source photos | **Licence Ouverte 2.0 — verified** on data.grandlyon.com | Live tileset: `https://data.grandlyon.com/files/grandlyon/2023/mesh/tileset.json` | Photo-textured city sample: `scripts/fetch-lyon-photomesh.mjs` takes one district (Fourvière) with its LOD |
+| 8 | **Photomaillage 3D 2022, Ville et Eurométropole de Strasbourg** (`pm3d_2022`) | **3D Tiles 1.0** (b3dm with glTF 2.0, JPEG, unlit; TerraExplorer), plus **OBJ** per 100 m tile (39,248 ZIPs, EPSG:3948 with a -2,035,000 / -7,255,000 m offset) | 5 cm source photos (June and August 2022), 10–20 cm absolute | **Licence Ouverte — verified** (metadata sheet); credit "Ville et Eurométropole de Strasbourg" and FEDER / DataGrandEst with their logos | Live tileset (CORS `*`): `https://s3.eu-west-2.wasabisys.com/ems-sgct-photomaillage/ODACIT/EMS_PM2022/tileset.json`; OBJ: `…/DATA/PM3D_2022/TEXTURED_MESH_OBJ/{tile}.zip`, index `…/DATA/PM3D_2022/TA_DALLES_PM2022_EPSG3948.zip`. Not geo-blocked (Nov 2026) | Second photo-textured city sample: `scripts/fetch-strasbourg-photomesh.mjs` takes the cathedral and Grande Île with the publisher's LOD |
 
 ### 1.1 Photorealistic sources we cannot use on the internal network
 
@@ -97,6 +98,7 @@ Everything below is downloaded by `scripts/fetch-samples.sh`, `scripts/build-dem
 |---|---|---|---|---|
 | Lyon 1st district, textured buildings | 3D Tiles 1.0, b3dm, 3-level LOD tree, ECEF (EPSG:4978) | `samples/3dtiles/lyon1` | Data Grand Lyon via iTowns sample data; **Licence Ouverte 2.0** | City on terrain, height-datum fit (+80 m), line of sight and viewshed against buildings |
 | Lyon Fourvière photomesh | 3D Tiles 1.0, b3dm (glTF 2.0, Draco, unlit), 5 LOD levels (2 district + 3 per block), 16 blocks | `samples/3dtiles/lyon-photomesh` | Data Grand Lyon photomesh 2023; **Licence Ouverte 2.0** | Photo-textured city on terrain, street-level ground fit, LOD streaming |
+| Strasbourg Grande Île photomesh | 3D Tiles 1.0, b3dm (glTF 2.0, unlit, as served), publisher LOD down to 1 m error (282 tiles, about 460 MB), 600 × 600 m around the cathedral | `samples/3dtiles/strasbourg-photomesh` | Ville et Eurométropole de Strasbourg photomesh 2022, FEDER / DataGrandEst; **Licence Ouverte** | Photo-textured city on terrain, street-level ground fit, LOD streaming |
 | Tarn gorges lidar | 3D Tiles 1.0, pnts, 11-level octree, 4,318 tiles, ECEF | `samples/3dtiles/tarn-lidar` | IGN Lidar HD via iTowns sample data; **Licence Ouverte 2.0** | LOD inspector, point clouds on terrain |
 | Discrete LOD and request volume tilesets | 3D Tiles 1.0 | `samples/3dtiles/TilesetWith*` | CesiumGS 3d-tiles-samples; Apache 2.0 | Format conformance, LOD switching |
 | Sentinel-2 L2A true colour, summer 2025 | XYZ JPEG tiles z10–15 for Jerusalem, Lyon, Tarn | `samples/imagery/s2` | Copernicus Sentinel-2 via AWS Open Data (`sentinel-cogs`); **Copernicus open licence**, "Contains modified Copernicus Sentinel data 2025" | Offline base map |
@@ -116,6 +118,7 @@ Formats still to add to the kit: FBX and OBJ (derived from the Lyon tiles, WP 0.
 ## Sources
 
 - Strasbourg photomesh metadata: https://www.sig.strasbourg.eu/datastrasbourg/3d_fiches_metadonnees_pdf/Photomaillage%203D%202018.pdf
+- Strasbourg photomesh 2022: https://data.strasbourg.eu/explore/dataset/pm3d_2022/ and https://sig.strasbourg.eu/datastrasbourg/3d_fiches_metadonnees_pdf/Photomaillage%203D%20-%202022.pdf
 - Sample 3D Tiles / photomesh list (Iconem 3DTiled docs): https://docs.3dtiled.iconem.com/docs/guide/planning/sample-data
 - CRAIG photomesh 2021: https://www.data.gouv.fr/datasets/photomaillage-3d-auvergne-rhone-alpes-2021/informations
 - Lille MEL 3D model 2016: https://www.data.gouv.fr/datasets/maquette-3d-mel-2016-1/informations
