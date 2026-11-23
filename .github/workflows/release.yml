@@ -152,8 +152,14 @@ jobs:
             out/holo-building-*-linux-x64.tar.gz.sha256
           compression-level: 0
 
+  # The building add-on for HOLO for Windows ("Build on this PC"), built and checked on Windows.
+  building-windows:
+    uses: ./.github/workflows/building-windows.yml
+    with:
+      version: ${{ inputs.version || github.ref_name }}
+
   publish:
-    needs: [windows, server, building]
+    needs: [windows, server, building, building-windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -177,6 +183,7 @@ jobs:
           - **HOLO-Setup-$v.exe**: the Windows desktop app, $signed. Per-user, no admin rights. Silent install for IT: \`HOLO-Setup-$v.exe /S /SERVER_URL=https://holo.internal\`.
           - **viewer-server-$v-linux-x64.tar.gz**: the offline server bundle. With no root: unpack it and run \`./install-user.sh\` (README-FIRST.txt inside). For a site server as root: docs/INSTALL.md.
           - **holo-building-$v-linux-x64.tar.gz**: the tools to make splats on that server (camera poses, video frames, Brush building on the graphics card). Unpack it and run \`./install-building.sh\`; no root, no internet.
+          - **holo-building-$v-windows-x64.zip**: the add-on for **Build on this PC** in HOLO for Windows: make splats from a video or photos on the PC's own NVIDIA card, then view them in HOLO. In HOLO: Make a splat ▸ Build on this PC ▸ Choose the add-on zip. No admin rights, no internet.
 
           The app and the server include the user manual in English and Hebrew (Help ▸ User manual). Each file has its SHA-256 beside it.
           EOF

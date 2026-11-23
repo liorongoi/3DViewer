@@ -13,6 +13,7 @@ import { FeaturePopup } from "../components/FeaturePopup";
 import { PerfHud } from "../components/PerfHud";
 import { Layers, PanelIcon, Ruler, Upload } from "./parts";
 import { Sparkles } from "../components/icons";
+import { localBuildAvailable } from "../desktop";
 import { HoloMark } from "../brand/HoloMark";
 import { IconButton, cx } from "../components/primitives";
 import { fadeClasses, useChromeFade } from "./useChromeFade";
@@ -63,7 +64,7 @@ export function Workspace() {
                 <IconButton size="sm" label={t("library.upload")} onClick={() => set({ uploadOpen: true })}>
                   <Upload size={16} />
                 </IconButton>
-                <IconButton size="sm" label={t("splat.make.open")} onClick={() => set({ captureOpen: true })} data-testid="open-capture">
+                <IconButton size="sm" label={t("splat.make.open")} onClick={() => set(!useApp.getState().server && localBuildAvailable() ? { localBuildOpen: true } : { captureOpen: true })} data-testid="open-capture">
                   <Sparkles size={16} />
                 </IconButton>
                 <IconButton size="sm" label={t("common.close")} shortcut="L" onClick={() => set({ leftOpen: false })}>

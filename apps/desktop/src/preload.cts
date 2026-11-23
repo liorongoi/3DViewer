@@ -37,5 +37,24 @@ contextBridge.exposeInMainWorld("viewerDesktop", {
   },
   /** Processor, memory, free disk and system, for "Check this computer". */
   computer: (): Promise<{ cpuModel: string | null; cores: number; ramGb: number; freeDiskGb: number | null; os: string }> => ipcRenderer.invoke("viewer:computer"),
+  /** "Build on this PC": the building add-on HOLO uses (or null), what nvidia-smi says, and whether a build runs. */
+  buildStatus: (): Promise<{ addon: { version: string } | null; nvidiaSmi: string; building: boolean }> => ipcRenderer.invoke("viewer:buildStatus"),
+  /** Picks the building add-on zip and installs it for this user. Null when the user cancels. */
+  installBuildAddon: (): Promise<{ ok: true; version: string } | { ok: false; reason: string } | null> => ipcRenderer.invoke("viewer:installBuildAddon"),
+  /** The open dialog for a capture: one video, or photos. */
+  pickCapture: (kind: "video" | "photos"): Promise<ListedFile[] | null> => ipcRenderer.invoke("viewer:pickCapture", kind),
+  /** Builds splats (or only checks the capture) from files opened in HOLO, named by their viewer-file:// URLs. */
+  build: (request: Record<string, unknown>, urls: string[]): Promise<Record<string, unknown>> => ipcRenderer.invoke("viewer:build", request, urls),
+  stopBuild: (): Promise<boolean> => ipcRenderer.invoke("viewer:stopBuild"),
+  /** Shows the last finished build in Explorer. */
+  showBuildFolder: (): Promise<boolean> => ipcRenderer.invoke("viewer:showBuildFolder"),
+  /** Progress of the running build; returns a function that stops listening. */
+  onBuildProgress: (cb: (p: { fraction: number; stage: string }) => void): (() => void) => {
+    const h = (_e: unknown, p: { fraction: number; stage: string }) => cb(p);
+    ipcRenderer.on("viewer:buildProgress", h);
+    return () => {
+      ipcRenderer.removeListener("viewer:buildProgress", h);
+    };
+  },
   platform: process.platform,
 });

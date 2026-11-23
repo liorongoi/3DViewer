@@ -1,0 +1,70 @@
+# The building add-on for HOLO for Windows ("Build on this PC"): Node.js, Python with pycolmap and
+# onnxruntime, ffmpeg, Brush with HOLO's needle penalty and the masks detector, in one zip.
+# Built and checked on a Windows runner. The release calls it; a pull request that changes the
+# building steps runs it too, so a problem shows before a release.
+name: Building add-on for Windows
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version, such as 1.3.0"
+        required: true
+        default: "0.0.0"
+  pull_request:
+    paths:
+      - workers/**
+      - scripts/make-building-bundle-windows.sh
+      - scripts/check-building-windows.sh
+      - scripts/brush/**
+      - .github/workflows/building-windows.yml
+
+permissions:
+  contents: read
+
+jobs:
+  building-windows:
+    runs-on: windows-latest
+    timeout-minutes: 100
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Version
+        env:
+          V: ${{ inputs.version || '0.0.0' }}
+        run: |
+          v="${V#v}"
+          [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "The version must look like 1.0.0, not '$v'"; exit 1; }
+          echo "VIEWER_VERSION=$v" >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            out/.brush-target
+          key: brush-windows-${{ hashFiles('scripts/make-building-bundle-windows.sh', 'scripts/brush/needle-penalty.patch') }}
+      - name: Building add-on
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/out/.brush-target
+        run: bash scripts/make-building-bundle-windows.sh
+      - name: Check it as HOLO for Windows uses it
+        run: bash scripts/check-building-windows.sh "out/holo-building-$VIEWER_VERSION-windows-x64.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: building-windows
+          path: |
+            out/holo-building-*-windows-x64.zip
+            out/holo-building-*-windows-x64.zip.sha256
+          compression-level: 0

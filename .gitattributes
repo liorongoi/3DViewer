@@ -1,0 +1,4 @@
+# Shell scripts and patches keep LF line endings on Windows checkouts too (the release builds
+# the Windows building add-on with Git Bash).
+*.sh text eol=lf
+*.patch -text

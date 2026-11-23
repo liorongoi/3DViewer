@@ -1,4 +1,4 @@
-import { BrowserWindow, app, dialog, ipcMain, protocol, session } from "electron";
+import { BrowserWindow, app, dialog, ipcMain, protocol, session, shell } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
@@ -7,6 +7,7 @@ import { machineSources, readConfig } from "./config.js";
 import { Roots, SCHEME, listFiles, listFolder, serveLocal, type ListedFile } from "./local-files.js";
 import { SERVER_BASE, SERVER_SCHEME, proxyServer } from "./server-proxy.js";
 import { convertFbx, findConverter, stopAll } from "./fbx.js";
+import { CAPTURE_PHOTO, CAPTURE_VIDEO, cleanRequest, currentAddon, installAddon, nvidiaSmi, startBuild, type BuildRequest } from "./local-build.js";
 
 /**
  * HOLO desktop app (plan WP 5.1, 5.3, 5.4). It loads the same web build as the portal from a
@@ -177,6 +178,102 @@ async function start(): Promise<void> {
   });
   // What the app was started with, once.
   ipcMain.handle("viewer:takeOpened", async () => listPaths(pendingPaths.splice(0)));
+
+  // "Build on this PC": Gaussian splats on this computer's graphics card with the building add-on.
+  const dataDir = app.getPath("userData");
+  const addonDir = path.join(dataDir, "building");
+  const buildWork = path.join(app.getPath("temp"), "HOLO-build");
+  fs.rmSync(buildWork, { recursive: true, force: true });
+  let building: { stop: () => void } | null = null;
+  let installing = false;
+  let lastFolder: string | null = null;
+  app.on("will-quit", () => {
+    building?.stop();
+    fs.rmSync(buildWork, { recursive: true, force: true });
+  });
+  ipcMain.handle("viewer:buildStatus", async () => {
+    const addon = currentAddon(dataDir);
+    return { addon: addon ? { version: addon.version } : null, nvidiaSmi: await nvidiaSmi(), building: !!building };
+  });
+  ipcMain.handle("viewer:installBuildAddon", async (e) => {
+    if (building || installing) return { ok: false, reason: "busy" };
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const r = await dialog.showOpenDialog(win!, { properties: ["openFile"], filters: [{ name: "HOLO building add-on", extensions: ["zip"] }] });
+    if (r.canceled || !r.filePaths[0]) return null;
+    installing = true;
+    try {
+      const done = await installAddon(r.filePaths[0], addonDir, dataDir);
+      return done.ok ? { ok: true, version: done.addon.version } : { ok: false, reason: done.reason };
+    } finally {
+      installing = false;
+    }
+  });
+  ipcMain.handle("viewer:pickCapture", async (e, kind: unknown) => {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const photos = kind === "photos";
+    const r = await dialog.showOpenDialog(win!, {
+      properties: photos ? ["openFile", "multiSelections"] : ["openFile"],
+      filters: [photos ? { name: "Photos", extensions: ["jpg", "jpeg", "png", "tif", "tiff", "webp"] } : { name: "Video", extensions: ["mp4", "mov", "m4v", "lrv", "ts", "mts", "avi", "mkv", "webm"] }],
+    });
+    return r.canceled || !r.filePaths.length ? null : await listFiles(roots, r.filePaths);
+  });
+  ipcMain.handle("viewer:build", async (e, request: unknown, urls: unknown) => {
+    if (building || installing) return { ok: false, reason: "busy" };
+    const addon = currentAddon(dataDir);
+    if (!addon) return { ok: false, reason: "noAddon" };
+    const req = (request && typeof request === "object" ? request : {}) as Partial<BuildRequest>;
+    // Only files the user opened in HOLO, and only videos or photos.
+    const files: string[] = [];
+    for (const u of Array.isArray(urls) ? urls.slice(0, 5000) : []) {
+      let file: string | null = null;
+      try {
+        const url = new URL(String(u));
+        if (url.protocol === `${SCHEME}:`) file = roots.resolve(url.hostname, url.pathname.slice(1));
+      } catch {
+        file = null;
+      }
+      if (file && (CAPTURE_VIDEO.test(file) || CAPTURE_PHOTO.test(file))) files.push(file);
+    }
+    if (!files.length) return { ok: false, reason: "noFiles" };
+    const clean = cleanRequest(req, files);
+    await fs.promises.mkdir(buildWork, { recursive: true });
+    // Frames, poses and the build's own files need room: about three times the capture, at least 5 GB.
+    let size = 0;
+    for (const f of files) size += (await fs.promises.stat(f).catch(() => null))?.size ?? 0;
+    try {
+      const st = await fs.promises.statfs(buildWork);
+      const needGb = Math.max(5, (3 * size) / 1024 ** 3);
+      const freeGb = (st.bavail * st.bsize) / 1024 ** 3;
+      if (freeGb < needGb) return { ok: false, reason: "disk", needGb: Math.ceil(needGb), freeGb: Math.floor(freeGb) };
+    } catch {
+      /* unknown: go ahead */
+    }
+    const outRoot = path.join(app.getPath("documents"), "HOLO builds");
+    const sender = e.sender;
+    const run = startBuild(addon, clean, buildWork, outRoot, (p) => {
+      if (!sender.isDestroyed()) sender.send("viewer:buildProgress", p);
+    });
+    building = run;
+    try {
+      const r = await run.done;
+      if (!r.ok) return r.stopped ? { ok: false, reason: "stopped" } : { ok: false, reason: "failed", detail: r.reason ?? "" };
+      if (clean.checkOnly) return { ok: true, report: r.report };
+      lastFolder = r.folder ?? null;
+      const [file] = await listFiles(roots, [r.file!]);
+      return file ? { ok: true, file, name: clean.name } : { ok: false, reason: "failed", detail: "" };
+    } finally {
+      building = null;
+    }
+  });
+  ipcMain.handle("viewer:stopBuild", () => {
+    building?.stop();
+    return true;
+  });
+  // The folder of the last finished build, in Explorer (never a path the page names).
+  ipcMain.handle("viewer:showBuildFolder", () => {
+    if (lastFolder) shell.showItemInFolder(path.join(lastFolder, "splats.ply"));
+    return !!lastFolder;
+  });
 
   const win = await createWindow();
   if (dev.VIEWER_SMOKE) console.log("[smoke] page loaded");

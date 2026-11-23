@@ -78,6 +78,26 @@ export interface ServerHardware {
   gpus: GpuInfo[];
 }
 
+/**
+ * Parses `nvidia-smi --query-gpu=name,memory.total,memory.free,driver_version --format=csv,noheader,nounits`.
+ * The product name is the first field; the driver version is kept apart so a driver branch such
+ * as "550.54" is never mistaken for the GPU model.
+ */
+export function parseNvidiaSmi(out: string): GpuInfo[] {
+  const gpus: GpuInfo[] = [];
+  for (const line of out.split(/\r?\n/)) {
+    const parts = line.split(",").map((s) => s.trim());
+    if (parts.length < 2 || !parts[0]) continue;
+    const mib = Number(parts[1]);
+    if (!Number.isFinite(mib) || mib <= 0) continue;
+    const gb = (m: number) => Math.round((m / 1024) * 10) / 10;
+    const free = parts.length >= 4 ? Number(parts[2]) : NaN;
+    const driver = parts.length >= 4 ? parts[3] : parts[2];
+    gpus.push({ vendor: "nvidia", name: parts[0], memoryGb: gb(mib), ...(Number.isFinite(free) && free >= 0 && parts[2] !== "" ? { freeGb: gb(free) } : {}), ...(driver ? { driver } : {}) });
+  }
+  return gpus;
+}
+
 /** Goals that fit an input: satellite images only make terrain; ground captures make the rest. */
 export const goalsFor = (input: CaptureInput): SplatGoal[] => (input === "satellite" ? ["satellite"] : ["scene", "surface", "area"]);
 
