@@ -38,10 +38,11 @@ A model can have several versions. The **Version** button at the top of the view
 
 | Action | Mouse | Keyboard |
 |---|---|---|
-| Orbit around the pivot | Left-drag | <kbd>W</kbd> sets left-drag to orbit |
-| Pan | Right-drag or middle-drag | <kbd>E</kbd> sets left-drag to pan; arrow keys |
+| Orbit around the point under the cursor | Left-drag (from far out in space it spins the globe) | <kbd>W</kbd> sets left-drag to orbit |
+| Pan (the ground follows the pointer) | Right-drag or middle-drag | <kbd>E</kbd> sets left-drag to pan; arrow keys |
 | Zoom toward the cursor | Wheel, or pinch on a touchpad | <kbd>+</kbd> and <kbd>−</kbd> |
-| Set the pivot | Double-click a point | |
+| Zoom in on a point | Double-click it | |
+| Let go while dragging | The view glides on and slows down; click to stop it | |
 | Fit the whole model | | <kbd>H</kbd> (Home) |
 | Focus on the selected part | | <kbd>Z</kbd> |
 | Fly mode | | <kbd>G</kbd>, then <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd>, <kbd>Q</kbd> / <kbd>E</kbd> |

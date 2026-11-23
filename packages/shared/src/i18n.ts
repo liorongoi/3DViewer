@@ -684,7 +684,7 @@ export const en = {
     lighting: "Environment",
     environments: { overcast: "Overcast", noon: "Clear noon", studio: "Studio neutral" },
     hints: {
-      idle: "Left-drag to orbit · Right-drag to pan · Wheel to zoom · Double-click to set the pivot",
+      idle: "Left-drag to orbit · Right-drag to pan · Wheel to zoom · Double-click to zoom in",
       distanceFirst: "Click the first point · Alt places it without snapping · Esc to cancel",
       distanceSecond: "Click the second point · Alt places it without snapping · Esc to cancel",
       pathNext: "Click to add a point · Double-click or Enter to finish · Backspace removes the last point",
@@ -824,10 +824,10 @@ export const en = {
       private: "Read on this computer only. Nothing is sent.",
     },
     rows: {
-      orbit: "Orbit around the pivot",
+      orbit: "Orbit around the point under the cursor",
       pan: "Pan",
       zoom: "Zoom toward the cursor",
-      pivot: "Set the pivot",
+      pivot: "Zoom in on that point",
       home: "Home (fit whole model)",
       focus: "Focus selection",
       measure: "Measure distance",
@@ -876,7 +876,7 @@ export const en = {
     parts: { app: "The interface", library: "The library", model: "The model panel", tools: "The side panel", dock: "The toolbar", hud: "The map controls", popup: "The feature details", dialog: "This window" },
   },
   onboarding: {
-    step1: "Drag to orbit, right-drag to pan, scroll to zoom. Double-click sets the pivot.",
+    step1: "Drag to orbit around the point under the cursor, right-drag to pan, scroll to zoom. Double-click zooms in.",
     step2: "Layers live here. Click the eye to show or hide; Alt+click to isolate.",
     step3: "Press M to measure. Results appear in the sidebar.",
     gotIt: "Got it",
@@ -1739,7 +1739,7 @@ export const he: Shape<typeof en> = {
     lighting: "סביבת תאורה",
     environments: { overcast: "מעונן", noon: "צהריים בהירים", studio: "סטודיו ניטרלי" },
     hints: {
-      idle: "גרירה שמאלית לסיבוב · גרירה ימנית להזזה · גלגלת לזום · לחיצה כפולה לקביעת ציר",
+      idle: "גרירה שמאלית לסיבוב · גרירה ימנית להזזה · גלגלת לזום · לחיצה כפולה להתקרבות",
       distanceFirst: "לחצו על הנקודה הראשונה · Alt מציב בלי הצמדה · Esc לביטול",
       distanceSecond: "לחצו על הנקודה השנייה · Alt מציב בלי הצמדה · Esc לביטול",
       pathNext: "לחצו להוספת נקודה · לחיצה כפולה או Enter לסיום · Backspace מוחק את הנקודה האחרונה",
@@ -1881,10 +1881,10 @@ export const he: Shape<typeof en> = {
       private: "נקרא במחשב הזה בלבד. שום דבר לא נשלח.",
     },
     rows: {
-      orbit: "סיבוב סביב הציר",
+      orbit: "סיבוב סביב הנקודה שמתחת לסמן",
       pan: "הזזה",
       zoom: "זום לכיוון הסמן",
-      pivot: "קביעת ציר",
+      pivot: "התקרבות לנקודה",
       home: "בית (התאמה לכל המודל)",
       focus: "התמקדות בבחירה",
       measure: "מדידת מרחק",
@@ -1933,7 +1933,7 @@ export const he: Shape<typeof en> = {
     parts: { app: "הממשק", library: "הספרייה", model: "חלונית המודל", tools: "החלונית הצדדית", dock: "סרגל הכלים", hud: "פקדי המפה", popup: "פרטי הישות", dialog: "החלון" },
   },
   onboarding: {
-    step1: "גררו לסיבוב, גרירה ימנית להזזה, גלגלת לזום. לחיצה כפולה קובעת ציר.",
+    step1: "גררו לסיבוב סביב הנקודה שמתחת לסמן, גרירה ימנית להזזה, גלגלת לזום. לחיצה כפולה מתקרבת.",
     step2: "כאן נמצאות השכבות. לחצו על העין להצגה או הסתרה; Alt+לחיצה לבידוד.",
     step3: "לחצו M כדי למדוד. התוצאות מופיעות בסרגל הצד.",
     gotIt: "הבנתי",
