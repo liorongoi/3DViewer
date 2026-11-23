@@ -56,3 +56,7 @@ PHOTOTOOLS="$TMP/photomesh-tools"
 mkdir -p "$PHOTOTOOLS" && (cd "$PHOTOTOOLS" && npm init -y >/dev/null && npm pkg set overrides.cesium=1.120.0 >/dev/null && npm i -s gltf-pipeline@4.1.0 >/dev/null)
 cp "$(dirname "$0")/fetch-lyon-photomesh.mjs" "$PHOTOTOOLS/"
 node "$PHOTOTOOLS/fetch-lyon-photomesh.mjs" "$OUT/3dtiles/lyon-photomesh"
+
+# Strasbourg 2022 photomesh (Ville et Eurométropole de Strasbourg, Licence Ouverte): 600 × 600 m
+# around the cathedral with the publisher's LOD. Already glTF 2.0 and unlit, copied as served.
+node "$(dirname "$0")/fetch-strasbourg-photomesh.mjs" "$OUT/3dtiles/strasbourg-photomesh"
