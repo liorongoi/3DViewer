@@ -260,6 +260,8 @@ export function startBuild(addon: Addon, req: BuildRequest, workRoot: string, ou
       await fs.promises.writeFile(path.join(job, "out", "build.log"), tail).catch(() => undefined);
       if (stopped) return { ok: false, stopped: true };
       if (code !== 0) {
+        // Brush found no graphics card it can use: Vulkan comes with the graphics driver.
+        if (/No possible adapter available/.test(tail)) return { ok: false, reason: "HOLO could not use the graphics card (no Vulkan driver found). Update the NVIDIA driver, restart the PC, and try again." };
         const last = tail.trim().split(/\r?\n/).filter((l) => !/^progress /.test(l)).slice(-1)[0] ?? "";
         return { ok: false, reason: last.replace(/^\S+Z /, "").slice(0, 400) || `The build stopped (exit ${code}).` };
       }

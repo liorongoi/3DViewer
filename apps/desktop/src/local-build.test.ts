@@ -140,6 +140,14 @@ describe("a build", () => {
     expect(r).toEqual({ ok: false, reason: "The capture has no video." });
   });
 
+  it("says to update the driver when Brush finds no graphics card", async () => {
+    const dir = fakeAddon("console.error(\"panicked: No possible adapter available for backend.\"); process.exit(101);");
+    const video = path.join(tmp(), "walk.mp4");
+    fs.writeFileSync(video, "video");
+    const r = await startBuild({ dir, version: "1.3.0" }, request([video]), tmp(), tmp(), () => undefined).done;
+    expect(r.reason).toMatch(/Update the NVIDIA driver/);
+  });
+
   it("stops when asked", async () => {
     const dir = fakeAddon("setTimeout(() => {}, 60000); console.log('progress 0.100 frames');");
     const video = path.join(tmp(), "walk.mp4");
