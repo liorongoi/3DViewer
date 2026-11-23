@@ -117,6 +117,8 @@ Drop files on the panel, or choose **Add files**:
 
 **Add map service** connects to a **WMTS** or **WMS** service from its address (GetCapabilities), to **XYZ** tiles, or to a GeoTIFF on a server. Choose **Connect**, then **Add** next to the layer you want. **As base** uses it as the base map.
 
+**DTM** in **Add map service** connects your own terrain service: a quantized-mesh terrain folder (the address of the folder that holds `layer.json`) or Terrarium PNG elevation tiles (an address with `{z}`, `{x}` and `{y}`). It joins the **Terrain** list marked **yours** and is chosen at once, so you can use a better DTM than the site's. It stays in your list in this browser, and the bin next to it removes it.
+
 Each layer has an opacity slider, **Zoom to layer**, **Move up**, **Move down** and **Remove**. Layers are saved with the view.
 
 ## Properties and level of detail

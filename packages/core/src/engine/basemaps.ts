@@ -41,6 +41,8 @@ export interface TerrainDef {
   online: boolean;
   attribution: string;
   site?: boolean;
+  /** Added by this user from the Map tab, kept in this browser. */
+  user?: boolean;
   create: () => Promise<TerrainProvider>;
 }
 
@@ -161,13 +163,84 @@ export function siteTerrain(s: BaseMapSource, base: string): TerrainDef {
   return { id: s.id, label: s.label, online: false, site: true, attribution: s.attribution ?? "", create };
 }
 
+/** A terrain service a user added: quantized-mesh (a folder with layer.json) or Terrarium PNG tiles. */
+export interface UserTerrainSource {
+  id: string;
+  label: string;
+  type: "quantized-mesh" | "terrarium";
+  url: string;
+}
+
+/** Terrarium when the address has {z}/{x}/{y} placeholders, otherwise a quantized-mesh folder. */
+export const terrainTypeOf = (url: string): UserTerrainSource["type"] => (/\{z\}/i.test(url) ? "terrarium" : "quantized-mesh");
+
+const USER_KEY = "viewer.userTerrains";
+let site: { terrains: TerrainDef[]; hideOnline: boolean } = { terrains: [], hideOnline: false };
+let userTerrains: UserTerrainSource[] = (() => {
+  try {
+    const v = JSON.parse(localStorage.getItem(USER_KEY) ?? "[]");
+    return Array.isArray(v) ? v.filter((x) => x && typeof x.url === "string" && typeof x.id === "string") : [];
+  } catch {
+    return [];
+  }
+})();
+
+function userTerrainDef(s: UserTerrainSource): TerrainDef {
+  const url = new URL(s.url, document.baseURI).href.replace(/%7B/gi, "{").replace(/%7D/gi, "}");
+  const create = async (): Promise<TerrainProvider> =>
+    s.type === "quantized-mesh" ? CesiumTerrainProvider.fromUrl(url, { requestVertexNormals: true }) : createTerrariumTerrain({ url, maxZoom: 15 });
+  return { id: s.id, label: s.label, online: false, user: true, attribution: "", create };
+}
+
+function rebuildTerrains(): void {
+  const builtIn = TERRAINS.filter((d) => !(site.hideOnline && d.online) && !site.terrains.some((x) => x.id === d.id));
+  catalogue.set({ ...catalogue.get(), terrains: [...site.terrains, ...userTerrains.map(userTerrainDef), ...builtIn] });
+}
+
+function saveUserTerrains(): void {
+  try {
+    localStorage.setItem(USER_KEY, JSON.stringify(userTerrains));
+  } catch {
+    // Private windows and blocked storage: the service still works until the page closes.
+  }
+}
+
+/** Adds a terrain service to this user's Terrain list (kept in this browser) and returns it. */
+export function addUserTerrain(url: string, label?: string, type = terrainTypeOf(url)): TerrainDef {
+  const existing = userTerrains.find((x) => x.url === url && x.type === type);
+  const src: UserTerrainSource = existing ?? { id: `user-terrain-${Date.now().toString(36)}`, label: label || labelFor(url), type, url };
+  if (!existing) {
+    userTerrains = [...userTerrains, src];
+    saveUserTerrains();
+    rebuildTerrains();
+  }
+  return catalogue.get().terrains.find((t) => t.id === src.id)!;
+}
+
+export function removeUserTerrain(id: string): void {
+  userTerrains = userTerrains.filter((x) => x.id !== id);
+  saveUserTerrains();
+  rebuildTerrains();
+}
+
+function labelFor(url: string): string {
+  try {
+    const u = new URL(url.replace(/\{[^}]*\}/g, "0"), document.baseURI);
+    const path = u.pathname.replace(/\/(layer\.json)?$/i, "").split("/").filter((p) => p && p !== "0" && !/\.(png|webp)$/i.test(p));
+    return [u.host, path.at(-1)].filter(Boolean).join(" · ");
+  } catch {
+    return url;
+  }
+}
+
+rebuildTerrains();
+
 /** Puts this site's sources in the catalogue; with `hideOnline` the built-in internet ones go. */
 export function applySiteConfig(cfg: BaseMapConfig, base: string): void {
   const keep = <T extends { online: boolean; id: string }>(list: T[], site: T[]) => [...site, ...list.filter((d) => !(cfg.hideOnline && d.online) && !site.some((x) => x.id === d.id))];
-  catalogue.set({
-    baseMaps: keep(BASE_MAPS, cfg.sources.filter((s) => s.kind === "imagery").map((s) => siteBaseMap(s, base))),
-    terrains: keep(TERRAINS, cfg.sources.filter((s) => s.kind === "terrain").map((s) => siteTerrain(s, base))),
-  });
+  site = { terrains: cfg.sources.filter((s) => s.kind === "terrain").map((s) => siteTerrain(s, base)), hideOnline: !!cfg.hideOnline };
+  catalogue.set({ ...catalogue.get(), baseMaps: keep(BASE_MAPS, cfg.sources.filter((s) => s.kind === "imagery").map((s) => siteBaseMap(s, base))) });
+  rebuildTerrains();
 }
 
 /** The imagery layers for a base map, bottom first. */
