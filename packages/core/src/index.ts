@@ -8,7 +8,7 @@ export * from "./layers/manifest-edit";
 export * from "./engine/viewer-engine";
 export type { Measurement, MeasureKind, SharedMeasurement } from "./engine/measure-tool";
 export type { Viewpoint } from "./engine/fly";
-export { BASE_MAPS, TERRAINS, catalogue, type BaseMapDef, type TerrainDef } from "./engine/basemaps";
+export { BASE_MAPS, TERRAINS, catalogue, terrainTypeOf, type BaseMapDef, type TerrainDef, type UserTerrainSource } from "./engine/basemaps";
 export { pairsToCsv, profileToCsv } from "./engine/sight-csv";
 export { SightlineTool, type SightPair, type ProfileSample } from "./engine/sightline";
 export { Viewshed, type ViewshedState, type ViewshedArea } from "./engine/viewshed";

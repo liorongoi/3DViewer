@@ -92,27 +92,43 @@ function TerrainPicker() {
   const id = useSignal(engine?.terrainId, "none");
   const { terrains } = useSignal(catalogue, catalogue.get());
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   return (
     <Section title={tr("map.terrain")} icon={Mountain}>
       <div role="radiogroup" aria-label={tr("map.terrain")} className={cx(busy && "opacity-60")}>
-        {terrains.map((t) => (
-          <Choice
-            key={t.id}
-            checked={id === t.id}
-            label={t.site ? t.label : tr(`catalogue.${t.id}`, { defaultValue: t.label.replace(/ \((online|offline)\)$/, "") })}
-            note={t.id === "none" ? undefined : tr(t.site ? "map.site" : t.online ? (NO_ONLINE ? "map.notInPreview" : "map.online") : "map.offline")}
-            disabled={NO_ONLINE && t.online}
-            onSelect={async () => {
-              setBusy(true);
-              try {
-                await engine?.setTerrain(t.id);
-              } finally {
-                setBusy(false);
-              }
-            }}
-          />
-        ))}
+        {terrains.map((t) => {
+          const choice = (
+            <Choice
+              key={t.id}
+              checked={id === t.id}
+              label={t.site || t.user ? t.label : tr(`catalogue.${t.id}`, { defaultValue: t.label.replace(/ \((online|offline)\)$/, "") })}
+              note={t.id === "none" ? undefined : tr(t.user ? "map.yours" : t.site ? "map.site" : t.online ? (NO_ONLINE ? "map.notInPreview" : "map.online") : "map.offline")}
+              disabled={NO_ONLINE && t.online}
+              onSelect={async () => {
+                setBusy(true);
+                setError(null);
+                try {
+                  await engine?.setTerrain(t.id);
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : String(e));
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            />
+          );
+          if (!t.user) return choice;
+          return (
+            <div key={t.id} className="flex items-center gap-1">
+              <div className="min-w-0 flex-1">{choice}</div>
+              <IconButton size="sm" label={tr("map.removeTerrain")} onClick={() => void engine?.removeTerrainService(t.id)}>
+                <Trash2 size={13} />
+              </IconButton>
+            </div>
+          );
+        })}
       </div>
+      {error && <p role="alert" className="px-2 pt-1 text-[11px] text-[var(--bad)]">{error}</p>}
       <p className="px-2 pt-1 text-[11px] text-fg3">{tr("map.terrainNote")}</p>
       {NO_ONLINE && <p className="px-2 pt-1 text-[11px] text-fg3">{tr("map.offlineNote")}</p>}
     </Section>
@@ -248,12 +264,12 @@ function UserData() {
 function ServiceForm({ onDone, onError }: { onDone: () => void; onError: (m: string) => void }) {
   const { t } = useTranslation();
   const engine = useEngine();
-  const [kind, setKind] = useState<"wmts" | "wms" | "xyz" | "cog">("wmts");
+  const [kind, setKind] = useState<"wmts" | "wms" | "xyz" | "cog" | "terrain">("wmts");
   const [url, setUrl] = useState("");
   const [wmts, setWmts] = useState<WmtsLayerInfo[] | null>(null);
   const [wms, setWms] = useState<{ url: string; layers: WmsLayerInfo[] } | null>(null);
   const [busy, setBusy] = useState(false);
-  const hint = t(({ wmts: "map.hintWmts", wms: "map.hintWms", xyz: "map.hintXyz", cog: "map.hintCog" } as const)[kind]);
+  const hint = t(({ wmts: "map.hintWmts", wms: "map.hintWms", xyz: "map.hintXyz", cog: "map.hintCog", terrain: "map.hintTerrain" } as const)[kind]);
 
   const connect = async () => {
     if (!engine || !url) return;
@@ -263,6 +279,9 @@ function ServiceForm({ onDone, onError }: { onDone: () => void; onError: (m: str
       else if (kind === "wms") setWms(await engine.userLayers.listWms(url));
       else if (kind === "xyz") {
         engine.userLayers.addXyz(url, new URL(url.replace(/[{}]/g, "")).host);
+        onDone();
+      } else if (kind === "terrain") {
+        await engine.addTerrainService(url);
         onDone();
       } else {
         const l = await engine.userLayers.addGeoTiff(url, decodeURIComponent(url.split("/").pop() ?? "GeoTIFF"));
@@ -292,6 +311,7 @@ function ServiceForm({ onDone, onError }: { onDone: () => void; onError: (m: str
             { value: "wms", label: "WMS" },
             { value: "xyz", label: "XYZ" },
             { value: "cog", label: "COG" },
+            { value: "terrain", label: t("map.terrainService") },
           ]}
         />
         <IconButton size="sm" label={t("common.close")} onClick={onDone}>

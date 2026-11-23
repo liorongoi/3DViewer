@@ -54,7 +54,7 @@ import { FlyByTour, FlyMode, captureViewpoint, type Viewpoint } from "./fly";
 import { signal } from "../signal";
 import { applyManifest, effectiveVisibility, findLayer, layerForNode, layerNodes, layersFromGltf, layersFromTileset, walk, type Layer, type LayerManifest } from "../layers/layers";
 import { editableTree, type EditLayer } from "../layers/manifest-edit";
-import { applySiteConfig, catalogue, makeBaseLayers } from "./basemaps";
+import { addUserTerrain, applySiteConfig, catalogue, makeBaseLayers, removeUserTerrain } from "./basemaps";
 import { ENVIRONMENTS, environmentSh, environmentSpecular, type EnvironmentId } from "./environments";
 import { cubeToKtx2 } from "./ktx2";
 import { asLayerable, createLayeredTerrain, type DemSource } from "./terrain";
@@ -870,6 +870,31 @@ export class ViewerEngine {
     this.terrainId.set(id);
     this.applyTerrain();
     await this.placeOnGround();
+  }
+
+  /**
+   * Connects a terrain service of the user's own (quantized-mesh folder or Terrarium tiles),
+   * adds it to their Terrain list and switches to it. A service that does not load is not kept.
+   */
+  async addTerrainService(url: string, label?: string): Promise<string> {
+    const before = new Set(catalogue.get().terrains.map((t) => t.id));
+    const def = addUserTerrain(url.trim(), label);
+    try {
+      await this.setTerrain(def.id);
+    } catch (e) {
+      if (!before.has(def.id)) removeUserTerrain(def.id);
+      throw e;
+    }
+    return def.id;
+  }
+
+  /** Takes one of the user's own terrain services off their list. */
+  async removeTerrainService(id: string): Promise<void> {
+    if (this.terrainId.get() === id) {
+      const fallback = catalogue.get().terrains.find((t) => t.id !== id && !t.user && t.id !== "none")?.id ?? "none";
+      await this.setTerrain(fallback).catch(() => this.setTerrain("none"));
+    }
+    removeUserTerrain(id);
   }
 
   /**
