@@ -482,6 +482,8 @@ function GroundOffset() {
   const engine = useEngine();
   const offset = useSignal(engine?.groundOffset, 0);
   const terrain = useSignal(engine?.terrainId, "none");
+  const fit = useSignal(engine?.groundFit, null);
+  const failed = fit && !fit.ok;
   return (
     <section className="rounded-[8px] border border-line bg-s2 p-2">
       <div className="mb-1 flex items-center justify-between text-[12px]">
@@ -502,7 +504,9 @@ function GroundOffset() {
         aria-label={t("side.heightOnTerrain")}
       />
       <div className="mt-1 flex items-center justify-between text-[11px] text-fg3">
-        <span>{terrain === "none" ? t("side.noTerrain") : t("side.autoHeight")}</span>
+        <span className={failed ? "text-danger" : undefined} data-testid="ground-fit-note">
+          {failed ? t("side.fitFailed") : terrain === "none" ? t("side.noTerrain") : t("side.autoHeight")}
+        </span>
         <button type="button" className="text-accent hover:underline" onClick={() => void engine?.placeOnGround()}>
           {t("side.reset")}
         </button>

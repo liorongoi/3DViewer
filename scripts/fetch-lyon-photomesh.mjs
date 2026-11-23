@@ -14,6 +14,7 @@
 // does this in a temp folder). Needs network access to data.grandlyon.com.
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import gltfPipeline from "gltf-pipeline";
 
 const BASE = "https://data.grandlyon.com/files/grandlyon/2023/mesh";
@@ -142,3 +143,7 @@ fs.writeFileSync(
     `${blocks.length} blocks, ${blockDepth} levels kept per block.\n`,
 );
 console.log(`Done: ${OUT}`);
+
+// Offline, the sample sits on the demo terrain: warn if it is outside the areas that has.
+const cover = spawnSync(process.execPath, [path.join(path.dirname(new URL(import.meta.url).pathname), "check-sample-terrain.cjs")], { encoding: "utf8" });
+if (cover.status !== 0) console.warn(`\nWarning: ${cover.stdout.trim().split("\n").slice(-3).join("\n")}`);

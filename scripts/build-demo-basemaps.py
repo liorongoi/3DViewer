@@ -12,6 +12,8 @@ OUT = sys.argv[1]
 REGIONS = {
   "jerusalem": dict(bbox=(35.12, 31.70, 35.30, 31.84), s2="https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/36/S/YA/2025/8/S2A_36SYA_20250819_1_L2A/TCI.tif"),
   "lyon": dict(bbox=(4.79, 45.745, 4.87, 45.795), s2="https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/31/T/FL/2025/8/S2A_31TFL_20250811_1_L2A/TCI.tif"),
+  # Around the Strasbourg photomesh (600 m square on the cathedral), with room around it.
+  "strasbourg": dict(bbox=(7.73, 48.57, 7.77, 48.595), s2="https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/32/U/MU/2025/8/S2B_32UMU_20250811_0_L2A/TCI.tif"),
   "tarn": dict(bbox=(3.33, 44.30, 3.44, 44.37), s2="https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/31/T/EK/2025/8/S2A_31TEK_20250811_0_L2A/TCI.tif"),
 }
 IMG_Z = range(10, 16)

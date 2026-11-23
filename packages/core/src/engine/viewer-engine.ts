@@ -183,6 +183,8 @@ export class ViewerEngine {
   private memoryBudget = 10 * 1024 ** 3;
   /** Vertical shift applied to a 3D Tiles dataset to meet the terrain, metres. */
   readonly groundOffset = signal(0);
+  /** How the last automatic ground fit went; null when none ran (no fit asked, or a placed model). */
+  readonly groundFit = signal<GroundFitReport | null>(null);
   private userDems: DemSource[] = [];
   /** The chosen terrain as its source gives it, before DEMs and the ground cut. */
   private terrainBase: TerrainProvider = new EllipsoidTerrainProvider();
@@ -456,6 +458,8 @@ export class ViewerEngine {
   close(): void {
     this.stopCompare();
     this.openSeq++;
+    // The last fit's report belongs to the model being closed.
+    this.groundFit.set(null);
     this.tour.stop();
     this.measure.cancel();
     this.measure.clear();
@@ -1066,6 +1070,7 @@ export class ViewerEngine {
    */
   private async fitTilesetToGround(tileset: Cesium3DTileset, summary: ModelSummary): Promise<void> {
     this.setGroundOffset(0);
+    this.groundFit.set(null);
     // With no terrain the globe is the bare ellipsoid: the fit still brings the dataset down
     // to it, rather than leave a city hanging its full height (200 m and more) above the map.
     if (summary.source.groundFit === "surface") return this.fitSurfaceToGround(tileset);
@@ -1081,10 +1086,49 @@ export class ViewerEngine {
    * its lower surfaces (bare ground, not tree tops or roofs) meet the terrain.
    */
   private async fitSurfaceToGround(tileset: Cesium3DTileset, quantile = 0.5, minOffset = 8): Promise<void> {
+    // First on the data drawn so far; if too few samples land on it (tiles still loading, or
+    // data with holes), again on a tighter grid once the view's tiles are in. Never silently:
+    // a fit that cannot measure says so in Properties.
+    let diffs = await this.groundGaps(tileset, 0.5);
+    if (this.tileset !== tileset) return;
+    let attempts = 1;
+    if (diffs.gaps.length < MIN_FIT_SAMPLES) {
+      await this.tilesSettled(tileset);
+      if (this.tileset !== tileset) return;
+      diffs = await this.groundGaps(tileset, 0.25);
+      attempts = 2;
+      if (this.tileset !== tileset) return;
+    }
+    const { gaps, total, centre: c } = diffs;
+    const report: GroundFitReport = { hits: gaps.length, samples: total, attempts, gap: null, geoid: null, offset: 0, ok: gaps.length >= MIN_FIT_SAMPLES };
+    if (!report.ok) {
+      this.groundFit.set(report);
+      return;
+    }
+    // Lidar heights are usually better than a 30 m terrain model, which smooths valleys and
+    // ridges by metres. So only a clear, consistent gap is corrected: that is a height-datum
+    // mismatch (ellipsoid vs geoid is 20–50 m in Europe and the Middle East).
+    // Cities use a low quantile (streets, not roofs) and any gap over 1 m.
+    const gap = gaps[Math.floor(gaps.length * quantile)]!;
+    // On terrain, a gap close to the geoid height (or to none) is a datum difference: take
+    // the exact value rather than the noisy measurement. The ellipsoid has no datum to match.
+    const flat = this.groundTerrain instanceof EllipsoidTerrainProvider && !this.userDems.length;
+    const geoid = geoidHeight(CMath.toDegrees(c.latitude), CMath.toDegrees(c.longitude));
+    const offset = flat ? -gap : datumShift(gap, geoid);
+    Object.assign(report, { gap, geoid: flat ? null : geoid, offset: Math.abs(offset) > minOffset ? offset : 0 });
+    if (Math.abs(offset) > minOffset) this.setGroundOffset(offset);
+    this.groundFit.set(report);
+  }
+
+  /**
+   * Dataset surface minus terrain on a 9 × 9 grid over the data drawn so far, sorted. `spread`
+   * is the grid's half-width as a share of the footprint's radius.
+   */
+  private async groundGaps(tileset: Cesium3DTileset, spread: number): Promise<{ gaps: number[]; total: number; centre: Cartographic }> {
     const scene = this.widget.scene;
     const bs = dataFootprint(tileset);
     const c = Cartographic.fromCartesian(bs.center);
-    const r = bs.radius * 0.5;
+    const r = bs.radius * spread;
     const dLat = r / 6371000;
     const dLon = dLat / Math.cos(c.latitude);
     const pts: Cartographic[] = [];
@@ -1098,22 +1142,22 @@ export class ViewerEngine {
       scene.globe.show = globeShown;
     }
     const ground = await this.sampleGround(pts.map((p) => Cartographic.clone(p)));
-    const diffs = surf
+    const gaps = surf
       .map((s, k) => (s && Number.isFinite(s.height) ? s.height - (ground[k]?.height ?? NaN) : NaN))
       // A sample that misses the dataset can hit the far side of the globe: drop those.
       .filter((d) => Number.isFinite(d) && Math.abs(d) < 500)
       .sort((a, b) => a - b);
-    if (diffs.length < 5 || this.tileset !== tileset) return;
-    // Lidar heights are usually better than a 30 m terrain model, which smooths valleys and
-    // ridges by metres. So only a clear, consistent gap is corrected: that is a height-datum
-    // mismatch (ellipsoid vs geoid is 20–50 m in Europe and the Middle East).
-    // Cities use a low quantile (streets, not roofs) and any gap over 1 m.
-    const gap = diffs[Math.floor(diffs.length * quantile)]!;
-    // On terrain, a gap close to the geoid height (or to none) is a datum difference: take
-    // the exact value rather than the noisy measurement. The ellipsoid has no datum to match.
-    const flat = this.groundTerrain instanceof EllipsoidTerrainProvider && !this.userDems.length;
-    const offset = flat ? -gap : datumShift(gap, geoidHeight(CMath.toDegrees(c.latitude), CMath.toDegrees(c.longitude)));
-    if (Math.abs(offset) > minOffset) this.setGroundOffset(offset);
+    return { gaps, total: pts.length, centre: c };
+  }
+
+  /** Resolves once the tileset has loaded what the view needs, or after 8 s. */
+  private tilesSettled(tileset: Cesium3DTileset): Promise<void> {
+    if (tileset.tilesLoaded) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const off = tileset.allTilesLoaded.addEventListener(() => (off(), clearTimeout(timer), resolve()));
+      const timer = setTimeout(() => (off(), resolve()), 8000);
+      this.widget.scene.requestRender();
+    });
   }
 
   /** Resolves after the first frame that draws one of the tileset's tiles (or once it is closed). */
@@ -1848,4 +1892,23 @@ function dataFootprint(tileset: Cesium3DTileset): BoundingSphere {
   // Tile volumes already include the tileset's model matrix. The tileset's own sphere wins
   // when it is the tighter one (data with honest volumes).
   return fp.radius < tileset.boundingSphere.radius ? fp : tileset.boundingSphere;
+}
+
+/** A fit needs this many of its 81 samples on both the dataset and the terrain. */
+const MIN_FIT_SAMPLES = 5;
+
+export interface GroundFitReport {
+  /** Samples that hit both the dataset and the terrain, of `samples`. */
+  hits: number;
+  samples: number;
+  /** 1, or 2 when the first grid hit too little and a tighter one was tried. */
+  attempts: number;
+  /** False when too few samples hit the data to measure: the offset was left at 0. */
+  ok: boolean;
+  /** Measured gap (dataset minus terrain at the fit's quantile), metres. */
+  gap: number | null;
+  /** Geoid height used to recognise a datum difference; null on the bare ellipsoid. */
+  geoid: number | null;
+  /** The shift applied, metres. */
+  offset: number;
 }
