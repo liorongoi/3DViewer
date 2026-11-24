@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { addonParts, buildFolderOf, cleanRequest, currentAddon, readAddon, startBuild, verifySums, workerConfig } from "./local-build.ts";
+import { addonParts, buildFolderOf, cleanRequest, currentAddon, hasNvidia, readAddon, startBuild, verifySums, workerConfig } from "./local-build.ts";
 
 const dirs: string[] = [];
 const tmp = () => {
@@ -85,6 +85,24 @@ describe("the building add-on", () => {
     fs.mkdirSync(path.join(dir, "models"));
     fs.writeFileSync(addonParts(dir).masks, "");
     expect(workerConfig({ dir, version: "1.3.0" }).masks).toBe(addonParts(dir).masks);
+  });
+
+  it("puts every step that gains from it on an NVIDIA card, with the add-on's COLMAP", () => {
+    const dir = fakeAddon();
+    // No NVIDIA card: everything as before, on the processor (Brush picks the best card itself).
+    expect(workerConfig({ dir, version: "1.3.3" }, false)).toMatchObject({ sfm: "pycolmap", sfmGpu: false, videoDecode: "", masksGpu: false });
+    // An NVIDIA card but an add-on without COLMAP (before 1.3.3): decoding and masks on the card.
+    expect(workerConfig({ dir, version: "1.3.2" }, true)).toMatchObject({ sfm: "pycolmap", sfmGpu: false, videoDecode: "cuda", masksGpu: true });
+    fs.mkdirSync(path.dirname(addonParts(dir).colmap), { recursive: true });
+    fs.writeFileSync(addonParts(dir).colmap, "");
+    expect(workerConfig({ dir, version: "1.3.3" }, true)).toMatchObject({ sfm: "colmap", colmap: addonParts(dir).colmap, sfmGpu: true, videoDecode: "cuda", masksGpu: true });
+    expect(workerConfig({ dir, version: "1.3.3" }, false)).toMatchObject({ sfm: "pycolmap", sfmGpu: false });
+  });
+
+  it("reads an NVIDIA card from nvidia-smi's lines only", () => {
+    expect(hasNvidia("NVIDIA GeForce RTX 4070 Laptop GPU, 8188, 7600, 566.36\r\n")).toBe(true);
+    expect(hasNvidia("")).toBe(false);
+    expect(hasNvidia("No devices were found")).toBe(false);
   });
 });
 

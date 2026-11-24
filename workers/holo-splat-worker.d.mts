@@ -57,3 +57,7 @@ export function judgeVideo(samples: { t: number; sharp: number; mean: number; bl
 export function judgePoses(cams: { q: number[]; centre: V3 }[], total: number): CheckItem[];
 export function verdictOf(items: CheckItem[]): "good" | "fair" | "poor";
 export function parseMediaInfo(text: string): { duration: number; width: number; height: number; fps: number };
+/** Option names of this COLMAP: FeatureExtraction/FeatureMatching (3.12 and later) or SiftExtraction/SiftMatching. */
+export function colmapFlags(cfg: { colmap: string }): { extract: string; match: string; baGpu: boolean };
+/** Camera poses for the pictures in `images`; the undistorted dataset and its model. */
+export function sfm(cfg: Record<string, unknown>, images: string, work: string, o: { threads: number }, video: boolean): Promise<{ data: string; model: string; total: number }>;
