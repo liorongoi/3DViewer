@@ -4,7 +4,11 @@
 //     the status pill says online, a model sent from the desktop is uploaded (tus), published
 //     and streams back from the server, and a signed-in admin request (a cross-origin
 //     preflight) goes through.
-//   - Nothing else is reachable: an internet address is blocked.
+//   - With online maps turned off (VIEWER_ONLINE_MAPS=0, as a site with no internet sets it),
+//     nothing else is reachable: an internet address is blocked, and the Map tab says the online
+//     sources are off on this computer.
+//   - With nothing set, online maps are on: the page can read (GET) from the network and the
+//     online sources can be chosen, but it still cannot send anything (POST is blocked).
 //   - A model the app was started with (Explorer's "Open with") opens the upload wizard, and
 //     "Keep on this computer only" opens it from viewer-file:// without sending it.
 //   - The folder dialog opens a 3D Tiles folder, which streams from disk in place.
@@ -49,7 +53,7 @@ const SAMPLES = path.join(ROOT, "apps/web/public/samples");
   const app = await _electron.launch({
     executablePath: electronPath,
     args: [DESKTOP, "--no-sandbox", "--ignore-gpu-blocklist", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", glb],
-    env: { ...process.env, VIEWER_SERVER_URL: API, VIEWER_QUERY: "" },
+    env: { ...process.env, VIEWER_SERVER_URL: API, VIEWER_QUERY: "", VIEWER_ONLINE_MAPS: "0" },
     timeout: 120000,
   });
   const page = await app.firstWindow();
@@ -127,6 +131,13 @@ const SAMPLES = path.join(ROOT, "apps/web/public/samples");
     check(outbound === "blocked", "an internet address is blocked", outbound);
     const direct = await page.evaluate((api) => fetch(`${api}/api/health`).then(() => "reached", () => "blocked"), API);
     check(direct === "blocked", "the server is reachable only through the bridge, not directly", direct);
+    check((await page.evaluate(() => window.viewerDesktop.info())).onlineMaps === false, "IT's off switch turns online maps off");
+    await page.getByRole("tab", { name: "Map & data", exact: true }).click();
+    const offNote = await page.getByTestId("map-offline-note").first().innerText({ timeout: 15000 }).catch(() => "");
+    check(/turned off on this computer/.test(offNote), "the Map tab says online maps are off on this computer", offNote.slice(0, 80));
+    const osm = page.getByRole("radio", { name: /OpenStreetMap/ }).first();
+    check((await osm.count()) === 1 && (await osm.isDisabled()), "an online base map cannot be chosen while they are off");
+    await page.getByRole("tab", { name: "Layers", exact: true }).click().catch(() => undefined);
 
     // Sent to the server through the bridge (tus upload, ingest), it opens from the server.
     await app.evaluate(({ dialog }, file) => {
@@ -214,6 +225,35 @@ const SAMPLES = path.join(ROOT, "apps/web/public/samples");
     await app.close().catch(() => undefined);
     server.stop();
     fs.rmSync(home, { recursive: true, force: true });
+  }
+  // Nothing set: online maps are on. The test server stands in for a map server on the network.
+  server = await startServer({ workers: false });
+  const app2 = await _electron.launch({
+    executablePath: electronPath,
+    args: [DESKTOP, "--no-sandbox", "--ignore-gpu-blocklist", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
+    env: { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== "VIEWER_ONLINE_MAPS" && k !== "VIEWER_SERVER_URL")), VIEWER_QUERY: "" },
+    timeout: 120000,
+  });
+  try {
+    const p2 = await app2.firstWindow();
+    await p2.waitForFunction(() => !!window.viewerEngine, null, { timeout: 120000 });
+    check((await p2.evaluate(() => window.viewerDesktop.info())).onlineMaps === true, "with nothing set, online maps are on");
+    const read = await p2.evaluate((api) => fetch(`${api}/api/health`).then((r) => `reached ${r.status}`, () => "blocked"), API);
+    check(read.startsWith("reached"), "the page can read from the network (a map server)", read);
+    const sent = await p2.evaluate((api) => fetch(`${api}/api/health`, { method: "POST", body: "x" }).then(() => "reached", () => "blocked"), API);
+    check(sent === "blocked", "the page still cannot send to the network (POST blocked)", sent);
+    await p2.getByRole("button", { name: /A Beautiful Game/ }).first().click();
+    await p2.waitForFunction(() => window.viewerEngine.model?.ready, null, { timeout: 120000 });
+    await p2.getByRole("tab", { name: "Map & data", exact: true }).click();
+    const osm = p2.getByRole("radio", { name: /OpenStreetMap/ }).first();
+    await osm.waitFor({ timeout: 15000 }).catch(() => undefined);
+    check((await osm.count()) === 1 && !(await osm.isDisabled()) && (await p2.getByTestId("map-offline-note").count()) === 0, "online base maps can be chosen, with no 'off' note");
+  } catch (e) {
+    console.log(`FAIL online maps on: ${e.message.split("\n")[0]}`);
+    failed++;
+  } finally {
+    await app2.close().catch(() => undefined);
+    server.stop();
   }
   console.log(failed ? `${failed} FAILED` : "ALL PASSED");
   process.exit(failed ? 1 : 0);

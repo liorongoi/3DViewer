@@ -15,10 +15,11 @@ import path from "node:path";
  * With none, the app works on local files only. An address that is not http(s) is ignored and
  * reported, so a typo shows up in the app's About box instead of failing quietly.
  *
- * Online map services (base maps, terrain, WMTS/WMS/XYZ/COG, DTM services the user adds) are off
- * unless IT turns them on, from the same places in the same order: VIEWER_ONLINE_MAPS=1,
- * {"onlineMaps": true} in either viewer.json, or OnlineMaps = 1 under either registry key.
- * Off, the app refuses every network request except to the configured server (NFR-12, AC-10).
+ * Online map services (base maps, terrain, WMTS/WMS/XYZ/COG, DTM services the user adds) are on
+ * unless IT turns them off, from the same places in the same order: VIEWER_ONLINE_MAPS=0,
+ * {"onlineMaps": false} in either viewer.json, or OnlineMaps = 0 under either registry key.
+ * On, the page may only read (GET) from the network. Off, the app refuses every network request
+ * except to the configured server, for sites with no outbound connections (NFR-12, AC-10).
  */
 export interface DesktopConfig {
   serverUrl: string | null;
@@ -26,13 +27,13 @@ export interface DesktopConfig {
   source: string | null;
   /** The page may fetch map tiles and terrain from the network (GET only). */
   onlineMaps: boolean;
-  /** Where that setting came from, or null for the default (off). */
+  /** Where that setting came from, or null for the default (on). */
   onlineMapsSource: string | null;
   problems: string[];
 }
 
-/** Without a setting, the desktop app stays off the network (AC-10). */
-export const ONLINE_MAPS_DEFAULT = false;
+/** Without a setting, online maps work; IT turns them off for a site with no internet (AC-10). */
+export const ONLINE_MAPS_DEFAULT = true;
 
 export interface ConfigSources {
   env: Record<string, string | undefined>;

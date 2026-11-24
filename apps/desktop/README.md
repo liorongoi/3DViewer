@@ -23,6 +23,17 @@ The page never talks to the server directly. It uses `viewer-server://library/â€
 
 While the server answers, the library is the server's and the status pill says **Server online**; when it stops answering the pill says **Offline**, local files still open, and the app checks again every 10 s (every 30 s while online). It switches back by itself, with no restart.
 
+## Online maps
+
+The online base maps and terrain (Esri, EOX, OpenStreetMap, AWS terrain) and map services the user adds (WMTS, WMS, XYZ, COG, DTM) load in the app by default: the page may read (GET) from the network, and nothing else. A site with no outbound connections turns this off, in the same places as the server address and in the same order; the first one that says on or off wins:
+
+1. `VIEWER_ONLINE_MAPS=0` in the environment;
+2. `{"onlineMaps": false}` in `viewer.json` next to `HOLO.exe`;
+3. the same in `%ProgramData%\VIEWER\viewer.json`;
+4. the registry value `OnlineMaps` = 0 (DWORD or text) under `HKLM\Software\VIEWER`, then `HKCU\Software\VIEWER` (Group Policy).
+
+`true`/`false`, `1`/`0`, `yes`/`no` and `on`/`off` are understood; anything else turns online maps off and is reported. Off, the app refuses every network request except to the configured server, and the Map tab marks the online sources *off on this computer* and says why.
+
 ## Local files
 
 - **Open:** the upload wizard's *Choose files* and *Choose folder* use the system dialogs; a file or folder dropped anywhere on the window opens the wizard; files passed on the command line (Explorer's *Open with*, a file association: `.glb`, `.gltf`, `.fbx`, `.spz`, `.ply`, `.zip`, `tileset.json`) wait for the page, and a second start hands its files to the running window.
