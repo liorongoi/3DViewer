@@ -1,9 +1,10 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { catalogue, type UserLayer, type WmtsLayerInfo, type WmsLayerInfo } from "@viewer/core";
 import { useEngine, useSignal } from "../engine";
 import { ChevronDown, Eye, EyeOff, Focus, Globe, Map, Mountain, Trash2, Upload, X } from "./icons";
 import { IconButton, Segmented, cx } from "./primitives";
+import { networkOff, type NetworkOff } from "../desktop";
 
 /**
  * Left panel "Map" tab: base map, terrain, and the user's own layers
@@ -30,18 +31,33 @@ function Section({ title, icon: Icon, children }: { title: string; icon: typeof 
   );
 }
 
-/** The claude.ai preview page cannot reach other sites, so online sources are switched off there. */
-const NO_ONLINE = import.meta.env.VITE_NO_ONLINE === "1";
+/**
+ * Online sources are switched off where they cannot load: the claude.ai preview page, and the
+ * desktop app until IT turns on online maps. They show why instead of failing without a word.
+ */
+function useNetworkOff(): NetworkOff {
+  const [off, setOff] = useState<NetworkOff>(null);
+  useEffect(() => {
+    let live = true;
+    void networkOff().then((v) => live && setOff(v));
+    return () => {
+      live = false;
+    };
+  }, []);
+  return off;
+}
 
-function Choice({ checked, label, note, onSelect, disabled }: { checked: boolean; label: string; note?: string; onSelect: () => void; disabled?: boolean }) {
-  const { t } = useTranslation();
+const OFF_NOTE = { preview: "map.offlineNote", desktop: "map.desktopOfflineNote" } as const;
+const OFF_TAG = { preview: "map.notInPreview", desktop: "map.notOnThisComputer" } as const;
+
+function Choice({ checked, label, note, onSelect, disabled, why }: { checked: boolean; label: string; note?: string; onSelect: () => void; disabled?: boolean; why?: string }) {
   return (
     <button
       type="button"
       role="radio"
       aria-checked={checked}
       disabled={disabled}
-      title={disabled ? t("map.offlineNote") : undefined}
+      title={disabled ? why : undefined}
       onClick={onSelect}
       className={cx(
         "flex h-8 w-full items-center gap-2 rounded-[6px] px-2 text-start disabled:cursor-not-allowed disabled:opacity-45",
@@ -64,6 +80,7 @@ function BasePicker() {
   const { baseMaps } = useSignal(catalogue, catalogue.get());
   const users = useSignal(engine?.userLayers.list, []);
   const userBase = users.find((u) => u.asBase);
+  const off = useNetworkOff();
   return (
     <Section title={t("map.baseMap")} icon={Map}>
       <div role="radiogroup" aria-label={t("map.baseMap")}>
@@ -72,8 +89,9 @@ function BasePicker() {
             key={b.id}
             checked={!userBase && id === b.id}
             label={b.site ? b.label : t(`catalogue.${b.id}`, { defaultValue: b.label.replace(/ \((online|offline)\)$/, "") })}
-            note={t(b.site ? "map.site" : b.online ? (NO_ONLINE ? "map.notInPreview" : "map.online") : "map.offline")}
-            disabled={NO_ONLINE && b.online}
+            note={t(b.site ? "map.site" : b.online ? (off ? OFF_TAG[off] : "map.online") : "map.offline")}
+            disabled={!!off && b.online}
+            why={off ? t(OFF_NOTE[off]) : undefined}
             onSelect={() => {
               if (userBase) engine?.userLayers.setAsBase(userBase.id, false);
               void engine?.setBaseMap(b.id);
@@ -82,6 +100,7 @@ function BasePicker() {
         ))}
         {userBase && <Choice checked label={userBase.name} note={t("map.yours")} onSelect={() => undefined} />}
       </div>
+      {off && <p className="px-2 pt-1 text-[11px] text-fg3" data-testid="map-offline-note">{t(OFF_NOTE[off])}</p>}
     </Section>
   );
 }
@@ -93,6 +112,7 @@ function TerrainPicker() {
   const { terrains } = useSignal(catalogue, catalogue.get());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const off = useNetworkOff();
   return (
     <Section title={tr("map.terrain")} icon={Mountain}>
       <div role="radiogroup" aria-label={tr("map.terrain")} className={cx(busy && "opacity-60")}>
@@ -102,8 +122,9 @@ function TerrainPicker() {
               key={t.id}
               checked={id === t.id}
               label={t.site || t.user ? t.label : tr(`catalogue.${t.id}`, { defaultValue: t.label.replace(/ \((online|offline)\)$/, "") })}
-              note={t.id === "none" ? undefined : tr(t.user ? "map.yours" : t.site ? "map.site" : t.online ? (NO_ONLINE ? "map.notInPreview" : "map.online") : "map.offline")}
-              disabled={NO_ONLINE && t.online}
+              note={t.id === "none" ? undefined : tr(t.user ? "map.yours" : t.site ? "map.site" : t.online ? (off ? OFF_TAG[off] : "map.online") : "map.offline")}
+              disabled={!!off && t.online}
+              why={off ? tr(OFF_NOTE[off]) : undefined}
               onSelect={async () => {
                 setBusy(true);
                 setError(null);
@@ -130,7 +151,7 @@ function TerrainPicker() {
       </div>
       {error && <p role="alert" className="px-2 pt-1 text-[11px] text-[var(--bad)]">{error}</p>}
       <p className="px-2 pt-1 text-[11px] text-fg3">{tr("map.terrainNote")}</p>
-      {NO_ONLINE && <p className="px-2 pt-1 text-[11px] text-fg3">{tr("map.offlineNote")}</p>}
+      {off && <p className="px-2 pt-1 text-[11px] text-fg3">{tr(OFF_NOTE[off])}</p>}
     </Section>
   );
 }
@@ -269,6 +290,7 @@ function ServiceForm({ onDone, onError }: { onDone: () => void; onError: (m: str
   const [wmts, setWmts] = useState<WmtsLayerInfo[] | null>(null);
   const [wms, setWms] = useState<{ url: string; layers: WmsLayerInfo[] } | null>(null);
   const [busy, setBusy] = useState(false);
+  const off = useNetworkOff();
   const hint = t(({ wmts: "map.hintWmts", wms: "map.hintWms", xyz: "map.hintXyz", cog: "map.hintCog", terrain: "map.hintTerrain" } as const)[kind]);
 
   const connect = async () => {
@@ -332,6 +354,11 @@ function ServiceForm({ onDone, onError }: { onDone: () => void; onError: (m: str
           {busy ? "…" : kind === "wmts" || kind === "wms" ? t("map.connect") : t("map.add")}
         </button>
       </div>
+      {off === "desktop" && (
+        <p className="mt-1 px-1 text-[11px] text-fg3" data-testid="service-offline-note">
+          {t("map.desktopOfflineNote")}
+        </p>
+      )}
       {(wmts || wms) && (
         <ul className="mt-2 max-h-48 overflow-auto scrollbar-thin">
           {wmts?.map((l) => (

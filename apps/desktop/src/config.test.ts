@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { cleanServerUrl, readConfig, type ConfigSources } from "./config";
+import { cleanServerUrl, parseSwitch, readConfig, type ConfigSources } from "./config";
 
 // Built with path.join, as the code does, so the test also runs on Windows.
 const EXE_JSON = path.join("/app", "viewer.json");
@@ -10,7 +10,7 @@ const sources = (over: Partial<ConfigSources> = {}, files: Record<string, string
   exeDir: "/app",
   programData: "/pd",
   readFile: (p) => files[p] ?? null,
-  registry: (k) => reg[k] ?? null,
+  registry: (k, v = "ServerUrl") => (v === "ServerUrl" ? (reg[k] ?? null) : null),
   ...over,
 });
 
@@ -24,7 +24,7 @@ describe("server address", () => {
     expect(cleanServerUrl("viewer.internal")).toBeNull();
   });
   it("is unset with nothing configured", () => {
-    expect(readConfig(sources())).toEqual({ serverUrl: null, source: null, problems: [] });
+    expect(readConfig(sources())).toEqual({ serverUrl: null, source: null, onlineMaps: false, onlineMapsSource: null, problems: [] });
   });
   it("takes the first source found, in order", () => {
     const files = { [EXE_JSON]: '{"serverUrl":"https://exe"}', [PD_JSON]: '{"serverUrl":"https://pd"}' };
@@ -46,5 +46,40 @@ describe("server address", () => {
   });
   it("ignores an empty serverUrl", () => {
     expect(readConfig(sources({}, { [EXE_JSON]: '{"serverUrl":""}' })).problems).toEqual([]);
+  });
+});
+
+describe("online maps", () => {
+  it("are off with nothing configured", () => {
+    expect(readConfig(sources())).toMatchObject({ onlineMaps: false, onlineMapsSource: null, problems: [] });
+  });
+  it("are turned on or off by the first place that sets them, in order", () => {
+    const reg = { "HKLM\\Software\\VIEWER": "0x1" };
+    const regOf = (r: Record<string, string>) => (k: string, v?: string) => (v === "OnlineMaps" ? (r[k] ?? null) : null);
+    expect(readConfig(sources({ env: { VIEWER_ONLINE_MAPS: "1" } }))).toMatchObject({ onlineMaps: true, onlineMapsSource: "VIEWER_ONLINE_MAPS" });
+    expect(readConfig(sources({}, { [EXE_JSON]: '{"onlineMaps":true}' }))).toMatchObject({ onlineMaps: true, onlineMapsSource: EXE_JSON });
+    expect(readConfig(sources({}, { [EXE_JSON]: '{"onlineMaps":false}', [PD_JSON]: '{"onlineMaps":true}' }))).toMatchObject({ onlineMaps: false, onlineMapsSource: EXE_JSON });
+    expect(readConfig(sources({}, { [PD_JSON]: '{"serverUrl":"https://pd","onlineMaps":true}' }))).toMatchObject({ serverUrl: "https://pd", onlineMaps: true });
+    expect(readConfig(sources({ registry: regOf(reg) }))).toMatchObject({ onlineMaps: true, onlineMapsSource: "HKLM\\Software\\VIEWER" });
+    expect(readConfig(sources({ registry: regOf({ "HKCU\\Software\\VIEWER": "0x0" }) }))).toMatchObject({ onlineMaps: false, onlineMapsSource: "HKCU\\Software\\VIEWER" });
+  });
+  it("does not read the server address as the switch, nor the switch as the address", () => {
+    const c = readConfig(sources({ registry: (k, v) => (k.startsWith("HKLM") ? (v === "OnlineMaps" ? "1" : "https://hklm") : null) }));
+    expect(c).toMatchObject({ serverUrl: "https://hklm", onlineMaps: true });
+  });
+  it("stay off and say so when the setting is not on or off", () => {
+    const c = readConfig(sources({}, { [EXE_JSON]: '{"onlineMaps":"maybe"}', [PD_JSON]: '{"onlineMaps":true}' }));
+    expect(c.onlineMaps).toBe(false);
+    expect(c.problems).toEqual([`${EXE_JSON}: onlineMaps "maybe" is not on or off (use true/false or 1/0); left off.`]);
+  });
+  it("reports a broken viewer.json once", () => {
+    const c = readConfig(sources({}, { [EXE_JSON]: "{nope" }));
+    expect(c.onlineMaps).toBe(false);
+    expect(c.problems).toHaveLength(1);
+  });
+  it("reads switches", () => {
+    for (const v of [true, 1, "1", "0x1", "TRUE", " yes ", "on"]) expect(parseSwitch(v)).toBe(true);
+    for (const v of [false, 0, "0", "0x0", "false", "no", "off"]) expect(parseSwitch(v)).toBe(false);
+    for (const v of [2, "2", "maybe", {}, []]) expect(parseSwitch(v)).toBeNull();
   });
 });

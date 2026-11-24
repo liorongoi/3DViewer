@@ -34,10 +34,12 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 const roots = new Roots();
+// Online map services, when IT turned them on (config.ts): tiles and terrain over http(s).
+const NET = config.onlineMaps ? " https: http:" : "";
 const CSP = [
   "default-src 'self'",
-  `connect-src 'self' ${SCHEME}: ${SERVER_SCHEME}: data: blob:`,
-  `img-src 'self' ${SCHEME}: ${SERVER_SCHEME}: data: blob:`,
+  `connect-src 'self' ${SCHEME}: ${SERVER_SCHEME}: data: blob:${NET}`,
+  `img-src 'self' ${SCHEME}: ${SERVER_SCHEME}: data: blob:${NET}`,
   // Cesium compiles styles and some shaders helpers with new Function, as in the web build.
   "script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' blob:",
   "worker-src 'self' blob:",
@@ -113,14 +115,15 @@ async function start(): Promise<void> {
     server ? proxyServer(server, req, (url, init) => bridge.fetch(url, init as RequestInit)) : Promise.resolve(new Response(null, { status: 404 })),
   );
   // Air gap: the page may only talk to its own schemes; the server goes through viewer-server://.
+  // With online maps turned on, it may also read (GET) from the network, for map tiles and terrain.
   session.defaultSession.webRequest.onBeforeRequest((d, cb) => {
-    const ok = /^(viewer-app|viewer-file|viewer-server|data|blob|devtools|chrome-extension):/.test(d.url);
+    const ok = /^(viewer-app|viewer-file|viewer-server|data|blob|devtools|chrome-extension):/.test(d.url) || (config.onlineMaps && d.method === "GET" && /^https?:/.test(d.url));
     if (dev.VIEWER_SMOKE && !ok) console.log("[blocked]", d.url);
     cb({ cancel: !ok });
   });
   session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
 
-  ipcMain.handle("viewer:info", () => ({ server: server ? SERVER_BASE : null, serverAddress: server, configuredBy: config.source, problems: config.problems, version: app.getVersion() }));
+  ipcMain.handle("viewer:info", () => ({ server: server ? SERVER_BASE : null, serverAddress: server, configuredBy: config.source, problems: config.problems, version: app.getVersion(), onlineMaps: config.onlineMaps }));
   // "Check this computer" (Help): what the operating system says; the page adds the graphics card.
   ipcMain.handle("viewer:computer", async () => {
     let freeDiskGb: number | null = null;

@@ -14,13 +14,25 @@ import path from "node:path";
  *
  * With none, the app works on local files only. An address that is not http(s) is ignored and
  * reported, so a typo shows up in the app's About box instead of failing quietly.
+ *
+ * Online map services (base maps, terrain, WMTS/WMS/XYZ/COG, DTM services the user adds) are off
+ * unless IT turns them on, from the same places in the same order: VIEWER_ONLINE_MAPS=1,
+ * {"onlineMaps": true} in either viewer.json, or OnlineMaps = 1 under either registry key.
+ * Off, the app refuses every network request except to the configured server (NFR-12, AC-10).
  */
 export interface DesktopConfig {
   serverUrl: string | null;
   /** Where the address came from, for the About box and support. */
   source: string | null;
+  /** The page may fetch map tiles and terrain from the network (GET only). */
+  onlineMaps: boolean;
+  /** Where that setting came from, or null for the default (off). */
+  onlineMapsSource: string | null;
   problems: string[];
 }
+
+/** Without a setting, the desktop app stays off the network (AC-10). */
+export const ONLINE_MAPS_DEFAULT = false;
 
 export interface ConfigSources {
   env: Record<string, string | undefined>;
@@ -29,8 +41,8 @@ export interface ConfigSources {
   /** %ProgramData%, or null off Windows. */
   programData: string | null;
   readFile: (p: string) => string | null;
-  /** ServerUrl under a registry key, or null. */
-  registry: (key: string) => string | null;
+  /** A value (ServerUrl by default) under a registry key, as text, or null. */
+  registry: (key: string, value?: string) => string | null;
 }
 
 /** The address as an origin with an optional path prefix, without a trailing slash; null if unusable. */
@@ -55,11 +67,27 @@ export function readConfig(src: ConfigSources): DesktopConfig {
     ["HKLM\\Software\\VIEWER", () => src.registry("HKLM\\Software\\VIEWER")],
     ["HKCU\\Software\\VIEWER", () => src.registry("HKCU\\Software\\VIEWER")],
   ];
-  function fromJson(p: string): string | null {
+  const json = new Map<string, Record<string, unknown> | null>();
+  function readJson(p: string): Record<string, unknown> | null {
+    if (json.has(p)) return json.get(p)!;
     const text = src.readFile(p);
-    if (text === null) return null;
+    let j: Record<string, unknown> | null = null;
+    if (text !== null) {
+      try {
+        const v = JSON.parse(text.replace(/^\uFEFF/, "")) as unknown;
+        if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error("not a JSON object");
+        j = v as Record<string, unknown>;
+      } catch (e) {
+        problems.push(`${p}: ${(e as Error).message}`);
+      }
+    }
+    json.set(p, j);
+    return j;
+  }
+  function fromJson(p: string): string | null {
+    const j = readJson(p);
+    if (!j) return null;
     try {
-      const j = JSON.parse(text.replace(/^\uFEFF/, "")) as { serverUrl?: unknown };
       if (j.serverUrl === undefined || j.serverUrl === null || j.serverUrl === "") return null;
       if (typeof j.serverUrl !== "string") throw new Error("serverUrl is not text");
       return j.serverUrl;
@@ -68,14 +96,47 @@ export function readConfig(src: ConfigSources): DesktopConfig {
       return null;
     }
   }
+  let server: { serverUrl: string | null; source: string | null } = { serverUrl: null, source: null };
   for (const [source, get] of candidates) {
     const raw = get();
     if (!raw) continue;
     const url = cleanServerUrl(raw);
-    if (url) return { serverUrl: url, source, problems };
+    if (url) {
+      server = { serverUrl: url, source };
+      break;
+    }
     problems.push(`${source}: "${raw}" is not an http or https address.`);
   }
-  return { serverUrl: null, source: null, problems };
+  // Online maps: the first place that says yes or no wins; something else there is reported.
+  const exeJson = path.join(src.exeDir, "viewer.json");
+  const pdJson = src.programData ? path.join(src.programData, "VIEWER", "viewer.json") : null;
+  const online: [string, () => unknown][] = [
+    ["VIEWER_ONLINE_MAPS", () => src.env.VIEWER_ONLINE_MAPS],
+    [exeJson, () => readJson(exeJson)?.onlineMaps],
+    ...(pdJson ? ([[pdJson, () => readJson(pdJson)?.onlineMaps]] as [string, () => unknown][]) : []),
+    ["HKLM\\Software\\VIEWER", () => src.registry("HKLM\\Software\\VIEWER", "OnlineMaps")],
+    ["HKCU\\Software\\VIEWER", () => src.registry("HKCU\\Software\\VIEWER", "OnlineMaps")],
+  ];
+  for (const [source, get] of online) {
+    const raw = get();
+    if (raw === undefined || raw === null || raw === "") continue;
+    const yes = parseSwitch(raw);
+    if (yes !== null) return { ...server, onlineMaps: yes, onlineMapsSource: source, problems };
+    problems.push(`${source}: onlineMaps "${String(raw)}" is not on or off (use true/false or 1/0); left off.`);
+    return { ...server, onlineMaps: false, onlineMapsSource: source, problems };
+  }
+  return { ...server, onlineMaps: ONLINE_MAPS_DEFAULT, onlineMapsSource: null, problems };
+}
+
+/** true/false, 1/0 (also a registry DWORD read as 0x1/0x0), yes/no, on/off; null for anything else. */
+export function parseSwitch(raw: unknown): boolean | null {
+  if (typeof raw === "boolean") return raw;
+  if (typeof raw === "number") return raw === 1 ? true : raw === 0 ? false : null;
+  if (typeof raw !== "string") return null;
+  const v = raw.trim().toLowerCase();
+  if (["1", "0x1", "true", "yes", "on"].includes(v)) return true;
+  if (["0", "0x0", "false", "no", "off"].includes(v)) return false;
+  return null;
 }
 
 /** The real sources on this machine. */
@@ -92,11 +153,11 @@ export function machineSources(exeDir: string): ConfigSources {
         return null;
       }
     },
-    registry: (key) => {
+    registry: (key, value = "ServerUrl") => {
       if (!windows) return null;
       try {
-        const out = execFileSync("reg", ["query", key, "/v", "ServerUrl"], { encoding: "utf8", timeout: 5000, windowsHide: true });
-        return /ServerUrl\s+REG_(?:EXPAND_)?SZ\s+(.+)/i.exec(out)?.[1]?.trim() ?? null;
+        const out = execFileSync("reg", ["query", key, "/v", value], { encoding: "utf8", timeout: 5000, windowsHide: true });
+        return new RegExp(`${value}\\s+REG_(?:EXPAND_SZ|SZ|DWORD)\\s+(.+)`, "i").exec(out)?.[1]?.trim() ?? null;
       } catch {
         return null;
       }

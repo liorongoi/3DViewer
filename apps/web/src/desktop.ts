@@ -18,6 +18,8 @@ export interface DesktopInfo {
   configuredBy: string | null;
   problems: string[];
   version: string;
+  /** IT turned on online map services (from 1.3.2); before that, and when absent, the app is offline. */
+  onlineMaps?: boolean;
 }
 
 interface DesktopApi {
@@ -90,3 +92,15 @@ export function fromDesktop(f: DesktopFile): LocalFile {
 }
 
 export const fromDesktopList = (list: DesktopFile[] | null): LocalFile[] | null => (list?.length ? list.map(fromDesktop) : null);
+
+/**
+ * Why online map sources cannot load here, or null when they can: the claude.ai preview page, or
+ * the desktop app while IT has not turned on online maps (it refuses network requests, AC-10).
+ */
+export type NetworkOff = "preview" | "desktop" | null;
+const PREVIEW = import.meta.env.VITE_NO_ONLINE === "1";
+export function networkOff(): Promise<NetworkOff> {
+  if (PREVIEW) return Promise.resolve("preview");
+  if (!desktop) return Promise.resolve(null);
+  return desktopInfo().then((d) => (d?.onlineMaps ? null : "desktop"));
+}

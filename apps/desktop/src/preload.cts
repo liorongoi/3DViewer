@@ -11,7 +11,7 @@ interface ListedFile {
 /** The only desktop features the page can use (plan 3.2: narrow typed preload API). */
 contextBridge.exposeInMainWorld("viewerDesktop", {
   /** How the app is set up: the server base the page uses (or null), where it came from, problems. */
-  info: (): Promise<{ server: string | null; serverAddress: string | null; configuredBy: string | null; problems: string[]; version: string }> => ipcRenderer.invoke("viewer:info"),
+  info: (): Promise<{ server: string | null; serverAddress: string | null; configuredBy: string | null; problems: string[]; version: string; onlineMaps?: boolean }> => ipcRenderer.invoke("viewer:info"),
   /** The open dialog for model files. */
   openFiles: (): Promise<ListedFile[] | null> => ipcRenderer.invoke("viewer:openFiles"),
   /** The open dialog for a folder (a 3D Tiles set, a glTF with its textures). */
