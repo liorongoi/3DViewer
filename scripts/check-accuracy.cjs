@@ -224,7 +224,8 @@ async function measureAll(page, label, check) {
     const app = await _electron.launch({
       executablePath: require(path.join(ROOT, "apps/desktop/node_modules/electron")),
       args: [path.join(ROOT, "apps/desktop"), "--no-sandbox", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"],
-      env: { ...process.env, VIEWER_WEB_DIR: path.join(ROOT, "apps/web/dist") },
+      // The sample library is only in the Windows app's checks; an installed app has none.
+      env: { ...process.env, VIEWER_WEB_DIR: path.join(ROOT, "apps/web/dist"), VIEWER_SAMPLES: "1", VIEWER_USER_DATA: fs.mkdtempSync(path.join(require("node:os").tmpdir(), "viewer-acc-")) },
     });
     const win = await app.firstWindow();
     await win.waitForLoadState("load");

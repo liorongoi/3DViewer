@@ -12,7 +12,8 @@ import { ModelHeader } from "../components/ModelHeader";
 import { FeaturePopup } from "../components/FeaturePopup";
 import { PerfHud } from "../components/PerfHud";
 import { Layers, PanelIcon, Ruler, Upload } from "./parts";
-import { Sparkles } from "../components/icons";
+import { ChevronLeft, Map, Sparkles } from "../components/icons";
+import { MapTab } from "../components/MapTab";
 import { localBuildAvailable } from "../desktop";
 import { HoloMark } from "../brand/HoloMark";
 import { IconButton, cx } from "../components/primitives";
@@ -34,6 +35,7 @@ export function Workspace() {
   const leftOpen = useApp((s) => s.leftOpen);
   const rightOpen = useApp((s) => s.rightOpen);
   const fullscreen = useApp((s) => s.fullscreen);
+  const homePanel = useApp((s) => s.homePanel);
   const set = useApp((s) => s.set);
   const models = useFilteredModels();
   const { open, close } = useOpenModel();
@@ -50,7 +52,23 @@ export function Workspace() {
       <div className={cx("pointer-events-none fixed start-3 z-20 flex flex-col gap-2 bottom-[84px] 2xl:bottom-7", top)}>
         <Guard part={route === "home" ? "library" : "model"}>
         {route === "home" ? (
-          leftOpen ? (
+          leftOpen && homePanel === "map" ? (
+            // Base map, terrain and the user's own data, on the globe with no model open.
+            <section className={cx("glass pointer-events-auto flex w-[360px] min-h-0 flex-col rounded-[14px]", fade.panel)} data-testid="home-map-panel">
+              <div className="flex items-center gap-2 px-2 pt-2">
+                <IconButton size="sm" label={t("viewer.error.backToLibrary")} onClick={() => set({ homePanel: "library" })}>
+                  <ChevronLeft size={16} className="rtl:rotate-180" />
+                </IconButton>
+                <div className="flex-1 text-[13px] font-semibold">{t("shell.mapData")}</div>
+                <IconButton size="sm" label={t("common.close")} shortcut="L" onClick={() => set({ leftOpen: false })}>
+                  <PanelIcon size={16} />
+                </IconButton>
+              </div>
+              <div className="min-h-0 flex-1 overflow-auto scrollbar-thin">
+                <MapTab />
+              </div>
+            </section>
+          ) : leftOpen ? (
             <section className={cx("glass pointer-events-auto flex w-[360px] min-h-0 flex-col rounded-[14px]", fade.panel)}>
               <div className="flex items-center gap-2 px-3 pt-3">
                 <HoloMark size={28} className="shrink-0" />
@@ -63,6 +81,9 @@ export function Workspace() {
                 </div>
                 <IconButton size="sm" label={t("library.upload")} onClick={() => set({ uploadOpen: true })}>
                   <Upload size={16} />
+                </IconButton>
+                <IconButton size="sm" label={t("shell.mapData")} onClick={() => set({ homePanel: "map" })} data-testid="open-home-map">
+                  <Map size={16} />
                 </IconButton>
                 <IconButton size="sm" label={t("splat.make.open")} onClick={() => set(!useApp.getState().server && localBuildAvailable() ? { localBuildOpen: true } : { captureOpen: true })} data-testid="open-capture">
                   <Sparkles size={16} />

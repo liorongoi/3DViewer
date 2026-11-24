@@ -23,6 +23,23 @@ The page never talks to the server directly. It uses `viewer-server://library/â€
 
 While the server answers, the library is the server's and the status pill says **Server online**; when it stops answering the pill says **Offline**, local files still open, and the app checks again every 10 s (every 30 s while online). It switches back by itself, with no restart.
 
+## Online maps
+
+The online base maps and terrain (Esri, EOX, OpenStreetMap, AWS terrain) and map services the user adds (WMTS, WMS, XYZ, COG, DTM) start off. The user turns them on with **Turn on online maps** in the Map tab (and off again); the main process keeps that choice in `prefs.json` in the app's data folder. On, the page may read (GET) from the network, and nothing else. Off, the app refuses every network request except to the configured server.
+
+IT can decide for the machine instead, and the user then has no switch. In the same places as the server address and in the same order, the first one that says on or off wins:
+
+1. `VIEWER_ONLINE_MAPS=0` (or `1`) in the environment;
+2. `{"onlineMaps": false}` (or `true`) in `viewer.json` next to `HOLO.exe`;
+3. the same in `%ProgramData%\VIEWER\viewer.json`;
+4. the registry value `OnlineMaps` = 0 or 1 (DWORD or text) under `HKLM\Software\VIEWER`, then `HKCU\Software\VIEWER` (Group Policy).
+
+`true`/`false`, `1`/`0`, `yes`/`no` and `on`/`off` are understood; anything else keeps online maps off and is reported. A site with no outbound connections should set it off.
+
+## The library without a server
+
+Without a server, the library holds only the models the user opened from this computer (no bundled samples). The main process keeps them in `library.json` in the app's data folder, with the folders they were opened from, so they are still there at the next start and open from the same files. Only folders the user opened are kept, never one the page names. A model whose files are gone stays listed, marked so, until it is deleted. FBX conversions of kept models are kept with the app's data; the next start after their model is deleted removes them.
+
 ## Local files
 
 - **Open:** the upload wizard's *Choose files* and *Choose folder* use the system dialogs; a file or folder dropped anywhere on the window opens the wizard; files passed on the command line (Explorer's *Open with*, a file association: `.glb`, `.gltf`, `.fbx`, `.spz`, `.ply`, `.zip`, `tileset.json`) wait for the page, and a second start hands its files to the running window.
