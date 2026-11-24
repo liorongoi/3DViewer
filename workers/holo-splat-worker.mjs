@@ -41,8 +41,15 @@ export const DEFAULTS = {
   colmap: "colmap",
   glomap: "glomap",
   python: "python3",
-  /** Use the GPU for SIFT features and matching (COLMAP built with CUDA). */
+  /**
+   * Use the GPU for SIFT features and matching (COLMAP built with CUDA), and for bundle adjustment
+   * where COLMAP's Ceres has CUDA. When the card cannot, the step runs again on the processor.
+   */
   sfmGpu: true,
+  /** An ffmpeg -hwaccel (such as "cuda") to decode videos on the graphics card; "" decodes on the processor. */
+  videoDecode: "",
+  /** Run the masks detector on the graphics card when onnxruntime can (DirectML or CUDA). */
+  masksGpu: false,
   /** Above this many photos, matching uses a vocabulary tree instead of every pair. */
   exhaustiveUpTo: 250,
   vocabTree: "",
@@ -112,10 +119,10 @@ async function makeMasks(cfg, data, model, o) {
   }
   progress(0.29, "masks");
   try {
-    const tail = await run([cfg.python, path.join(HERE, "holo_masks.py"), "--data", data, "--model", model, "--detector", cfg.masks, "--threads", String(o.threads ?? 0)]);
+    const tail = await run([cfg.python, path.join(HERE, "holo_masks.py"), "--data", data, "--model", model, "--detector", cfg.masks, "--threads", String(o.threads ?? 0), ...(cfg.masksGpu ? ["--gpu"] : [])]);
     const line = tail.split(/\r?\n/).reverse().find((l) => l.startsWith("{"));
     const stats = line ? JSON.parse(line) : null;
-    if (stats) say(`masks: ${stats.people} people and ${stats.movingVehicles} moving vehicles left out of ${stats.pictures} pictures (${(stats.share * 100).toFixed(1)}% of the area); ${stats.parkedVehicles} parked vehicles kept`);
+    if (stats) say(`masks: ${stats.people} people and ${stats.movingVehicles} moving vehicles left out of ${stats.pictures} pictures (${(stats.share * 100).toFixed(1)}% of the area); ${stats.parkedVehicles} parked vehicles kept${stats.device ? `; detector on the ${stats.device === "gpu" ? "graphics card" : "processor"}` : ""}`);
     return stats;
   } catch (e) {
     rmSync(path.join(data, "masks"), { recursive: true, force: true });
@@ -747,6 +754,16 @@ class InputError extends Error {}
 
 /** One line on stderr for HOLO's training log (redacted by the server before it is kept). */
 const say = (t) => process.stderr.write(`${new Date().toISOString()} ${t}\n`);
+// Once HOLO has asked the worker to stop, a failed step is not tried again another way.
+let stopping = false;
+process.on("SIGTERM", () => {
+  stopping = true;
+  // No tool running to pass it on to: stop here, as the worker did before it listened.
+  if (process.listenerCount("SIGTERM") === 1) process.exit(143);
+});
+const orStop = (e) => {
+  if (stopping) throw e;
+};
 
 function run(argv, opts = {}) {
   const what = `${path.basename(argv[0])}${argv[1] && !argv[1].startsWith("-") && !argv[1].includes("/") ? ` ${argv[1]}` : ""}`;
@@ -791,6 +808,25 @@ const PHOTO = /\.(jpe?g|png|tiff?|webp)$/i;
  * ffmpeg's blurdetect (lower is sharper). Then only the kept frames are written, at full size.
  */
 export async function videoFrames(cfg, video, dir, o) {
+  // Decoding on the graphics card ("videoDecode": an ffmpeg -hwaccel such as cuda) when the
+  // settings ask for it; anything that goes wrong there, and the frames are taken again without it.
+  if (cfg.videoDecode) {
+    try {
+      const out = await framesOf(cfg, video, dir, o, cfg.videoDecode);
+      say(`frames: decoded on the graphics card (${cfg.videoDecode})`);
+      return out;
+    } catch (e) {
+      orStop(e);
+      say(`frames: decoding on the graphics card failed (${e instanceof Error ? e.message.slice(0, 200) : e}); decoding on the processor`);
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(path.join(dir, "..", "candidates"), { recursive: true, force: true });
+    }
+  }
+  return framesOf(cfg, video, dir, o, "");
+}
+
+async function framesOf(cfg, video, dir, o, hw) {
+  const hwIn = hw ? ["-hwaccel", hw] : [];
   mkdirSync(dir, { recursive: true });
   const work = path.join(dir, "..", "candidates");
   mkdirSync(work, { recursive: true });
@@ -806,7 +842,7 @@ export async function videoFrames(cfg, video, dir, o) {
   let ref = null;
   let count = 0;
   await new Promise((resolve, reject) => {
-    const child = spawn(cfg.ffmpeg, ["-hide_banner", "-loglevel", "error", "-i", path.resolve(video), "-an", "-vf", `scale=640:-2,blurdetect,metadata=mode=print:key=lavfi.blurdetect.blur:file=blur.txt,scale=${W}:${H},format=gray`, "-fps_mode", "passthrough", "-f", "rawvideo", "pipe:1"], { cwd: work, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(cfg.ffmpeg, ["-hide_banner", "-loglevel", "error", ...hwIn, "-i", path.resolve(video), "-an", "-vf", `scale=640:-2,blurdetect,metadata=mode=print:key=lavfi.blurdetect.blur:file=blur.txt,scale=${W}:${H},format=gray`, "-fps_mode", "passthrough", "-f", "rawvideo", "pipe:1"], { cwd: work, stdio: ["ignore", "pipe", "pipe"] });
     const stop = () => child.kill("SIGTERM");
     process.once("SIGTERM", stop);
     let buf = Buffer.alloc(0);
@@ -839,7 +875,7 @@ export async function videoFrames(cfg, video, dir, o) {
   const wanted = new Set(keep);
   const out = [];
   await new Promise((resolve, reject) => {
-    const child = spawn(cfg.ffmpeg, ["-hide_banner", "-loglevel", "error", "-i", video, "-an", "-vf", scale, "-fps_mode", "passthrough", "-q:v", "2", "-f", "image2pipe", "-c:v", "mjpeg", "pipe:1"], { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(cfg.ffmpeg, ["-hide_banner", "-loglevel", "error", ...hwIn, "-i", video, "-an", "-vf", scale, "-fps_mode", "passthrough", "-q:v", "2", "-f", "image2pipe", "-c:v", "mjpeg", "pipe:1"], { stdio: ["ignore", "pipe", "pipe"] });
     const stop = () => child.kill("SIGTERM");
     process.once("SIGTERM", stop);
     const split = jpegSplitter((jpg, n) => {
@@ -997,7 +1033,28 @@ export function exportStep(iterations) {
   return iterations;
 }
 
-async function sfm(cfg, images, work, o, video) {
+/**
+ * The names COLMAP gives its options: 3.12 and later say FeatureExtraction/FeatureMatching for
+ * use_gpu and num_threads, older ones SiftExtraction/SiftMatching. Read from its own help, once.
+ */
+const colmapFlagsCache = new Map();
+export function colmapFlags(cfg) {
+  if (colmapFlagsCache.has(cfg.colmap)) return colmapFlagsCache.get(cfg.colmap);
+  const help = (cmd) => {
+    const r = spawnSync(cfg.colmap, [cmd, "-h"], { encoding: "utf8", timeout: 60_000, windowsHide: true });
+    return `${r.stdout ?? ""}${r.stderr ?? ""}`;
+  };
+  const ex = help("feature_extractor");
+  const flags = {
+    extract: ex.includes("FeatureExtraction.use_gpu") ? "FeatureExtraction" : "SiftExtraction",
+    match: help("exhaustive_matcher").includes("FeatureMatching.use_gpu") ? "FeatureMatching" : "SiftMatching",
+    baGpu: help("mapper").includes("Mapper.ba_use_gpu"),
+  };
+  colmapFlagsCache.set(cfg.colmap, flags);
+  return flags;
+}
+
+export async function sfm(cfg, images, work, o, video) {
   const db = path.join(work, "colmap.db");
   const sparse = path.join(work, "sparse");
   const undist = path.join(work, "data");
@@ -1006,15 +1063,50 @@ async function sfm(cfg, images, work, o, video) {
   if (cfg.sfm === "pycolmap") {
     await run([cfg.python, path.join(HERE, "sfm_pycolmap.py"), "--images", images, "--work", work, "--matcher", video ? "sequential" : count <= cfg.exhaustiveUpTo ? "exhaustive" : "vocabtree", "--vocab-tree", cfg.vocabTree || "", "--threads", String(o.threads)], { inputErrors: true, onLine: (l) => /progress/.test(l) && console.log(l) });
   } else {
-    const gpu = cfg.sfmGpu ? "1" : "0";
-    await run([cfg.colmap, "feature_extractor", "--database_path", db, "--image_path", images, "--ImageReader.camera_model", "OPENCV", "--ImageReader.single_camera", video ? "1" : "0", "--SiftExtraction.use_gpu", gpu, "--SiftExtraction.num_threads", String(o.threads)]);
-    progress(0.12, "features");
-    if (video) await run([cfg.colmap, "sequential_matcher", "--database_path", db, "--SiftMatching.use_gpu", gpu, "--SequentialMatching.overlap", "15", "--SequentialMatching.loop_detection", cfg.vocabTree ? "1" : "0", ...(cfg.vocabTree ? ["--SequentialMatching.vocab_tree_path", cfg.vocabTree] : [])]);
-    else if (count <= cfg.exhaustiveUpTo || !cfg.vocabTree) await run([cfg.colmap, "exhaustive_matcher", "--database_path", db, "--SiftMatching.use_gpu", gpu]);
-    else await run([cfg.colmap, "vocab_tree_matcher", "--database_path", db, "--SiftMatching.use_gpu", gpu, "--VocabTreeMatching.vocab_tree_path", cfg.vocabTree]);
+    const flags = colmapFlags(cfg);
+    // Features and matching on the graphics card when the settings say so. If the card cannot
+    // (an old driver, too little memory, a COLMAP without CUDA), the same step runs again on the
+    // processor: slower, but the build goes on.
+    const match = async (gpu) => {
+      rmSync(db, { force: true });
+      const g = gpu ? "1" : "0";
+      await run([cfg.colmap, "feature_extractor", "--database_path", db, "--image_path", images, "--ImageReader.camera_model", "OPENCV", "--ImageReader.single_camera", video ? "1" : "0", `--${flags.extract}.use_gpu`, g, `--${flags.extract}.num_threads`, String(o.threads)]);
+      progress(0.12, "features");
+      const m = [`--${flags.match}.use_gpu`, g];
+      if (video) await run([cfg.colmap, "sequential_matcher", "--database_path", db, ...m, "--SequentialMatching.overlap", "15", "--SequentialMatching.loop_detection", cfg.vocabTree ? "1" : "0", ...(cfg.vocabTree ? ["--SequentialMatching.vocab_tree_path", cfg.vocabTree] : [])]);
+      else if (count <= cfg.exhaustiveUpTo || !cfg.vocabTree) await run([cfg.colmap, "exhaustive_matcher", "--database_path", db, ...m]);
+      else await run([cfg.colmap, "vocab_tree_matcher", "--database_path", db, ...m, "--VocabTreeMatching.vocab_tree_path", cfg.vocabTree]);
+    };
+    let gpu = !!cfg.sfmGpu;
+    if (gpu) {
+      try {
+        await match(true);
+        say("sfm: features and matching ran on the graphics card");
+      } catch (e) {
+        orStop(e);
+        say(`sfm: the graphics card could not find or match features (${e instanceof Error ? e.message.slice(0, 200) : e}); doing it on the processor`);
+        gpu = false;
+      }
+    }
+    if (!gpu) await match(false);
     progress(0.2, "matching");
     if (cfg.sfm === "glomap") await run([cfg.glomap, "mapper", "--database_path", db, "--image_path", images, "--output_path", sparse]);
-    else await run([cfg.colmap, "mapper", "--database_path", db, "--image_path", images, "--output_path", sparse, "--Mapper.num_threads", String(o.threads)]);
+    else {
+      const mapper = (baGpu) => run([cfg.colmap, "mapper", "--database_path", db, "--image_path", images, "--output_path", sparse, "--Mapper.num_threads", String(o.threads), ...(baGpu ? ["--Mapper.ba_use_gpu", "1"] : [])]);
+      // Bundle adjustment on the card where COLMAP's Ceres has CUDA (COLMAP itself falls back to
+      // the processor when it has not); a mapper that fails that way runs again without it.
+      if (gpu && flags.baGpu) {
+        try {
+          await mapper(true);
+        } catch (e) {
+          orStop(e);
+          say(`sfm: the mapper stopped with bundle adjustment on the graphics card (${e instanceof Error ? e.message.slice(0, 200) : e}); again on the processor`);
+          rmSync(sparse, { recursive: true, force: true });
+          mkdirSync(sparse, { recursive: true });
+          await mapper(false);
+        }
+      } else await mapper(false);
+    }
     progress(0.28, "poses");
     const models = existsSync(sparse) ? readdirSync(sparse).filter((d) => existsSync(path.join(sparse, d, "images.bin"))) : [];
     if (!models.length) throw new InputError("No camera poses could be found: the pictures do not overlap enough, or are too blurred or too plain.");

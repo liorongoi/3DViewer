@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync } from "node:fs";
+import { chmodSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -28,6 +28,8 @@ import {
   levelTransform,
   selectFrames,
   videoFrames,
+  sfm,
+  colmapFlags,
   loadConfig,
   parseGnssCsv,
   parseSrt,
@@ -739,4 +741,119 @@ describe("holding back needles", () => {
     expect(needleOptions({ program: patched }, {})).toEqual([]);
     await rm(dir, { recursive: true, force: true });
   });
+});
+
+describe("build steps on the graphics card, with the processor as the fallback", () => {
+  /**
+   * A stand-in colmap (Node, as a script with a shebang): its help lists the option names of the
+   * chosen release, it fails anything asked to use the GPU when `gpuFails`, and records each call.
+   */
+  const fakeColmap = (dir: string, o: { names: "new" | "old"; gpuFails: boolean; baGpuFails?: boolean }) => {
+    const exe = path.join(dir, "colmap");
+    const ext = o.names === "new" ? "FeatureExtraction" : "SiftExtraction";
+    const mat = o.names === "new" ? "FeatureMatching" : "SiftMatching";
+    writeFileSync(
+      exe,
+      `#!${process.execPath}
+const fs = require("node:fs"), p = require("node:path");
+const a = process.argv.slice(2), get = (k) => a[a.indexOf(k) + 1];
+if (a[1] === "-h") { console.log("  --${ext}.use_gpu arg\\n  --${ext}.num_threads arg\\n  --${mat}.use_gpu arg\\n  --Mapper.ba_use_gpu arg"); process.exit(0); }
+fs.appendFileSync(${JSON.stringify(path.join(dir, "calls.txt"))}, JSON.stringify(a) + "\\n");
+const gpu = a.some((x, i) => /use_gpu$/.test(x) && a[i + 1] === "1");
+if (gpu && a[0] !== "mapper" && ${o.gpuFails}) { console.error("No CUDA device"); process.exit(1); }
+if (gpu && a[0] === "mapper" && ${!!o.baGpuFails}) { console.error("cuda solver crashed"); process.exit(1); }
+const images = () => { const b = Buffer.alloc(8 + 64 + 6 + 8); b.writeBigUInt64LE(1n, 0); b.writeUInt32LE(1, 8); b.writeDoubleLE(1, 12); b.writeUInt32LE(1, 68); b.write("a.jpg", 72); return b; };
+if (a[0] === "mapper") { const d = p.join(get("--output_path"), "0"); fs.mkdirSync(d, { recursive: true }); fs.writeFileSync(p.join(d, "images.bin"), images()); }
+if (a[0] === "image_undistorter") { const d = p.join(get("--output_path"), "sparse"); fs.mkdirSync(d, { recursive: true }); fs.writeFileSync(p.join(d, "images.bin"), images()); }
+if (a[0] === "feature_extractor") fs.writeFileSync(get("--database_path"), "db");
+`,
+    );
+    chmodSync(exe, 0o755);
+    return exe;
+  };
+  const calls = async (dir: string) => (await readFile(path.join(dir, "calls.txt"), "utf8")).trim().split("\n").map((l) => JSON.parse(l) as string[]);
+  const setUp = async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "holo-gpu-"));
+    await mkdir(path.join(dir, "images"));
+    await mkdir(path.join(dir, "work"));
+    return dir;
+  };
+
+  it.skipIf(process.platform === "win32")("finds and matches features on the card, and solves with bundle adjustment there", async () => {
+    const dir = await setUp();
+    try {
+      const colmap = fakeColmap(dir, { names: "new", gpuFails: false });
+      const out = await sfm({ ...DEFAULTS, sfm: "colmap", colmap, sfmGpu: true }, path.join(dir, "images"), path.join(dir, "work"), { threads: 3 }, true);
+      expect(out.model).toBe(path.join(dir, "work", "data", "sparse", "0"));
+      const c = await calls(dir);
+      expect(c.map((x) => x[0])).toEqual(["feature_extractor", "sequential_matcher", "mapper", "image_undistorter"]);
+      expect(c[0]).toEqual(expect.arrayContaining(["--FeatureExtraction.use_gpu", "1", "--FeatureExtraction.num_threads", "3"]));
+      expect(c[1]).toEqual(expect.arrayContaining(["--FeatureMatching.use_gpu", "1"]));
+      expect(c[2]).toEqual(expect.arrayContaining(["--Mapper.ba_use_gpu", "1"]));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(process.platform === "win32")("does features and matching again on the processor when the card cannot", async () => {
+    const dir = await setUp();
+    try {
+      const colmap = fakeColmap(dir, { names: "new", gpuFails: true });
+      await sfm({ ...DEFAULTS, sfm: "colmap", colmap, sfmGpu: true }, path.join(dir, "images"), path.join(dir, "work"), { threads: 2 }, false);
+      const c = await calls(dir);
+      // The GPU try stopped at the first step; then every step on the processor, mapper without GPU.
+      expect(c.map((x) => x[0])).toEqual(["feature_extractor", "feature_extractor", "exhaustive_matcher", "mapper", "image_undistorter"]);
+      expect(c[0]).toEqual(expect.arrayContaining(["--FeatureExtraction.use_gpu", "1"]));
+      expect(c[1]).toEqual(expect.arrayContaining(["--FeatureExtraction.use_gpu", "0"]));
+      expect(c[2]).toEqual(expect.arrayContaining(["--FeatureMatching.use_gpu", "0"]));
+      expect(c[3]).not.toContain("--Mapper.ba_use_gpu");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(process.platform === "win32")("solves again on the processor when bundle adjustment on the card fails", async () => {
+    const dir = await setUp();
+    try {
+      const colmap = fakeColmap(dir, { names: "new", gpuFails: false, baGpuFails: true });
+      await sfm({ ...DEFAULTS, sfm: "colmap", colmap, sfmGpu: true }, path.join(dir, "images"), path.join(dir, "work"), { threads: 2 }, true);
+      const c = await calls(dir);
+      expect(c.map((x) => x[0])).toEqual(["feature_extractor", "sequential_matcher", "mapper", "mapper", "image_undistorter"]);
+      expect(c[2]).toEqual(expect.arrayContaining(["--Mapper.ba_use_gpu", "1"]));
+      expect(c[3]).not.toContain("--Mapper.ba_use_gpu");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(process.platform === "win32")("uses the option names of an older COLMAP, and none of the card when told not to", async () => {
+    const dir = await setUp();
+    try {
+      const colmap = fakeColmap(dir, { names: "old", gpuFails: false });
+      expect(colmapFlags({ colmap })).toEqual({ extract: "SiftExtraction", match: "SiftMatching", baGpu: true });
+      await sfm({ ...DEFAULTS, sfm: "colmap", colmap, sfmGpu: false }, path.join(dir, "images"), path.join(dir, "work"), { threads: 2 }, true);
+      const c = await calls(dir);
+      expect(c.map((x) => x[0])).toEqual(["feature_extractor", "sequential_matcher", "mapper", "image_undistorter"]);
+      expect(c[0]).toEqual(expect.arrayContaining(["--SiftExtraction.use_gpu", "0", "--SiftExtraction.num_threads", "2"]));
+      expect(c[1]).toEqual(expect.arrayContaining(["--SiftMatching.use_gpu", "0"]));
+      expect(c[2]).not.toContain("--Mapper.ba_use_gpu");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(spawnSync("ffmpeg", ["-version"]).status !== 0)("takes the frames on the processor when decoding on the card fails", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "vf-hw-"));
+    try {
+      const video = path.join(dir, "pan.mp4");
+      spawnSync("ffmpeg", ["-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=s=1600x360:r=30,crop=640:360:t*300:0", "-t", "2", "-pix_fmt", "yuv420p", video]);
+      const plain = await videoFrames(loadConfig(path.join(dir, "none.json")), video, path.join(dir, "a", "images"), { resolution: 640, videoFps: 2 });
+      // No ffmpeg has this one: the first try fails at once, the second decodes on the processor.
+      const viaFallback = await videoFrames({ ...loadConfig(path.join(dir, "none.json")), videoDecode: "no-such-hwaccel" }, video, path.join(dir, "b", "images"), { resolution: 640, videoFps: 2 });
+      expect(viaFallback.map((f) => f.name)).toEqual(plain.map((f) => f.name));
+      expect(readdirSync(path.join(dir, "b", "images")).length).toBe(plain.length);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 60_000);
 });

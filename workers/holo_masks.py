@@ -13,7 +13,9 @@ What is left out:
     it has few features) did not. A vehicle whose features became points about as often as the
     rest of the picture's is kept.
 
-Detector: YOLOX-S (Apache-2.0, Megvii), COCO classes, run with onnxruntime on the processor.
+Detector: YOLOX-S (Apache-2.0, Megvii), COCO classes, run with onnxruntime: on the graphics card
+with --gpu when onnxruntime has DirectML or CUDA (onnxruntime-directml, onnxruntime-gpu), else on
+the processor.
 Nothing in the capture is changed; the masks are written next to it.
 """
 
@@ -102,6 +104,29 @@ def judge(box, xy, tracked, picture_share, min_points=8):
     return t >= min_points and t / max(n, 1) >= 0.5 * picture_share
 
 
+def open_detector(ort, model, opts, gpu):
+    """The detector's session: on the graphics card when asked and onnxruntime has a way there,
+    else (or when that fails) on the processor."""
+    if gpu:
+        have = ort.get_available_providers()
+        for provider in ("CUDAExecutionProvider", "DmlExecutionProvider"):
+            if provider not in have:
+                continue
+            o = ort.SessionOptions()
+            o.intra_op_num_threads = opts.intra_op_num_threads
+            if provider == "DmlExecutionProvider":
+                # DirectML needs these two (onnxruntime's DirectML notes).
+                o.enable_mem_pattern = False
+                o.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+            try:
+                s = ort.InferenceSession(model, sess_options=o, providers=[provider, "CPUExecutionProvider"])
+                if s.get_providers()[0] == provider:
+                    return s
+            except Exception as e:  # noqa: BLE001 - any failure means: use the processor
+                print(f"masks: {provider} could not start ({e}); using the processor", file=sys.stderr)
+    return ort.InferenceSession(model, sess_options=opts, providers=["CPUExecutionProvider"])
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", required=True)
@@ -110,6 +135,7 @@ def main(argv=None):
     ap.add_argument("--min-score", type=float, default=0.35)
     ap.add_argument("--grow", type=float, default=0.08, help="widen each box by this share on every side")
     ap.add_argument("--threads", type=int, default=0)
+    ap.add_argument("--gpu", action="store_true", help="run the detector on the graphics card when onnxruntime can")
     a = ap.parse_args(argv)
 
     import onnxruntime as ort
@@ -118,12 +144,14 @@ def main(argv=None):
     opts = ort.SessionOptions()
     if a.threads:
         opts.intra_op_num_threads = a.threads
-    session = ort.InferenceSession(a.detector, sess_options=opts, providers=["CPUExecutionProvider"])
+    session = open_detector(ort, a.detector, opts, a.gpu)
     rec = pycolmap.Reconstruction(a.model)
     out_dir = os.path.join(a.data, "masks")
     os.makedirs(out_dir, exist_ok=True)
 
-    stats = {"pictures": 0, "masked": 0, "people": 0, "movingVehicles": 0, "parkedVehicles": 0, "share": 0.0}
+    stats = {"pictures": 0, "masked": 0, "people": 0, "movingVehicles": 0, "parkedVehicles": 0, "share": 0.0, "device": "cpu"}
+    if session.get_providers()[0] != "CPUExecutionProvider":
+        stats["device"] = "gpu"
     shares = []
     images = sorted(rec.images.values(), key=lambda im: im.name)
     for i, im in enumerate(images):
@@ -137,7 +165,17 @@ def main(argv=None):
         tracked = np.array([p.has_point3D() for p in pts], dtype=bool)
         picture_share = tracked.mean() if len(tracked) else 0.0
         mask = np.full((h, w), 255, dtype=np.uint8)
-        for box, c in detect(session, img, a.min_score):
+        try:
+            found = detect(session, img, a.min_score)
+        except Exception as e:  # noqa: BLE001
+            if stats["device"] != "gpu":
+                raise
+            # The card gave up part way: the rest on the processor.
+            print(f"masks: the graphics card stopped ({e}); going on with the processor", file=sys.stderr)
+            session = ort.InferenceSession(a.detector, sess_options=opts, providers=["CPUExecutionProvider"])
+            stats["device"] = "cpu"
+            found = detect(session, img, a.min_score)
+        for box, c in found:
             if c in VEHICLE:
                 if len(xy) and judge(box, xy, tracked, picture_share):
                     stats["parkedVehicles"] += 1

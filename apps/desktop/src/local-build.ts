@@ -34,6 +34,8 @@ export const addonParts = (dir: string) => ({
   ffmpeg: path.join(dir, "ffmpeg", `ffmpeg${EXE}`),
   brush: path.join(dir, "brush", `brush_app${EXE}`),
   masks: path.join(dir, "models", "yolox_s.onnx"),
+  /** COLMAP with NVIDIA (CUDA) support, in add-ons from 1.3.3: features and matching on the card. */
+  colmap: path.join(dir, "colmap", "bin", `colmap${EXE}`),
   worker: path.join(dir, "worker", "holo-splat-worker.mjs"),
 });
 
@@ -132,19 +134,29 @@ export function nvidiaSmi(): Promise<string> {
   );
 }
 
-/** The worker's settings for this add-on: its own programs, and the masks detector when it has one. */
-export function workerConfig(addon: Addon): Record<string, unknown> {
+/**
+ * The worker's settings for this add-on: its own programs, and the masks detector when it has one.
+ * With an NVIDIA card (`nvidia` true), every step that gains from it runs there: video decoding,
+ * features and matching with the add-on's COLMAP, the masks detector and training (Brush always
+ * uses the card). Each of those steps goes on on the processor when the card cannot do it.
+ */
+export function workerConfig(addon: Addon, nvidia = false): Record<string, unknown> {
   const p = addonParts(addon.dir);
+  const colmap = nvidia && fs.existsSync(p.colmap);
   return {
     _note: "Written by HOLO for Windows for Build on this PC.",
     ffmpeg: p.ffmpeg,
-    sfm: "pycolmap",
     python: p.python,
-    sfmGpu: false,
+    ...(colmap ? { sfm: "colmap", colmap: p.colmap, sfmGpu: true } : { sfm: "pycolmap", sfmGpu: false }),
+    videoDecode: nvidia ? "cuda" : "",
+    masksGpu: nvidia,
     ...(fs.existsSync(p.masks) ? { masks: p.masks } : {}),
     methods: { brush: { program: p.brush, revision: addon.version } },
   };
 }
+
+/** True when nvidia-smi lists an NVIDIA card: a "name, memory, free, driver" line (nvidiaSmi). */
+export const hasNvidia = (smi: string) => smi.split(/\r?\n/).some((l) => l.split(",").length >= 4 && l.split(",")[0]!.trim().length > 0);
 
 export interface BuildRequest {
   /** The user's files, by path, as HOLO resolved them from what was opened. */
@@ -232,7 +244,7 @@ export function startBuild(addon: Addon, req: BuildRequest, workRoot: string, ou
       let n = 0;
       for (const f of req.files) await place(f, input, ++n);
       const cfgFile = path.join(job, "holo-worker.json");
-      await fs.promises.writeFile(cfgFile, JSON.stringify(workerConfig(addon)));
+      await fs.promises.writeFile(cfgFile, JSON.stringify(workerConfig(addon, hasNvidia(await nvidiaSmi()))));
       const p = addonParts(addon.dir);
       const args = req.checkOnly
         ? ["--assess", "--input", input, "--input-kind", req.inputKind, "--output", out, "--threads", String(req.threads)]

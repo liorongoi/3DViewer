@@ -30,3 +30,46 @@ class Masks(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FakeOrt:
+    """Stands in for onnxruntime: which providers it has, and which of them fail to start."""
+
+    class ExecutionMode:
+        ORT_SEQUENTIAL = 0
+
+    class SessionOptions:
+        intra_op_num_threads = 0
+
+    def __init__(self, have, broken=()):
+        self.have, self.broken = list(have), set(broken)
+        fake = self
+
+        class Session:
+            def __init__(self, model, sess_options=None, providers=()):
+                if providers[0] in fake.broken:
+                    raise RuntimeError(f"{providers[0]} failed")
+                self.providers = list(providers)
+
+            def get_providers(self):
+                return self.providers
+
+        self.InferenceSession = Session
+
+    def get_available_providers(self):
+        return self.have
+
+
+class Detector(unittest.TestCase):
+    def test_the_card_when_asked_and_onnxruntime_has_a_way_there(self):
+        ort = FakeOrt(["DmlExecutionProvider", "CPUExecutionProvider"])
+        s = hm.open_detector(ort, "m.onnx", ort.SessionOptions(), True)
+        self.assertEqual(s.get_providers()[0], "DmlExecutionProvider")
+
+    def test_the_processor_when_not_asked_when_there_is_no_way_or_when_the_card_fails(self):
+        both = ["CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"]
+        self.assertEqual(hm.open_detector(FakeOrt(both), "m", FakeOrt.SessionOptions(), False).get_providers(), ["CPUExecutionProvider"])
+        self.assertEqual(hm.open_detector(FakeOrt(["CPUExecutionProvider"]), "m", FakeOrt.SessionOptions(), True).get_providers(), ["CPUExecutionProvider"])
+        # CUDA fails, DirectML works: DirectML. Both fail: the processor.
+        self.assertEqual(hm.open_detector(FakeOrt(both, ["CUDAExecutionProvider"]), "m", FakeOrt.SessionOptions(), True).get_providers()[0], "DmlExecutionProvider")
+        self.assertEqual(hm.open_detector(FakeOrt(both, ["CUDAExecutionProvider", "DmlExecutionProvider"]), "m", FakeOrt.SessionOptions(), True).get_providers(), ["CPUExecutionProvider"])
