@@ -7,8 +7,12 @@
 //   - With online maps turned off (VIEWER_ONLINE_MAPS=0, as a site with no internet sets it),
 //     nothing else is reachable: an internet address is blocked, and the Map tab says the online
 //     sources are off on this computer.
-//   - With nothing set, online maps are on: the page can read (GET) from the network and the
-//     online sources can be chosen, but it still cannot send anything (POST is blocked).
+//   - Without a server or any setting, as a standalone Windows PC: the library has no bundled
+//     samples; the Map & data panel opens with no model; online maps start off and the user turns
+//     them on there (then the page can read from the network, but still not send: POST blocked),
+//     and that choice is kept. A model opened from this computer gets a bin that shows without
+//     hovering, stays in the library after a restart and opens again, and once deleted is gone
+//     after the next restart too.
 //   - A model the app was started with (Explorer's "Open with") opens the upload wizard, and
 //     "Keep on this computer only" opens it from viewer-file:// without sending it.
 //   - The folder dialog opens a 3D Tiles folder, which streams from disk in place.
@@ -53,7 +57,7 @@ const SAMPLES = path.join(ROOT, "apps/web/public/samples");
   const app = await _electron.launch({
     executablePath: electronPath,
     args: [DESKTOP, "--no-sandbox", "--ignore-gpu-blocklist", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", glb],
-    env: { ...process.env, VIEWER_SERVER_URL: API, VIEWER_QUERY: "", VIEWER_ONLINE_MAPS: "0" },
+    env: { ...process.env, VIEWER_SERVER_URL: API, VIEWER_QUERY: "", VIEWER_ONLINE_MAPS: "0", VIEWER_USER_DATA: path.join(home, "data-server") },
     timeout: 120000,
   });
   const page = await app.firstWindow();
@@ -134,7 +138,8 @@ const SAMPLES = path.join(ROOT, "apps/web/public/samples");
     check((await page.evaluate(() => window.viewerDesktop.info())).onlineMaps === false, "IT's off switch turns online maps off");
     await page.getByRole("tab", { name: "Map & data", exact: true }).click();
     const offNote = await page.getByTestId("map-offline-note").first().innerText({ timeout: 15000 }).catch(() => "");
-    check(/turned off on this computer/.test(offNote), "the Map tab says online maps are off on this computer", offNote.slice(0, 80));
+    check(/IT team turned off online maps/.test(offNote), "the Map tab says IT turned online maps off", offNote.slice(0, 80));
+    check((await page.getByTestId("online-maps-on").count()) === 0, "with IT's decision there is no switch");
     const osm = page.getByRole("radio", { name: /OpenStreetMap/ }).first();
     check((await osm.count()) === 1 && (await osm.isDisabled()), "an online base map cannot be chosen while they are off");
     await page.getByRole("tab", { name: "Layers", exact: true }).click().catch(() => undefined);
@@ -226,34 +231,104 @@ const SAMPLES = path.join(ROOT, "apps/web/public/samples");
     server.stop();
     fs.rmSync(home, { recursive: true, force: true });
   }
-  // Nothing set: online maps are on. The test server stands in for a map server on the network.
-  server = await startServer({ workers: false });
-  const app2 = await _electron.launch({
-    executablePath: electronPath,
-    args: [DESKTOP, "--no-sandbox", "--ignore-gpu-blocklist", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
-    env: { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== "VIEWER_ONLINE_MAPS" && k !== "VIEWER_SERVER_URL")), VIEWER_QUERY: "" },
-    timeout: 120000,
-  });
+  // ---- A standalone Windows PC: no server, nothing set ----
+  const data = path.join(os.tmpdir(), `viewer-desktop-data-${process.pid}`);
+  fs.rmSync(data, { recursive: true, force: true });
+  const mapHost = await startServer({ workers: false }); // stands in for a map server on the network
+  const standalone = () =>
+    _electron.launch({
+      executablePath: electronPath,
+      args: [DESKTOP, "--no-sandbox", "--ignore-gpu-blocklist", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
+      env: { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !["VIEWER_ONLINE_MAPS", "VIEWER_SERVER_URL", "VIEWER_SAMPLES"].includes(k))), VIEWER_QUERY: "", VIEWER_USER_DATA: data },
+      timeout: 120000,
+    });
+  const ready = async (p) => {
+    p.setDefaultTimeout(60000);
+    await p.waitForFunction(() => !!window.viewerEngine, null, { timeout: 120000 });
+    await p.evaluate(() => localStorage.setItem("viewer.lang", "en"));
+    // The kept library and the app's set-up arrive just after the page.
+    await p.waitForTimeout(1500);
+  };
+  const cards = (p) => p.locator("[data-model-card] [dir=auto]").allInnerTexts();
+  const mine = fs.mkdtempSync(path.join(os.tmpdir(), "viewer-mine-"));
+  const bottle = path.join(mine, "Kept bottle.glb");
+  fs.copyFileSync(path.join(SAMPLES, "khronos/WaterBottle.glb"), bottle);
+  let a = await standalone();
   try {
-    const p2 = await app2.firstWindow();
-    await p2.waitForFunction(() => !!window.viewerEngine, null, { timeout: 120000 });
-    check((await p2.evaluate(() => window.viewerDesktop.info())).onlineMaps === true, "with nothing set, online maps are on");
-    const read = await p2.evaluate((api) => fetch(`${api}/api/health`).then((r) => `reached ${r.status}`, () => "blocked"), API);
-    check(read.startsWith("reached"), "the page can read from the network (a map server)", read);
-    const sent = await p2.evaluate((api) => fetch(`${api}/api/health`, { method: "POST", body: "x" }).then(() => "reached", () => "blocked"), API);
-    check(sent === "blocked", "the page still cannot send to the network (POST blocked)", sent);
-    await p2.getByRole("button", { name: /A Beautiful Game/ }).first().click();
-    await p2.waitForFunction(() => window.viewerEngine.model?.ready, null, { timeout: 120000 });
-    await p2.getByRole("tab", { name: "Map & data", exact: true }).click();
-    const osm = p2.getByRole("radio", { name: /OpenStreetMap/ }).first();
-    await osm.waitFor({ timeout: 15000 }).catch(() => undefined);
-    check((await osm.count()) === 1 && !(await osm.isDisabled()) && (await p2.getByTestId("map-offline-note").count()) === 0, "online base maps can be chosen, with no 'off' note");
+    let p = await a.firstWindow();
+    await ready(p);
+    check((await p.locator("[data-model-card]").count()) === 0 && !(await p.getByText("A Beautiful Game").count()), "the library has no bundled samples", (await cards(p)).join(", "));
+    // Map & data with no model open.
+    await p.getByTestId("open-home-map").click();
+    await p.getByTestId("home-map-panel").waitFor();
+    const osm = p.getByRole("radio", { name: /OpenStreetMap/ }).first();
+    check((await osm.count()) === 1 && (await osm.isDisabled()), "Map & data opens without a model; online maps start off");
+    const blockedFirst = await p.evaluate((api) => fetch(`${api}/api/health`, { mode: "no-cors" }).then(() => "reached", () => "blocked"), API);
+    check(blockedFirst === "blocked", "while off, nothing goes to the network", blockedFirst);
+    await p.getByTestId("online-maps-on").click();
+    await p.waitForFunction(() => !document.querySelector('[data-testid="online-maps-on"]'));
+    check(!(await osm.isDisabled()), "the user turns online maps on, and the online base maps can be chosen");
+    // no-cors: the test server allows no other origin, and only the gate is under test here.
+    const read = await p.evaluate((api) => fetch(`${api}/api/health`, { mode: "no-cors" }).then(() => "reached", () => "blocked"), API);
+    check(read.startsWith("reached"), "then the page can read from the network (a map server)", read);
+    const sent = await p.evaluate((api) => fetch(`${api}/api/health`, { method: "POST", body: "x", mode: "no-cors" }).then(() => "reached", () => "blocked"), API);
+    check(sent === "blocked", "but still cannot send to the network (POST blocked)", sent);
+    await p.getByRole("button", { name: "Back to library" }).click();
+
+    // A model opened from this computer, kept on it.
+    await a.evaluate(({ dialog }, file) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
+    }, bottle);
+    await p.getByRole("button", { name: "Upload" }).first().click();
+    await p.getByTestId("desktop-open-files").click();
+    const dlg = p.getByRole("dialog");
+    await dlg.getByTestId("upload-report").waitFor({ timeout: 60000 });
+    const next = dlg.getByRole("button", { name: "Next" });
+    while (await next.isVisible().catch(() => false)) await next.click();
+    await dlg.locator("select[aria-required=true]").selectOption({ index: 1 }).catch(() => undefined);
+    await dlg.locator("input.input").first().fill("Kept bottle");
+    await dlg.getByRole("button", { name: "Publish" }).click();
+    await dlg.waitFor({ state: "detached", timeout: 120000 });
+    await p.waitForFunction(() => window.viewerEngine.current.get()?.source.url.startsWith("viewer-file://"));
+    await p.locator('button[data-tip="Earth"]').first().click();
+    const bin = p.locator("div.group\\/card", { has: p.getByText("Kept bottle", { exact: true }) }).getByTestId("delete-model-open");
+    await bin.waitFor();
+    const opacity = await bin.evaluate((el) => getComputedStyle(el).opacity);
+    check(opacity === "1", "its delete button shows without hovering", `opacity ${opacity}`);
+    await a.close();
+
+    // Restart: it is still there, opens from the same files, and online maps are still on.
+    a = await standalone();
+    p = await a.firstWindow();
+    await ready(p);
+    check((await cards(p)).includes("Kept bottle"), "after a restart the model is still in the library", (await cards(p)).join(", "));
+    await p.getByText("Kept bottle", { exact: true }).first().click();
+    await p.waitForFunction(() => window.viewerEngine.model?.ready, null, { timeout: 120000 });
+    check(true, "and it opens again from the files on this computer");
+    check((await p.evaluate(() => window.viewerDesktop.info())).onlineMaps === true, "the user's online maps choice is kept");
+    await p.getByTestId("delete-model-header").click();
+    const del = p.getByTestId("delete-model");
+    await del.waitFor();
+    await del.getByTestId("delete-model-go").click();
+    await del.waitFor({ state: "detached" });
+    await p.waitForFunction(() => !window.viewerEngine.current.get());
+    check(!(await cards(p)).includes("Kept bottle"), "deleted, it leaves the library");
+    check(fs.existsSync(bottle), "and its file stays on this computer");
+    await p.waitForTimeout(500);
+    await a.close();
+
+    a = await standalone();
+    p = await a.firstWindow();
+    await ready(p);
+    check(!(await cards(p)).includes("Kept bottle"), "after another restart it is still gone");
   } catch (e) {
-    console.log(`FAIL online maps on: ${e.message.split("\n")[0]}`);
+    console.log(`FAIL standalone PC: ${e.message.split("\n")[0]}`);
     failed++;
   } finally {
-    await app2.close().catch(() => undefined);
-    server.stop();
+    await a.close().catch(() => undefined);
+    mapHost.stop();
+    fs.rmSync(data, { recursive: true, force: true });
+    fs.rmSync(mine, { recursive: true, force: true });
   }
   console.log(failed ? `${failed} FAILED` : "ALL PASSED");
   process.exit(failed ? 1 : 0);

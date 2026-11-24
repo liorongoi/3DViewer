@@ -3,6 +3,7 @@ import type { CoordinateSystem, EnvironmentId, LengthUnit, Quality, ViewMode } f
 import { SAMPLE_CLASSIFICATIONS, type ClassificationLevel, type ModelSummary, type UpdateStatus } from "@viewer/shared";
 import { readPref, writePref } from "./prefs";
 import type { VersionInfo } from "../server/api";
+import { desktop } from "../desktop";
 
 export type Route = "home" | "viewer";
 export type Tool = "none" | "distance" | "path" | "fly" | "sight" | "viewshed";
@@ -67,6 +68,14 @@ interface AppState {
   uploadFiles: Record<string, string[]>;
   /** The model the delete dialog is asking about. */
   deleteModelId: string | null;
+  /** The bundled sample library is shown (the web app; the Windows app only in its checks). */
+  samples: boolean;
+  /** Kept models whose files are no longer on this computer (desktop app). */
+  missingModels: string[];
+  /** Online maps in the desktop app: on now, and whether IT decided (no switch then). Null in a browser. */
+  onlineMaps: { on: boolean; locked: boolean } | null;
+  /** What the left column shows on the globe: the library or the Map & data panel. */
+  homePanel: "library" | "map";
   /** The HOLO server, when one answers (Phase 3). Without it the app uses the sample library. */
   server: import("../server/api").ServerInfo | null;
   /**
@@ -124,7 +133,9 @@ export const useApp = create<AppState>((set) => ({
   localBuildOpen: false,
   adminOpen: false,
   perfOpen: false,
-  adaptiveResolution: readPref<string>("adaptiveResolution", "true") === "true",
+  // Off by default: stepping the resolution down while the view moves makes the picture go soft
+  // and sharp again during a zoom on slower graphics cards (the 1.3.1 Windows report).
+  adaptiveResolution: readPref<string>("adaptiveResolution", "false") === "true",
   fullscreen: false,
   onboardingDone: readPref<string>("onboarding", "0") === "1",
   filters: { query: "", project: null, operation: null, status: null, entity: null, classification: null },
@@ -138,6 +149,10 @@ export const useApp = create<AppState>((set) => ({
   uploads: [],
   uploadFiles: {},
   deleteModelId: null,
+  samples: !desktop,
+  missingModels: [],
+  onlineMaps: null,
+  homePanel: "library",
   server: null,
   serverState: "none",
   pendingFiles: null,

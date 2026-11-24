@@ -3,7 +3,8 @@ import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
-import { machineSources, readConfig } from "./config.js";
+import { ONLINE_MAPS_USER_DEFAULT, machineSources, readConfig } from "./config.js";
+import { keptDirs, readKept, toKept, writeKept } from "./kept-library.js";
 import { Roots, SCHEME, listFiles, listFolder, serveLocal, type ListedFile } from "./local-files.js";
 import { SERVER_BASE, SERVER_SCHEME, proxyServer } from "./server-proxy.js";
 import { convertFbx, findConverter, stopAll } from "./fbx.js";
@@ -20,12 +21,36 @@ import { CAPTURE_PHOTO, CAPTURE_VIDEO, buildFolderOf, cleanRequest, currentAddon
 const here = path.dirname(fileURLToPath(import.meta.url));
 // Development and test switches; an installed app ignores them (WP 5.5).
 const dev: Record<string, string | undefined> = app.isPackaged ? {} : process.env;
+// Checks start the app with a data folder of their own, so runs never share a kept library.
+if (dev.VIEWER_USER_DATA) app.setPath("userData", dev.VIEWER_USER_DATA);
 const APP = "viewer-app";
 // Web build: next to the app when packaged, the web app's dist folder in development.
 const webDir = dev.VIEWER_WEB_DIR ?? (app.isPackaged ? path.join(process.resourcesPath, "web") : path.resolve(here, "../../web/dist"));
 const exeDir = app.isPackaged ? path.dirname(process.execPath) : path.resolve(here, "..");
 const config = readConfig(machineSources(exeDir));
 for (const p of config.problems) console.warn(`HOLO configuration: ${p}`);
+
+// The user's own settings kept by the main process (the page cannot be trusted with the gate).
+const prefsFile = path.join(app.getPath("userData"), "prefs.json");
+const prefs: { onlineMaps?: boolean } = (() => {
+  try {
+    const p = JSON.parse(fs.readFileSync(prefsFile, "utf8")) as { onlineMaps?: unknown };
+    return typeof p.onlineMaps === "boolean" ? { onlineMaps: p.onlineMaps } : {};
+  } catch {
+    return {};
+  }
+})();
+const savePrefs = () => {
+  try {
+    fs.mkdirSync(path.dirname(prefsFile), { recursive: true });
+    fs.writeFileSync(prefsFile, JSON.stringify(prefs));
+  } catch {
+    // Not kept for the next start; it still applies now.
+  }
+};
+/** Online maps now: IT's decision, else the user's switch (off until they turn it on). */
+const onlineNow = (): boolean => config.onlineMaps ?? prefs.onlineMaps ?? ONLINE_MAPS_USER_DEFAULT;
+const keptFile = path.join(app.getPath("userData"), "library.json");
 
 protocol.registerSchemesAsPrivileged([
   { scheme: APP, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, codeCache: true } },
@@ -34,8 +59,9 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 const roots = new Roots();
-// Online map services, when IT turned them on (config.ts): tiles and terrain over http(s).
-const NET = config.onlineMaps ? " https: http:" : "";
+// Online map services (config.ts): tiles and terrain over http(s), read only. Unless IT turned
+// them off for good, the page may be allowed them; the request gate below decides each time.
+const NET = config.onlineMaps === false ? "" : " https: http:";
 const CSP = [
   "default-src 'self'",
   `connect-src 'self' ${SCHEME}: ${SERVER_SCHEME}: data: blob:${NET}`,
@@ -117,13 +143,44 @@ async function start(): Promise<void> {
   // Air gap: the page may only talk to its own schemes; the server goes through viewer-server://.
   // With online maps turned on, it may also read (GET) from the network, for map tiles and terrain.
   session.defaultSession.webRequest.onBeforeRequest((d, cb) => {
-    const ok = /^(viewer-app|viewer-file|viewer-server|data|blob|devtools|chrome-extension):/.test(d.url) || (config.onlineMaps && d.method === "GET" && /^https?:/.test(d.url));
+    const ok = /^(viewer-app|viewer-file|viewer-server|data|blob|devtools|chrome-extension):/.test(d.url) || (onlineNow() && d.method === "GET" && /^https?:/.test(d.url));
     if (dev.VIEWER_SMOKE && !ok) console.log("[blocked]", d.url);
     cb({ cancel: !ok });
   });
   session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
 
-  ipcMain.handle("viewer:info", () => ({ server: server ? SERVER_BASE : null, serverAddress: server, configuredBy: config.source, problems: config.problems, version: app.getVersion(), onlineMaps: config.onlineMaps }));
+  ipcMain.handle("viewer:info", () => ({
+    server: server ? SERVER_BASE : null,
+    serverAddress: server,
+    configuredBy: config.source,
+    problems: config.problems,
+    version: app.getVersion(),
+    onlineMaps: onlineNow(),
+    onlineMapsLocked: config.onlineMaps !== null,
+    // Development and the browser checks only: the bundled sample library (an installed app has none).
+    samples: !!dev.VIEWER_SAMPLES,
+  }));
+  // The user's switch for online maps, unless IT decided (then it reports IT's choice).
+  ipcMain.handle("viewer:setOnlineMaps", (_e, on: unknown) => {
+    if (config.onlineMaps === null && typeof on === "boolean") {
+      prefs.onlineMaps = on;
+      savePrefs();
+    }
+    return onlineNow();
+  });
+
+  // Models opened from this computer, kept for the next start (kept-library.ts).
+  ipcMain.handle("viewer:loadLibrary", () => readKept(keptFile, roots));
+  ipcMain.handle("viewer:saveLibrary", (_e, models: unknown, files: unknown) => {
+    const kept = toKept(roots, models, files);
+    if (!kept) return false;
+    try {
+      writeKept(keptFile, kept);
+      return true;
+    } catch {
+      return false;
+    }
+  });
   // "Check this computer" (Help): what the operating system says; the page adds the graphics card.
   ipcMain.handle("viewer:computer", async () => {
     let freeDiskGb: number | null = null;
@@ -156,13 +213,18 @@ async function start(): Promise<void> {
   ipcMain.handle("viewer:openPaths", async (_e, paths: unknown) => listPaths(Array.isArray(paths) ? paths.filter((p): p is string => typeof p === "string") : []));
   // Local FBX (WP 5.2): converts a file the user opened, never a path the page names.
   const converter = findConverter({ env: dev, packaged: app.isPackaged, resourcesPath: process.resourcesPath, here });
-  const fbxRoot = path.join(app.getPath("temp"), "HOLO-fbx");
-  // Only one copy of the app runs, so what is left here is from an earlier run.
-  fs.rmSync(fbxRoot, { recursive: true, force: true });
-  app.on("will-quit", () => {
-    stopAll();
-    fs.rmSync(fbxRoot, { recursive: true, force: true });
-  });
+  // Conversions are kept with the app's data while a kept model uses them; the rest go at the
+  // next start (only one copy of the app runs, so nothing else is using them).
+  const fbxRoot = path.join(app.getPath("userData"), "fbx");
+  fs.rmSync(path.join(app.getPath("temp"), "HOLO-fbx"), { recursive: true, force: true });
+  {
+    const keep = keptDirs(keptFile);
+    for (const d of fs.existsSync(fbxRoot) ? fs.readdirSync(fbxRoot) : []) {
+      const full = path.resolve(fbxRoot, d);
+      if (![...keep].some((k) => k === full || k.startsWith(full + path.sep))) fs.rmSync(full, { recursive: true, force: true });
+    }
+  }
+  app.on("will-quit", () => stopAll());
   let conversions = 0;
   ipcMain.handle("viewer:convertFbx", async (_e, url: unknown) => {
     if (!converter) return { ok: false, reason: "unavailable" };
@@ -174,7 +236,7 @@ async function start(): Promise<void> {
       /* not a URL */
     }
     if (!input || !/\.fbx$/i.test(input)) return { ok: false, reason: "notOpened" };
-    const r = await convertFbx(converter, input, { workDir: path.join(fbxRoot, String(++conversions)) });
+    const r = await convertFbx(converter, input, { workDir: path.join(fbxRoot, `${Date.now().toString(36)}-${++conversions}`) });
     if (!r.ok) return r;
     const [file] = await listFiles(roots, [r.glb]);
     return file ? { ok: true, file, ms: r.ms } : { ok: false, reason: "failed", detail: "" };

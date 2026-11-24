@@ -18,8 +18,12 @@ export interface DesktopInfo {
   configuredBy: string | null;
   problems: string[];
   version: string;
-  /** IT turned on online map services (from 1.3.2); before that, and when absent, the app is offline. */
+  /** Online map services are on now (from 1.3.2); before that, and when absent, the app is offline. */
   onlineMaps?: boolean;
+  /** IT decided online maps for this computer, so the user has no switch. */
+  onlineMapsLocked?: boolean;
+  /** Show the bundled sample library (development and the checks only). */
+  samples?: boolean;
 }
 
 interface DesktopApi {
@@ -43,6 +47,11 @@ interface DesktopApi {
   buildFolderOf?: (urls: string[]) => Promise<string | null>;
   /** Moves that build folder to the Recycle Bin (Trash on a Mac). */
   trashBuild?: (urls: string[]) => Promise<boolean>;
+  /** From 1.3.2: the user's switch for online maps; answers whether they are on now. */
+  setOnlineMaps?: (on: boolean) => Promise<boolean>;
+  /** From 1.3.2: the models opened from this computer, kept between starts. */
+  loadLibrary?: () => Promise<{ models: unknown[]; files: Record<string, string[]>; missing: string[] }>;
+  saveLibrary?: (models: unknown[], files: Record<string, string[]>) => Promise<boolean>;
   onBuildProgress?: (cb: (p: { fraction: number; stage: string }) => void) => () => void;
   platform: string;
 }
@@ -93,14 +102,3 @@ export function fromDesktop(f: DesktopFile): LocalFile {
 
 export const fromDesktopList = (list: DesktopFile[] | null): LocalFile[] | null => (list?.length ? list.map(fromDesktop) : null);
 
-/**
- * Why online map sources cannot load here, or null when they can: the claude.ai preview page, or
- * the desktop app while IT has not turned on online maps (it refuses network requests, AC-10).
- */
-export type NetworkOff = "preview" | "desktop" | null;
-const PREVIEW = import.meta.env.VITE_NO_ONLINE === "1";
-export function networkOff(): Promise<NetworkOff> {
-  if (PREVIEW) return Promise.resolve("preview");
-  if (!desktop) return Promise.resolve(null);
-  return desktopInfo().then((d) => (d?.onlineMaps ? null : "desktop"));
-}

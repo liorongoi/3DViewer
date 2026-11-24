@@ -11,7 +11,13 @@ interface ListedFile {
 /** The only desktop features the page can use (plan 3.2: narrow typed preload API). */
 contextBridge.exposeInMainWorld("viewerDesktop", {
   /** How the app is set up: the server base the page uses (or null), where it came from, problems. */
-  info: (): Promise<{ server: string | null; serverAddress: string | null; configuredBy: string | null; problems: string[]; version: string; onlineMaps?: boolean }> => ipcRenderer.invoke("viewer:info"),
+  info: (): Promise<{ server: string | null; serverAddress: string | null; configuredBy: string | null; problems: string[]; version: string; onlineMaps?: boolean; onlineMapsLocked?: boolean; samples?: boolean }> => ipcRenderer.invoke("viewer:info"),
+  /** The user's switch for online maps; answers whether they are on now (IT's decision wins). */
+  setOnlineMaps: (on: boolean): Promise<boolean> => ipcRenderer.invoke("viewer:setOnlineMaps", on),
+  /** The models opened from this computer, kept from the last start; those whose files are gone are listed in missing. */
+  loadLibrary: (): Promise<{ models: unknown[]; files: Record<string, string[]>; missing: string[] }> => ipcRenderer.invoke("viewer:loadLibrary"),
+  /** Keeps the models opened from this computer for the next start. */
+  saveLibrary: (models: unknown[], files: Record<string, string[]>): Promise<boolean> => ipcRenderer.invoke("viewer:saveLibrary", models, files),
   /** The open dialog for model files. */
   openFiles: (): Promise<ListedFile[] | null> => ipcRenderer.invoke("viewer:openFiles"),
   /** The open dialog for a folder (a 3D Tiles set, a glTF with its textures). */

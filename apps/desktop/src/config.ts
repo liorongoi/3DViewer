@@ -15,25 +15,26 @@ import path from "node:path";
  * With none, the app works on local files only. An address that is not http(s) is ignored and
  * reported, so a typo shows up in the app's About box instead of failing quietly.
  *
- * Online map services (base maps, terrain, WMTS/WMS/XYZ/COG, DTM services the user adds) are on
- * unless IT turns them off, from the same places in the same order: VIEWER_ONLINE_MAPS=0,
- * {"onlineMaps": false} in either viewer.json, or OnlineMaps = 0 under either registry key.
- * On, the page may only read (GET) from the network. Off, the app refuses every network request
- * except to the configured server, for sites with no outbound connections (NFR-12, AC-10).
+ * Online map services (base maps, terrain, WMTS/WMS/XYZ/COG, DTM services the user adds) start
+ * off, and the user can turn them on in the Map tab. IT can decide for the user, from the same
+ * places in the same order: VIEWER_ONLINE_MAPS, {"onlineMaps": true|false} in either viewer.json,
+ * or OnlineMaps = 1|0 under either registry key. On, the page may only read (GET) from the
+ * network. Off, the app refuses every network request except to the configured server, for
+ * sites with no outbound connections (NFR-12, AC-10).
  */
 export interface DesktopConfig {
   serverUrl: string | null;
   /** Where the address came from, for the About box and support. */
   source: string | null;
-  /** The page may fetch map tiles and terrain from the network (GET only). */
-  onlineMaps: boolean;
-  /** Where that setting came from, or null for the default (on). */
+  /** IT's decision on online maps (GET only from the network), or null: the user's choice. */
+  onlineMaps: boolean | null;
+  /** Where IT's decision came from, or null. */
   onlineMapsSource: string | null;
   problems: string[];
 }
 
-/** Without a setting, online maps work; IT turns them off for a site with no internet (AC-10). */
-export const ONLINE_MAPS_DEFAULT = true;
+/** Without IT's decision, online maps start off for each user until they turn them on. */
+export const ONLINE_MAPS_USER_DEFAULT = false;
 
 export interface ConfigSources {
   env: Record<string, string | undefined>;
@@ -123,10 +124,10 @@ export function readConfig(src: ConfigSources): DesktopConfig {
     if (raw === undefined || raw === null || raw === "") continue;
     const yes = parseSwitch(raw);
     if (yes !== null) return { ...server, onlineMaps: yes, onlineMapsSource: source, problems };
-    problems.push(`${source}: onlineMaps "${String(raw)}" is not on or off (use true/false or 1/0); left off.`);
+    problems.push(`${source}: onlineMaps "${String(raw)}" is not on or off (use true/false or 1/0); kept off.`);
     return { ...server, onlineMaps: false, onlineMapsSource: source, problems };
   }
-  return { ...server, onlineMaps: ONLINE_MAPS_DEFAULT, onlineMapsSource: null, problems };
+  return { ...server, onlineMaps: null, onlineMapsSource: null, problems };
 }
 
 /** true/false, 1/0 (also a registry DWORD read as 0x1/0x0), yes/no, on/off; null for anything else. */

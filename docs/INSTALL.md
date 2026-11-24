@@ -151,7 +151,7 @@ HOLO-Setup-<version>.exe /S /SERVER_URL=https://viewer.internal
 
 Or set the address for a whole machine, by `%ProgramData%\VIEWER\viewer.json` or the `ServerUrl` registry value (Group Policy); `apps/desktop/README.md` has the details. The certificate must be trusted by Windows (the organisation's root in the machine's store).
 
-Online maps (Esri, OpenStreetMap and the like, and services users add) work in the app by default. On a site with no internet connection, turn them off for the machine: `{"onlineMaps": false}` in `%ProgramData%\VIEWER\viewer.json`, or the registry value `OnlineMaps` = 0 under `HKLM\Software\VIEWER`. Then the app makes no connection except to the server.
+Online maps (Esri, OpenStreetMap and the like, and services users add) start off in the app, and each user can turn them on in the Map tab. On a site with no internet connection, lock them off for the machine: `{"onlineMaps": false}` in `%ProgramData%\VIEWER\viewer.json`, or the registry value `OnlineMaps` = 0 under `HKLM\Software\VIEWER`. Then the app makes no connection except to the server, and users have no switch.
 
 ### Building splats on a Windows PC, without the server
 

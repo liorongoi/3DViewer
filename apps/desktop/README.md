@@ -25,14 +25,20 @@ While the server answers, the library is the server's and the status pill says *
 
 ## Online maps
 
-The online base maps and terrain (Esri, EOX, OpenStreetMap, AWS terrain) and map services the user adds (WMTS, WMS, XYZ, COG, DTM) load in the app by default: the page may read (GET) from the network, and nothing else. A site with no outbound connections turns this off, in the same places as the server address and in the same order; the first one that says on or off wins:
+The online base maps and terrain (Esri, EOX, OpenStreetMap, AWS terrain) and map services the user adds (WMTS, WMS, XYZ, COG, DTM) start off. The user turns them on with **Turn on online maps** in the Map tab (and off again); the main process keeps that choice in `prefs.json` in the app's data folder. On, the page may read (GET) from the network, and nothing else. Off, the app refuses every network request except to the configured server.
 
-1. `VIEWER_ONLINE_MAPS=0` in the environment;
-2. `{"onlineMaps": false}` in `viewer.json` next to `HOLO.exe`;
+IT can decide for the machine instead, and the user then has no switch. In the same places as the server address and in the same order, the first one that says on or off wins:
+
+1. `VIEWER_ONLINE_MAPS=0` (or `1`) in the environment;
+2. `{"onlineMaps": false}` (or `true`) in `viewer.json` next to `HOLO.exe`;
 3. the same in `%ProgramData%\VIEWER\viewer.json`;
-4. the registry value `OnlineMaps` = 0 (DWORD or text) under `HKLM\Software\VIEWER`, then `HKCU\Software\VIEWER` (Group Policy).
+4. the registry value `OnlineMaps` = 0 or 1 (DWORD or text) under `HKLM\Software\VIEWER`, then `HKCU\Software\VIEWER` (Group Policy).
 
-`true`/`false`, `1`/`0`, `yes`/`no` and `on`/`off` are understood; anything else turns online maps off and is reported. Off, the app refuses every network request except to the configured server, and the Map tab marks the online sources *off on this computer* and says why.
+`true`/`false`, `1`/`0`, `yes`/`no` and `on`/`off` are understood; anything else keeps online maps off and is reported. A site with no outbound connections should set it off.
+
+## The library without a server
+
+Without a server, the library holds only the models the user opened from this computer (no bundled samples). The main process keeps them in `library.json` in the app's data folder, with the folders they were opened from, so they are still there at the next start and open from the same files. Only folders the user opened are kept, never one the page names. A model whose files are gone stays listed, marked so, until it is deleted. FBX conversions of kept models are kept with the app's data; the next start after their model is deleted removes them.
 
 ## Local files
 

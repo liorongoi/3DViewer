@@ -170,6 +170,7 @@ export function ModelCard({ m, onOpen, dense }: { m: ModelSummary; onOpen: () =>
   const thumb = m.thumbnail ?? `samples/thumbs/${m.id}.webp`;
   const Icon = m.source.splats ? Sparkles : m.sourceFormat === "3dtiles" ? Boxes : m.sourceFormat === "fbx" ? FileBox : Box;
   const deletable = canDelete(m, useApp((s) => !!s.server));
+  const missing = useApp((s) => s.missingModels.includes(m.id));
   const nameId = useId();
   return (
     <div className="group/card relative">
@@ -223,6 +224,11 @@ export function ModelCard({ m, onOpen, dense }: { m: ModelSummary; onOpen: () =>
         <div className="truncate text-[12px] text-fg3" data-content>
           {m.project} · {m.operation}
         </div>
+        {missing && (
+          <div className="truncate text-[11px] text-[var(--bad)]" data-testid="model-files-missing">
+            {t("library.filesMissing")}
+          </div>
+        )}
         <div className="mt-1 flex items-center justify-between gap-2">
           <StatusBadge status={m.status} compact />
           <span className="num truncate text-[11px] text-fg3">
@@ -232,7 +238,7 @@ export function ModelCard({ m, onOpen, dense }: { m: ModelSummary; onOpen: () =>
       </div>
     </button>
     {deletable && (
-      // Beside the card, not in it: a button cannot hold another. Shows on hover or keyboard focus.
+      // Beside the card, not in it: a button cannot hold another.
       <button
         type="button"
         // The model's name comes from its card, so screen readers hear which model.
@@ -242,7 +248,8 @@ export function ModelCard({ m, onOpen, dense }: { m: ModelSummary; onOpen: () =>
         data-testid="delete-model-open"
         onClick={() => useApp.getState().set({ deleteModelId: m.id })}
         className={cx(
-          "absolute end-1.5 z-20 grid h-7 w-7 place-items-center rounded-[8px] bg-black/60 text-white/80 opacity-0 transition-opacity hover:bg-[var(--bad)] hover:text-white focus-visible:opacity-100 group-hover/card:opacity-100 group-focus-within/card:opacity-100",
+          // Always shown: a control that only appears on hover is one people never find.
+          "absolute end-1.5 z-20 grid h-7 w-7 place-items-center rounded-[8px] bg-black/60 text-white/90 transition-colors hover:bg-[var(--bad)] hover:text-white",
           dense ? "top-1.5" : "top-3",
         )}
       >

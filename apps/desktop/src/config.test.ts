@@ -24,7 +24,7 @@ describe("server address", () => {
     expect(cleanServerUrl("viewer.internal")).toBeNull();
   });
   it("is unset with nothing configured", () => {
-    expect(readConfig(sources())).toEqual({ serverUrl: null, source: null, onlineMaps: true, onlineMapsSource: null, problems: [] });
+    expect(readConfig(sources())).toEqual({ serverUrl: null, source: null, onlineMaps: null, onlineMapsSource: null, problems: [] });
   });
   it("takes the first source found, in order", () => {
     const files = { [EXE_JSON]: '{"serverUrl":"https://exe"}', [PD_JSON]: '{"serverUrl":"https://pd"}' };
@@ -50,8 +50,8 @@ describe("server address", () => {
 });
 
 describe("online maps", () => {
-  it("are on with nothing configured", () => {
-    expect(readConfig(sources())).toMatchObject({ onlineMaps: true, onlineMapsSource: null, problems: [] });
+  it("are left to the user with nothing configured", () => {
+    expect(readConfig(sources())).toMatchObject({ onlineMaps: null, onlineMapsSource: null, problems: [] });
   });
   it("are turned on or off by the first place that sets them, in order", () => {
     const reg = { "HKLM\\Software\\VIEWER": "0x1" };
@@ -70,7 +70,7 @@ describe("online maps", () => {
   it("stay off and say so when the setting is not on or off", () => {
     const c = readConfig(sources({}, { [EXE_JSON]: '{"onlineMaps":"maybe"}', [PD_JSON]: '{"onlineMaps":true}' }));
     expect(c.onlineMaps).toBe(false);
-    expect(c.problems).toEqual([`${EXE_JSON}: onlineMaps "maybe" is not on or off (use true/false or 1/0); left off.`]);
+    expect(c.problems).toEqual([`${EXE_JSON}: onlineMaps "maybe" is not on or off (use true/false or 1/0); kept off.`]);
   });
   it("reports a broken viewer.json once, and fall back to the next place", () => {
     const c = readConfig(sources({}, { [EXE_JSON]: "{nope", [PD_JSON]: '{"onlineMaps":false}' }));

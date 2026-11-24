@@ -3,6 +3,7 @@ import "./styles.css";
 import "./i18n";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { startDesktopLibrary } from "./state/desktop-library";
 import { EngineProvider } from "./engine";
 import { App } from "./App";
 import { Guard } from "./components/Guard";
@@ -21,6 +22,8 @@ if (renderOnly || new URLSearchParams(location.search).has("test")) {
     });
   });
 }
+
+void startDesktopLibrary();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

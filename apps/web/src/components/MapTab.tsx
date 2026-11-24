@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { catalogue, type UserLayer, type WmtsLayerInfo, type WmsLayerInfo } from "@viewer/core";
 import { useEngine, useSignal } from "../engine";
 import { ChevronDown, Eye, EyeOff, Focus, Globe, Map, Mountain, Trash2, Upload, X } from "./icons";
 import { IconButton, Segmented, cx } from "./primitives";
-import { networkOff, type NetworkOff } from "../desktop";
+import { useApp } from "../state/store";
+import { setOnlineMaps } from "../state/desktop-library";
 
 /**
  * Left panel "Map" tab: base map, terrain, and the user's own layers
@@ -31,24 +32,68 @@ function Section({ title, icon: Icon, children }: { title: string; icon: typeof 
   );
 }
 
+/** The claude.ai preview page cannot reach other sites, so online sources are switched off there. */
+const PREVIEW = import.meta.env.VITE_NO_ONLINE === "1";
+
 /**
- * Online sources are switched off where they cannot load: the claude.ai preview page, and the
- * desktop app until IT turns on online maps. They show why instead of failing without a word.
+ * Why online sources cannot load here, or null when they can: the preview page; the desktop app
+ * with online maps switched off by the user ("user", they can turn them on) or by IT ("locked").
  */
+type NetworkOff = "preview" | "user" | "locked" | null;
 function useNetworkOff(): NetworkOff {
-  const [off, setOff] = useState<NetworkOff>(null);
-  useEffect(() => {
-    let live = true;
-    void networkOff().then((v) => live && setOff(v));
-    return () => {
-      live = false;
-    };
-  }, []);
-  return off;
+  const online = useApp((s) => s.onlineMaps);
+  if (PREVIEW) return "preview";
+  if (!online || online.on) return null;
+  return online.locked ? "locked" : "user";
 }
 
-const OFF_NOTE = { preview: "map.offlineNote", desktop: "map.desktopOfflineNote" } as const;
-const OFF_TAG = { preview: "map.notInPreview", desktop: "map.notOnThisComputer" } as const;
+const OFF_NOTE = { preview: "map.offlineNote", user: "map.onlineOffNote", locked: "map.desktopOfflineNote" } as const;
+const OFF_TAG = { preview: "map.notInPreview", user: "map.notOnThisComputer", locked: "map.notOnThisComputer" } as const;
+
+/** Online maps in the desktop app: why they are off, and the user's switch when IT left it to them. */
+function OnlineSwitch() {
+  const { t } = useTranslation();
+  const off = useNetworkOff();
+  const online = useApp((s) => s.onlineMaps);
+  const [busy, setBusy] = useState(false);
+  const engine = useEngine();
+  const flip = async (on: boolean) => {
+    setBusy(true);
+    try {
+      await setOnlineMaps(on);
+      // Turned off: an online base map or terrain in use gives way to the bundled ones.
+      if (!on && engine) {
+        const cat = catalogue.get();
+        if (cat.baseMaps.find((b) => b.id === engine.baseMapId.get())?.online) await engine.setBaseMap("bundled");
+        if (cat.terrains.find((x) => x.id === engine.terrainId.get())?.online) await engine.setTerrain("local").catch(() => engine.setTerrain("none"));
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (off) {
+    return (
+      <div className="px-2 pt-1 text-[11px] text-fg3" data-testid="map-offline-note">
+        <p>{t(OFF_NOTE[off])}</p>
+        {off === "user" && (
+          <button type="button" className="btn-secondary mt-1 h-7" disabled={busy} onClick={() => void flip(true)} data-testid="online-maps-on">
+            <Globe size={13} /> {t("map.turnOnOnline")}
+          </button>
+        )}
+      </div>
+    );
+  }
+  if (online?.on && !online.locked) {
+    return (
+      <p className="px-2 pt-1 text-[11px] text-fg3">
+        <button type="button" className="text-accent hover:underline" disabled={busy} onClick={() => void flip(false)} data-testid="online-maps-off">
+          {t("map.turnOffOnline")}
+        </button>
+      </p>
+    );
+  }
+  return null;
+}
 
 function Choice({ checked, label, note, onSelect, disabled, why }: { checked: boolean; label: string; note?: string; onSelect: () => void; disabled?: boolean; why?: string }) {
   return (
@@ -100,7 +145,7 @@ function BasePicker() {
         ))}
         {userBase && <Choice checked label={userBase.name} note={t("map.yours")} onSelect={() => undefined} />}
       </div>
-      {off && <p className="px-2 pt-1 text-[11px] text-fg3" data-testid="map-offline-note">{t(OFF_NOTE[off])}</p>}
+      <OnlineSwitch />
     </Section>
   );
 }
@@ -151,7 +196,7 @@ function TerrainPicker() {
       </div>
       {error && <p role="alert" className="px-2 pt-1 text-[11px] text-[var(--bad)]">{error}</p>}
       <p className="px-2 pt-1 text-[11px] text-fg3">{tr("map.terrainNote")}</p>
-      {off && <p className="px-2 pt-1 text-[11px] text-fg3">{tr(OFF_NOTE[off])}</p>}
+
     </Section>
   );
 }
@@ -354,9 +399,9 @@ function ServiceForm({ onDone, onError }: { onDone: () => void; onError: (m: str
           {busy ? "…" : kind === "wmts" || kind === "wms" ? t("map.connect") : t("map.add")}
         </button>
       </div>
-      {off === "desktop" && (
+      {off && off !== "preview" && (
         <p className="mt-1 px-1 text-[11px] text-fg3" data-testid="service-offline-note">
-          {t("map.desktopOfflineNote")}
+          {t(OFF_NOTE[off])}
         </p>
       )}
       {(wmts || wms) && (

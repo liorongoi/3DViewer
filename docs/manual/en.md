@@ -108,6 +108,10 @@ The **Measurements** panel (<kbd>.</kbd>) lists every measurement. There you can
 
 The **Map & data** tab in the left panel chooses the **Base map** and the **Terrain**. Sources marked **site** come from your organisation's own map servers. Sources marked **online** need the internet. The bundled world map always works, even with no network.
 
+On the globe, with no model open, the map button at the top of the library opens the same panel.
+
+In HOLO for Windows, online maps start off. **Turn on online maps** in the panel lets HOLO read map tiles from the internet; it only reads, and sends nothing. The choice is kept. If your IT team decided for your computer, the panel says so and has no switch.
+
 ### Your own data
 
 Drop files on the panel, or choose **Add files**:
@@ -165,10 +169,10 @@ The server checks the files again, scans them, converts an FBX, validates the mo
 
 ### Deleting a model
 
-Point at a model in the library, or open it, and choose the bin. The app asks first.
+Choose the bin on a model's card in the library, or in the header of an open model. The app asks first.
 
 - **A model on the server** is deleted for everyone, with every version and all its files. It cannot be undone, so the app asks for the admin password and for the model's name typed again. The audit log keeps a record of it.
-- **A model opened from this computer** only leaves the library; its files stay where they are. For a model made with **Build on this PC**, tick the box to move its build folder to the Recycle Bin too.
+- **A model opened from this computer** only leaves the library (in HOLO for Windows these stay in the library from one start to the next until you delete them); its files stay where they are. For a model made with **Build on this PC**, tick the box to move its build folder to the Recycle Bin too.
 - The sample models (when no server is set up) cannot be deleted.
 
 ## Settings

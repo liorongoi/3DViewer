@@ -1,5 +1,5 @@
 # WP 5.5 check, on Windows: the HOLO installer installs for the current user only, with the
-# library server address IT gives it, starts, and uninstalls cleanly.
+# library server address IT gives it, starts, works as a user drives it, and uninstalls cleanly.
 #
 #   pwsh scripts/check-installer.ps1 -Installer apps/desktop/release/HOLO-Setup-<version>.exe [-RequireSignature]
 #
@@ -55,6 +55,14 @@ $app = Start-Process -FilePath "$dir\HOLO.exe" -PassThru
 Start-Sleep -Seconds 20
 $alive = -not $app.HasExited
 Check $alive "HOLO starts and keeps running" $(if ($alive) { "window: '$((Get-Process -Id $app.Id).MainWindowTitle)'" } else { "exit code $($app.ExitCode)" })
+Get-Process -Name HOLO -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Sleep -Seconds 3
+
+# Use it as a user would on a standalone PC: the library, Map & data, online maps, keeping and
+# deleting a model across restarts, and zooming (scripts/check-installed-app.cjs).
+$use = Join-Path $PSScriptRoot "check-installed-app.cjs"
+& node $use "$dir\HOLO.exe" | ForEach-Object { Write-Host "  $_" }
+Check ($LASTEXITCODE -eq 0) "the installed app works as a user drives it" "exit code $LASTEXITCODE"
 Get-Process -Name HOLO -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Seconds 3
 

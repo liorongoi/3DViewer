@@ -58,6 +58,24 @@ export class Roots {
     return id;
   }
 
+  /** What an id stands for (to keep it for the next start), or null. */
+  get(id: string): { dir: string; only?: string[] } | null {
+    const r = this.roots.get(id);
+    return r ? { dir: r.dir, ...(r.only ? { only: [...r.only] } : {}) } : null;
+  }
+
+  /** Opens a folder kept from an earlier start under its old id, so its URLs work again. False when it is gone. */
+  restore(id: string, dir: string, only?: string[]): boolean {
+    if (!/^[a-z0-9]{4,32}$/.test(id) || this.roots.has(id)) return this.roots.get(id)?.dir === dir;
+    try {
+      if (!fs.statSync(dir).isDirectory()) return false;
+      this.roots.set(id, { dir: fs.realpathSync(dir), ...(only ? { only: new Set(only) } : {}) });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** The file a URL path points to, or null when it is outside every opened folder. */
   resolve(id: string, rel: string): string | null {
     const r = this.roots.get(id);

@@ -63,7 +63,7 @@ export function CommandPalette({ onOpenModel }: { onOpenModel: (id: string) => v
             <Command.Item className={item} onSelect={run(() => set({ tool: "path" }))}><Route size={16} />{t("viewer.measurePath")}<Shortcut k="⇧M" /></Command.Item>
             <Command.Item className={item} onSelect={run(() => set({ tool: "sight" }))}><ScanEye size={16} />{t("shell.lineOfSightPoints")}<Shortcut k="I" /></Command.Item>
             <Command.Item className={item} onSelect={run(() => set({ tool: "viewshed" }))}><Radar size={16} />{t("shell.viewshedPoint")}<Shortcut k="V" /></Command.Item>
-            <Command.Item className={item} onSelect={run(() => set({ leftOpen: true, leftTab: "map" }))}><Map size={16} />{t("shell.mapPanel")}</Command.Item>
+            <Command.Item className={item} onSelect={run(() => set({ leftOpen: true, leftTab: "map", homePanel: "map" }))}><Map size={16} />{t("shell.mapPanel")}</Command.Item>
             <Command.Item className={item} onSelect={run(() => set({ tool: "fly" }))}><Plane size={16} />{t("shell.flyMode")}<Shortcut k="G" /></Command.Item>
             <Command.Item className={item} onSelect={run(() => engine?.startOrbitTour())}><Orbit size={16} />{t("shell.flyBy")}</Command.Item>
             {(["shaded", "edges", "wireframe", "unlit"] as const).map((m, i) => (

@@ -8,7 +8,7 @@ HOLO needs nothing from the internet:
 - Fonts, icons, the sample data and the base maps used inside the network all ship with it.
 - Base maps and terrain come from the site's own sources (`viewer-basemap-install`).
 - The built-in online sources (Esri, EOX, OpenStreetMap, AWS terrain) are offered only as a choice. They are never the default. An administrator can hide them with **Hide online sources**.
-- The desktop app reads online map services (GET requests only) unless IT turns them off. With online maps off (`"onlineMaps": false` in `viewer.json`, `OnlineMaps` = 0 under `HKLM\Software\VIEWER`, or `VIEWER_ONLINE_MAPS=0`), it refuses every network request except to the configured HOLO server, and the Map tab marks the online sources as off on this computer. **Sites with no outbound connections must set this.**
+- The desktop app starts with online map services off and refuses every network request except to the configured HOLO server. The user can turn online maps on in the Map tab; then the page may read (GET) from the network and nothing else. IT can decide for the machine instead, and the switch is then gone: `"onlineMaps": false` in `viewer.json`, `OnlineMaps` = 0 under `HKLM\Software\VIEWER`, or `VIEWER_ONLINE_MAPS=0`. **Sites with no outbound connections must set this.** The setting is enforced in the main process, not the page.
 
 **Evidence: `scripts/check-outbound.sh`** (CI job `browser (outbound)`, artifact `check-out/outbound/`).
 
