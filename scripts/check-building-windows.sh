@@ -27,7 +27,7 @@ check "onnxruntime can use the graphics card (DirectML)" "'$A/python/python.exe'
 check "ffmpeg runs" "'$A/ffmpeg/ffmpeg.exe' -hide_banner -version"
 check "ffmpeg can decode on an NVIDIA card (cuda)" "'$A/ffmpeg/ffmpeg.exe' -hide_banner -hwaccels | grep -qx cuda"
 check "COLMAP runs" "'$A/colmap/bin/colmap.exe' help"
-check "COLMAP has its GPU options" "'$A/colmap/bin/colmap.exe' feature_extractor -h | grep -q FeatureExtraction.use_gpu"
+check "COLMAP has its GPU options" "'$A/colmap/bin/colmap.exe' feature_extractor -h | grep FeatureExtraction.use_gpu >/dev/null"
 check "Microsoft's C++ runtime is beside COLMAP" "test -f '$A/colmap/bin/msvcp140.dll' && test -f '$A/colmap/bin/vcruntime140.dll' && test -f '$A/colmap/bin/vcruntime140_1.dll'"
 check "COLMAP's licence is there" "grep -q 'ETH Zurich' '$A/colmap/COPYING.txt'"
 check "Brush has the needle penalty" "'$A/brush/brush_app.exe' --help | grep -q -- --aniso-loss-weight"

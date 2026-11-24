@@ -99,7 +99,7 @@ omp="$(dirname "$crt")/Microsoft.VC143.OpenMP"
 cp "$crt"/*.dll "$STAGE/colmap/bin/"
 [[ -d "$omp" ]] && cp "$omp"/*.dll "$STAGE/colmap/bin/"
 "$STAGE/colmap/bin/colmap.exe" help >/dev/null || fail "COLMAP does not start"
-"$STAGE/colmap/bin/colmap.exe" feature_extractor -h | grep -q "FeatureExtraction.use_gpu" || fail "COLMAP has no GPU option"
+"$STAGE/colmap/bin/colmap.exe" feature_extractor -h | grep "FeatureExtraction.use_gpu" >/dev/null || fail "COLMAP has no GPU option"
 
 echo "· ffmpeg"
 fz="$DL/ffmpeg-essentials.zip"
